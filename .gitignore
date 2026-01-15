@@ -1,3 +1,4 @@
-node_modules
-node_modules
-node_modules
+node_modules/
+debug_*.png
+debug_*.html
+.env
