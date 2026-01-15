@@ -200,19 +200,14 @@ async function scrapeAsin(page, asin) {
         await client.connect();
 
         browser = await chromium.launch({
-            headless: true,
-            // REMOVED: channel: 'chrome'
-            args: [
-                '--no-sandbox',                // Required for Heroku
-                '--disable-setuid-sandbox',    // Required for Heroku
-                '--disable-dev-shm-usage',
-                '--disable-accelerated-2d-canvas',
-                '--no-first-run',
-                '--no-zygote',
-                '--disable-gpu',
-                '--window-size=1920,1080'
-            ]
-        });
+          headless: true,
+          args: [
+              '--no-sandbox',             // REQUIRED for Heroku
+              '--disable-setuid-sandbox',     // REQUIRED for Heroku
+              '--disable-dev-shm-usage',
+              '--window-size=1920,1080'
+          ]
+      });
 
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
