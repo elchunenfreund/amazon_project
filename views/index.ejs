@@ -2,92 +2,132 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Amazon Inventory Tracker</title>
+    <title>Amazon Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <meta http-equiv="refresh" content="30">
     <style>
-        /* This keeps the long titles readable but compact */
-        .title-clamp {
-            display: -webkit-box;
-            -webkit-line-clamp: 2; /* Shows exactly 2 lines of text */
-            -webkit-box-orient: vertical;
-            overflow: hidden;
-            font-size: 0.75rem; /* Smaller text size (text-xs) */
-            line-height: 1rem;
+        body { font-family: 'Inter', sans-serif; }
+        .hidden-row { display: none !important; }
+        .terminal-scrollbar::-webkit-scrollbar { width: 4px; }
+        .terminal-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        .title-clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        select.filter-select {
+            background-color: #1e293b;
+            color: white;
+            font-size: 0.65rem;
+            border: 1px solid #475569;
+            border-radius: 4px;
+            padding: 4px;
+            margin-top: 4px;
+            width: 100%;
+            cursor: pointer;
+            outline: none;
         }
+        select.filter-select:hover { border-color: #94a3b8; }
     </style>
 </head>
-<body class="bg-slate-50 p-4 md:p-8">
-
+<body class="bg-slate-100 p-8">
     <div class="max-w-full mx-auto">
-        <header class="flex justify-between items-center mb-6">
-            <div>
-                <h1 class="text-2xl font-bold text-slate-900">Inventory Dashboard</h1>
-                <p class="text-slate-500 text-sm">Real-time status of your Amazon listings.</p>
+
+        <div id="status-container" class="hidden mb-6 bg-slate-900 text-emerald-400 p-5 rounded-2xl border-l-8 border-emerald-500 font-mono text-xs shadow-2xl">
+            <div class="flex justify-between items-center border-b border-emerald-900 pb-2 mb-2">
+                <span class="font-black uppercase tracking-widest">Live Scraper Feed</span>
+                <span id="sync-status" class="text-white font-bold bg-emerald-800 px-2 rounded">IDLE</span>
             </div>
-            <div class="text-right">
-                <p class="text-xs font-semibold text-slate-400 uppercase">Live Progress</p>
-                <p class="text-sm font-medium text-slate-700"><%= new Date().toLocaleTimeString() %></p>
+            <div id="terminal-stream" class="h-40 overflow-y-auto terminal-scrollbar leading-relaxed"></div>
+        </div>
+
+        <header class="flex flex-col lg:flex-row justify-between items-end mb-8 gap-6">
+            <div>
+                <h1 class="text-4xl font-black text-slate-900 tracking-tight text-emerald-600">Inventory Dashboard</h1>
+                <p class="text-slate-500 font-bold italic">Montreal / Outremont (H2V)</p>
+            </div>
+            <div class="flex gap-4 items-end">
+                <div class="flex flex-col">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Search</label>
+                    <input type="text" id="searchInput" onkeyup="applyFilters()" placeholder="ASIN or Title..." class="px-5 py-3 rounded-xl border-2 border-slate-200 w-64 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <button onclick="runReport()" id="run-btn" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all">RUN REPORT</button>
+                <button onclick="stopReport()" id="stop-btn" class="hidden bg-rose-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-rose-700 active:scale-95 transition-all animate-pulse">STOP</button>
+
+                <div class="bg-white px-6 py-2.5 rounded-xl border border-slate-200 shadow-sm min-w-[160px]">
+                    <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Report End</p>
+                    <p id="last-sync-time" class="text-xl font-mono font-black text-blue-600"><%= lastSyncTime %></p>
+                </div>
             </div>
         </header>
 
-        <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-            <table class="w-full text-left border-collapse table-auto">
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+            <table class="w-full text-left border-collapse" id="inventoryTable">
                 <thead>
-                    <tr class="bg-slate-900 text-white text-xs uppercase tracking-wider">
-                        <th class="p-3">Status</th>
-                        <th class="p-3">ASIN</th>
-                        <th class="p-3 w-1/3">Full Product Title</th>
-                        <th class="p-3 text-center">Stock</th>
-                        <th class="p-3">Seller</th>
-                        <th class="p-3">Price</th>
-                        <th class="p-3 text-center">Actions</th>
+                    <tr class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
+                        <th class="p-6">Status</th>
+                        <th class="p-6">ASIN</th>
+                        <th class="p-6 w-1/3">Product</th>
+
+                        <th class="p-6 text-center w-32">
+                            <div>STOCK STATUS</div>
+                            <select id="stockFilter" onchange="applyFilters()" class="filter-select">
+                                <option value="all">ALL</option>
+                                <option value="IN STOCK">In Stock</option>
+                                <option value="BACK ORDER">Back Order</option>
+                                <option value="UNAVAILABLE">Unavailable</option>
+                                <option value="LOW STOCK">⚠️ Low Stock</option>
+                            </select>
+                        </th>
+
+                        <th class="p-6 w-32">
+                            <div>SELLER</div>
+                            <select id="sellerFilter" onchange="applyFilters()" class="filter-select">
+                                <option value="all">ALL</option>
+                                <option value="Amazon">Amazon</option>
+                                <option value="3rd Party">3rd Party</option>
+                            </select>
+                        </th>
+
+                        <th class="p-6">Price</th>
+                        <th class="p-6 text-center">History</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
                     <% reports.forEach(item => { %>
-                        <tr class="<%= item.is_changed ? 'bg-red-50' : 'hover:bg-slate-50' %> transition-colors">
-
-                            <td class="p-3 whitespace-nowrap">
-                                <% if (item.is_doggy) { %>
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-100 text-orange-800">🐶 DOGGY</span>
+                        <tr class="inventory-row transition-all <%= item.hasChanged ? 'bg-orange-200 border-l-8 border-orange-500' : 'hover:bg-slate-50' %>">
+                            <td class="p-6 font-bold">
+                                <% if(item.hasChanged) { %>
+                                    <span class="px-2 py-1 rounded text-[10px] font-black bg-orange-600 text-white shadow-sm uppercase">UPDATED</span>
                                 <% } else { %>
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-800">✅ ACTIVE</span>
+                                    <span class="px-2 py-1 rounded text-[10px] font-black bg-slate-200 text-slate-500 shadow-sm uppercase">STABLE</span>
+                                <% } %>
+                            </td>
+                            <td class="p-6 asin-cell font-mono text-blue-600 font-bold"><a href="https://www.amazon.ca/dp/<%= item.asin %>" target="_blank" class="hover:underline"><%= item.asin %></a></td>
+                            <td class="p-6 title-cell text-slate-700 font-semibold text-sm"><div class="title-clamp"><%= item.header %></div></td>
+
+                            <td class="p-6 text-center stock-cell font-black"
+                                data-availability-val="<%= (item.availability || '').toUpperCase() %>"
+                                data-stocklevel-val="<%= (item.stock_level || '').toUpperCase() %>">
+
+                                <% if(item.availability === 'In Stock') { %>
+                                    <div class="text-emerald-600 uppercase">IN STOCK</div>
+                                <% } else if(item.availability === 'Back Order') { %>
+                                    <div class="text-amber-600 uppercase">BACK ORDER</div>
+                                <% } else { %>
+                                    <div class="text-rose-600 uppercase">UNAVAILABLE</div>
+                                <% } %>
+
+                                <% if(item.stock_level && item.stock_level.includes('Low Stock')) { %>
+                                    <div class="mt-1 text-[9px] text-amber-900 bg-amber-200 border border-amber-400 rounded px-1 py-0.5 animate-pulse">
+                                        ⚠️ <%= item.stock_level.replace("Low Stock: ", "") %> left
+                                    </div>
                                 <% } %>
                             </td>
 
-                            <td class="p-3">
-                                <a href="https://www.amazon.ca/dp/<%= item.asin %>" target="_blank" class="font-mono text-xs text-blue-600 hover:underline font-bold">
-                                    <%= item.asin %>
-                                </a>
-                            </td>
-
-                            <td class="p-3">
-                                <div class="title-clamp text-slate-600 font-medium" title="<%= item.header %>">
-                                    <%= item.header %>
-                                </div>
-                            </td>
-
-                            <td class="p-3 text-center whitespace-nowrap">
-                                <span class="px-2 py-0.5 text-[10px] font-black rounded <%= item.availability === 'In Stock' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700' %> uppercase">
-                                    <%= item.availability %>
-                                </span>
-                            </td>
-
-                            <td class="p-3 text-xs text-slate-500 italic truncate max-w-[100px]">
+                            <td class="p-6 text-base font-black seller-cell <%= (item.seller && item.seller.includes('Amazon')) ? 'text-blue-600' : 'text-slate-500' %>" data-seller-val="<%= item.seller %>">
                                 <%= item.seller %>
                             </td>
 
-                            <td class="p-3 text-sm font-bold <%= item.is_changed ? 'text-red-600 animate-pulse' : 'text-slate-900' %>">
-                                <%= item.price %>
-                            </td>
-
-                            <td class="p-3 text-center">
-                                <a href="/history/<%= item.asin %>" class="px-2 py-1 border border-slate-300 text-[10px] font-bold rounded bg-white hover:bg-slate-100 transition">
-                                    HISTORY
-                                </a>
-                            </td>
+                            <td class="p-6 text-xl font-black text-slate-900 price-cell"><%= item.price %></td>
+                            <td class="p-6 text-center"><a href="/history/<%= item.asin %>" class="px-4 py-2 bg-white text-slate-900 text-[10px] font-black rounded-lg border-2 border-slate-900 hover:bg-slate-900 hover:text-white transition-all">VIEW</a></td>
                         </tr>
                     <% }); %>
                 </tbody>
@@ -95,5 +135,105 @@
         </div>
     </div>
 
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const terminal = document.getElementById('terminal-stream');
+        const container = document.getElementById('status-container');
+        const syncStatus = document.getElementById('sync-status');
+        const runBtn = document.getElementById('run-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const lastSyncTimeEl = document.getElementById('last-sync-time');
+
+        let itemsProcessed = 0;
+        let totalItems = 0;
+
+        socket.on('scraper-log', (msg) => {
+            if (container.classList.contains('hidden')) container.classList.remove('hidden');
+            if (msg.includes('Processing')) {
+                const match = msg.match(/\d+/);
+                if (match) totalItems = parseInt(match[0]);
+            }
+            if (msg.includes('-->')) itemsProcessed++;
+            if (totalItems > 0) syncStatus.innerText = `RUNNING: ${itemsProcessed} / ${totalItems}`;
+
+            const line = document.createElement('div');
+            line.className = "border-l-2 border-slate-700 pl-3 mb-1 py-0.5 font-mono text-[11px] leading-relaxed hover:bg-slate-800";
+            if (msg.includes('In Stock')) line.classList.add('text-emerald-400');
+            else if (msg.includes('Back Order')) line.classList.add('text-amber-400');
+            else if (msg.includes('Unavailable')) line.classList.add('text-rose-400');
+            else line.classList.add('text-slate-300');
+
+            line.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            terminal.appendChild(line);
+            terminal.scrollTop = terminal.scrollHeight;
+        });
+
+        socket.on('scraper-done', (newTime) => {
+            syncStatus.innerText = '🏁 COMPLETE';
+            runBtn.classList.remove('hidden');
+            stopBtn.classList.add('hidden');
+            if(newTime) lastSyncTimeEl.innerText = newTime;
+
+            const reloadPrompt = document.createElement('div');
+            reloadPrompt.className = "mt-4 p-3 bg-blue-900/30 border border-blue-500 rounded text-blue-200 text-center font-bold animate-pulse cursor-pointer";
+            reloadPrompt.innerText = "Scan Finished! Click to refresh.";
+            reloadPrompt.onclick = () => window.location.reload();
+            terminal.appendChild(reloadPrompt);
+        });
+
+        async function runReport() {
+            itemsProcessed = 0;
+            container.classList.remove('hidden');
+            runBtn.classList.add('hidden');
+            stopBtn.classList.remove('hidden');
+            terminal.innerHTML = '<div class="text-amber-400 font-bold mb-2">Connecting...</div>';
+            await fetch('/run-report', { method: 'POST' });
+        }
+
+        async function stopReport() {
+            if(confirm("Stop the scraper?")) {
+                runBtn.classList.remove('hidden');
+                stopBtn.classList.add('hidden');
+                syncStatus.innerText = "STOPPING...";
+                await fetch('/stop-report', { method: 'POST' });
+            }
+        }
+
+        function applyFilters() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const stock = document.getElementById('stockFilter').value;
+            const seller = document.getElementById('sellerFilter').value;
+
+            const rows = document.querySelectorAll('.inventory-row');
+
+            rows.forEach(row => {
+                const title = row.querySelector('.title-cell').innerText.toLowerCase();
+                const asin = row.querySelector('.asin-cell').innerText.toLowerCase();
+                const stockVal = row.querySelector('.stock-cell').getAttribute('data-availability-val') || "";
+                const stockLevelVal = row.querySelector('.stock-cell').getAttribute('data-stocklevel-val') || "";
+                const sellerVal = row.querySelector('.seller-cell').getAttribute('data-seller-val') || "";
+
+                const matchSearch = title.includes(search) || asin.includes(search);
+
+                let matchStock = true;
+                if (stock === 'LOW STOCK') {
+                    matchStock = stockLevelVal.includes('LOW STOCK');
+                } else if (stock !== 'all') {
+                    matchStock = (stockVal === stock.toUpperCase());
+                }
+
+                let matchSeller = true;
+                if (seller === 'Amazon') matchSeller = sellerVal.includes('Amazon');
+                if (seller === '3rd Party') matchSeller = sellerVal.includes('3rd Party');
+
+                if (matchSearch && matchStock && matchSeller) {
+                    row.classList.remove('hidden-row');
+                } else {
+                    row.classList.add('hidden-row');
+                }
+            });
+        }
+    </script>
 </body>
 </html>

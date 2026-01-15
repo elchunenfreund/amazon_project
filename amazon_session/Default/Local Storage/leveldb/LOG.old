@@ -1,14 +1,3 @@
-2026/01/12-18:40:53.229 8f81f Reusing MANIFEST /Users/elchu/amazon_project/amazon_session/Default/Local Storage/leveldb/MANIFEST-000001
-2026/01/12-18:40:53.232 8f81f Recovering log #36
-2026/01/12-18:40:53.232 8f81f Level-0 table #38: started
-2026/01/12-18:40:53.235 8f81f Level-0 table #38: 72790 bytes OK
-2026/01/12-18:40:53.237 8f81f Delete type=0 #36
-2026/01/12-18:40:53.237 8f825 Compacting 4@0 + 1@1 files
-2026/01/12-18:40:53.240 8f825 Generated table #40@0: 4015 keys, 200366 bytes
-2026/01/12-18:40:53.240 8f825 Compacted 4@0 + 1@1 files => 200366 bytes
-2026/01/12-18:40:53.241 8f825 compacted to: files[ 0 1 1 0 0 0 0 ]
-2026/01/12-18:40:53.241 8f825 Delete type=2 #38
-2026/01/12-18:40:53.241 8f825 Delete type=2 #35
-2026/01/12-18:40:53.241 8f825 Delete type=2 #32
-2026/01/12-18:40:53.241 8f825 Delete type=2 #27
-2026/01/12-18:40:53.241 8f825 Delete type=2 #30
+2026/01/14-16:03:17.133 51985 Reusing MANIFEST /Users/elchu/amazon_project/amazon_session/Default/Local Storage/leveldb/MANIFEST-000001
+2026/01/14-16:03:17.136 51985 Recovering log #47
+2026/01/14-16:03:17.136 51985 Reusing old log /Users/elchu/amazon_project/amazon_session/Default/Local Storage/leveldb/000047.log 

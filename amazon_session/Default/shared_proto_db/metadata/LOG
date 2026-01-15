@@ -1,3 +1,3 @@
-2026/01/12-18:41:48.113 8fca5 Reusing MANIFEST /Users/elchu/amazon_project/amazon_session/Default/shared_proto_db/metadata/MANIFEST-000001
-2026/01/12-18:41:48.114 8fca5 Recovering log #3
-2026/01/12-18:41:48.114 8fca5 Reusing old log /Users/elchu/amazon_project/amazon_session/Default/shared_proto_db/metadata/000003.log 
+2026/01/14-16:04:09.333 51f3e Reusing MANIFEST /Users/elchu/amazon_project/amazon_session/Default/shared_proto_db/metadata/MANIFEST-000001
+2026/01/14-16:04:09.334 51f3e Recovering log #3
+2026/01/14-16:04:09.334 51f3e Reusing old log /Users/elchu/amazon_project/amazon_session/Default/shared_proto_db/metadata/000003.log 

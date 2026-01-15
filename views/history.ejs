@@ -1,50 +1,57 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>ASIN History: <%= asin %></title>
+    <meta charset="UTF-8">
+    <title>History: <%= asin %></title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>body { font-family: 'Inter', sans-serif; }</style>
 </head>
-<body class="bg-gray-50 p-6 md:p-12">
-    <div class="max-w-5xl mx-auto">
-        <div class="flex justify-between items-center mb-8">
-            <h1 class="text-2xl font-bold text-slate-800">History for <%= asin %></h1>
-            <a href="/" class="text-blue-600 hover:underline">← Back to Dashboard</a>
-        </div>
+<body class="bg-slate-100 p-8 font-sans">
+    <div class="max-w-6xl mx-auto">
+        <a href="/" class="inline-block mb-6 text-blue-600 font-bold hover:underline">← Back to Dashboard</a>
+        <h1 class="text-3xl font-black mb-2 text-slate-800">History for <span class="font-mono text-blue-600"><%= asin %></span></h1>
+        <p class="text-slate-500 mb-8 font-mono text-sm"><%= reports.length %> entries found</p>
 
-        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-            <table class="w-full text-left border-collapse">
-                <thead>
-                    <tr class="bg-slate-50 border-b border-gray-200">
-                        <th class="p-4 font-semibold text-slate-700">Date</th>
-                        <th class="p-4 font-semibold text-slate-700">Price</th>
-                        <th class="p-4 font-semibold text-slate-700">Stock</th>
-                        <th class="p-4 font-semibold text-slate-700">Seller</th>
-                        <th class="p-4 font-semibold text-slate-700">Ranking</th>
+        <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200">
+            <table class="w-full text-left">
+                <thead class="bg-slate-900 text-white text-xs uppercase font-bold">
+                    <tr>
+                        <th class="p-4 border-b border-slate-700">Date</th>
+                        <th class="p-4 border-b border-slate-700">Status</th>
+                        <th class="p-4 border-b border-slate-700">Stock Level</th>
+                        <th class="p-4 border-b border-slate-700">Seller</th>
+                        <th class="p-4 border-b border-slate-700">Price</th>
+                        <th class="p-4 border-b border-slate-700">Rank</th>
                     </tr>
                 </thead>
-                <tbody>
-                    <% reports.forEach((report, index) => {
-                        // Comparison logic: Compare current row to the one before it
-                        const prev = index > 0 ? reports[index - 1] : null;
+                <tbody class="divide-y divide-slate-100 text-sm">
+                    <% reports.forEach(row => { %>
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="p-4 font-mono text-slate-500">
+                                <%= new Date(row.check_date).toLocaleString() %>
+                            </td>
 
-                        const priceChanged = prev && report.price !== prev.price;
-                        const stockChanged = prev && report.availability !== prev.availability;
-                        const sellerChanged = prev && report.seller !== prev.seller;
-                    %>
-                    <tr class="border-b border-gray-100 hover:bg-slate-50">
-                        <td class="p-4 text-slate-500"><%= report.check_date.toLocaleDateString() %></td>
+                            <td class="p-4 font-bold <%= row.isStockChange ? 'text-red-600' : 'text-slate-700' %>">
+                                <%= row.availability %>
+                            </td>
 
-                        <td class="p-4 <%= priceChanged ? 'bg-red-100 text-red-700 font-bold' : '' %>">
-                            <%= report.price %>
-                        </td>
-                        <td class="p-4 <%= stockChanged ? 'bg-red-100 text-red-700 font-bold' : '' %>">
-                            <%= report.availability %>
-                        </td>
-                        <td class="p-4 <%= sellerChanged ? 'bg-red-100 text-red-700 font-bold' : '' %>">
-                            <%= report.seller %>
-                        </td>
-                        <td class="p-4 text-slate-600"><%= report.ranking %></td>
-                    </tr>
+                            <td class="p-4 <%= row.isStockChange ? 'text-red-600 font-bold' : 'text-slate-600' %>">
+                                <%= row.stock_level %>
+                            </td>
+
+                            <td class="p-4 <%= row.isSellerChange ? 'text-red-600 font-bold' : 'text-slate-600' %>">
+                                <%= row.seller %>
+                            </td>
+
+                            <td class="p-4 font-mono <%= row.isPriceChange ? 'bg-red-100 text-red-700 font-bold' : 'text-slate-800' %>">
+                                <%= row.price %>
+                            </td>
+
+                            <td class="p-4 text-slate-500">
+                                <%= row.ranking %>
+                            </td>
+                        </tr>
                     <% }); %>
                 </tbody>
             </table>

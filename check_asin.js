@@ -1,117 +1,249 @@
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 const { Client } = require('pg');
-const path = require('path');
+const fs = require('fs');
 
 chromium.use(stealth);
 
 const client = new Client({
-    connectionString: 'postgresql://localhost:5432/amazon_tracker'
+    connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/amazon_tracker',
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
-async function checkAsin(page, asin) {
-    const url = `https://www.amazon.ca/dp/${asin}?th=1&psc=1`;
+// --- SETTINGS ---
+const USE_HEADLESS = true; // Set to true for deployment
+const COOKIE_FILE = 'amazon_cookies.json';
+const POSTAL_CODE = "H2V3T9";
+// ----------------
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function saveCookies(context) {
     try {
-        // 1. Navigate with a longer timeout
-        await page.goto(url, { waitUntil: 'load', timeout: 60000 });
+        const cookies = await context.cookies();
+        fs.writeFileSync(COOKIE_FILE, JSON.stringify(cookies, null, 2));
+    } catch (e) { /* silent fail */ }
+}
 
-        // 2. WAIT: Give the page 5 seconds to settle and run its scripts
-        await page.waitForTimeout(5000);
-
-        // 3. TITLE EXTRACTION (Retry Logic)
-        let header = "Unknown";
-        const titleSelectors = ['span#productTitle', 'h1#title', '#title'];
-
-        for (const selector of titleSelectors) {
-            const loc = page.locator(selector).first();
-            if (await loc.isVisible()) {
-                header = (await loc.innerText()).trim();
-                break;
-            }
+async function loadCookies(context) {
+    try {
+        if (fs.existsSync(COOKIE_FILE)) {
+            const cookiesString = fs.readFileSync(COOKIE_FILE);
+            const cookies = JSON.parse(cookiesString);
+            await context.addCookies(cookies);
+            console.log("🍪 Cookies loaded.");
+            return true;
         }
+    } catch (e) { console.log("⚠️ Could not load cookies."); }
+    return false;
+}
 
-        // 4. AVAILABILITY & PRICE
-        // We look for the "Buybox" which contains both price and stock status
-        const buyBox = page.locator('#buybox, #ppd, #rightCol').first();
-        const buyBoxText = await buyBox.innerText().catch(() => "");
+async function setLocation(page, postalCode) {
+    const maxRetries = 2;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+            console.log(`📍 Connecting (Attempt ${attempt})...`);
+            await page.goto('https://www.amazon.ca', { waitUntil: 'domcontentloaded' });
+            await page.waitForTimeout(3000);
 
-        const isUnavailable = buyBoxText.toLowerCase().includes("currently unavailable") || buyBoxText === "";
-        let stockStatus = isUnavailable ? "Unavailable" : "In Stock";
-
-        let seller = "N/A", price = "N/A", ranking = "N/A";
-
-        if (!isUnavailable) {
-            // Price - Try multiple common Amazon price IDs
-            const priceSelectors = ['.a-price .a-offscreen', '#price_inside_buybox', '.a-color-price'];
-            for (const sel of priceSelectors) {
-                const pEl = page.locator(sel).first();
-                if (await pEl.isVisible()) {
-                    price = (await pEl.textContent()).trim();
-                    break;
+            // Check Captcha
+            if (await page.locator('form[action="/errors/validateCaptcha"]').count() > 0) {
+                console.log("🚨 AMAZON CAPTCHA DETECTED!");
+                if (!USE_HEADLESS) {
+                    console.log("👉 Solve manual captcha now...");
+                    await page.waitForSelector('#nav-global-location-popover-link', { timeout: 0 });
+                } else {
+                    return false; // Blocked in headless
                 }
             }
 
-            // Seller
-            seller = buyBoxText.toLowerCase().includes("amazon") ? "Yes (Amazon)" : "No (3rd Party)";
+            const locEl = page.locator('#nav-global-location-popover-link');
+            // Check if element exists before grabbing text
+            if (await locEl.count() === 0) continue;
 
-            // Ranking (Scrolling down slightly)
-            await page.mouse.wheel(0, 1500);
-            await page.waitForTimeout(1000);
-            const bodyText = await page.innerText('body').catch(() => "");
-            const rankMatch = bodyText.match(/#([0-9,]+)\s+in\s+([A-Za-z\s&,>]+)/);
-            ranking = rankMatch ? rankMatch[0].split('(')[0].trim() : "N/A";
+            const locationText = await locEl.innerText();
+            if (locationText.includes(postalCode.substring(0, 3))) {
+                console.log("✅ Location is correct.");
+                return true;
+            }
+
+            console.log("   --> Setting new location...");
+            await locEl.click();
+            await page.waitForTimeout(2000);
+
+            const zipInput = page.locator('#GLUXZipUpdateInput_0');
+            if (await zipInput.isVisible()) {
+                await zipInput.fill(postalCode.substring(0, 3));
+                await page.locator('#GLUXZipUpdateInput_1').fill(postalCode.substring(3));
+                await page.locator('#GLUXZipUpdate').click();
+                await page.waitForTimeout(1000);
+
+                const doneBtn = page.locator('button[name="glowDoneButton"]');
+                if (await doneBtn.isVisible()) await doneBtn.click();
+
+                await page.waitForTimeout(3000);
+                return true;
+            }
+        } catch (e) { console.log(`   --> Location Error: ${e.message}`); }
+    }
+    return false;
+}
+
+async function scrapeAsin(page, asin) {
+    try {
+        const delay = Math.floor(Math.random() * (5000 - 2000 + 1) + 2000);
+        await sleep(delay);
+
+        await page.goto(`https://www.amazon.ca/dp/${asin.trim()}?th=1&psc=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+        if (await page.locator('form[action="/errors/validateCaptcha"]').count() > 0) {
+            console.log(`   --> 🤖 CAPTCHA HIT on product page!`);
+            return null;
         }
 
-        return { asin, header, availability: stockStatus, doggy: false, seller, price, ranking };
-    } catch (err) {
-        return { asin, header: "Timeout", availability: "Error", doggy: false, seller: "N/A", price: "N/A", ranking: "N/A" };
+        await page.waitForSelector('#ppd', { timeout: 8000 }).catch(() => {});
+
+        return await page.evaluate(() => {
+            // 1. BUTTON CHECK
+            const cartBtn = document.querySelector('#add-to-cart-button') ||
+                            document.querySelector('input[name="submit.add-to-cart"]') ||
+                            document.querySelector('#exports_desktop_qualifiedBuybox_addToCart_feature_div') ||
+                            document.querySelector('.a-button-stack input[type="submit"]');
+
+            const buyNowBtn = document.querySelector('#buy-now-button') ||
+                              document.querySelector('input[name="submit.buy-now"]');
+
+            const isOrderable = !!(cartBtn || buyNowBtn);
+
+            // 2. AVAILABILITY TEXT
+            const availContainer = document.querySelector('#availability') ||
+                                   document.querySelector('#availabilityInsideBuyBox_feature_div') ||
+                                   document.querySelector('#exports_desktop_qualifiedBuybox_availabilityInsideBuyBox');
+
+            const availText = availContainer ? availContainer.innerText.trim() : "";
+            const availLower = availText.toLowerCase();
+
+            let availability = "Unavailable";
+            let stockLevel = "Normal";
+
+            if (isOrderable) {
+                availability = "In Stock";
+
+                // Downgrade only if specific "delayed" words exist
+                if (availLower.includes("usually ships") ||
+                    availLower.includes("ships from") ||
+                    availLower.includes("weeks") ||
+                    availLower.includes("months") ||
+                    availLower.includes("not yet released") ||
+                    availLower.includes("temporarily out of stock")) {
+
+                    // "Ships from Amazon" is NOT a delay
+                    if(!availLower.includes("ships from amazon")) {
+                        availability = "Back Order";
+                    }
+                }
+            }
+
+            // 3. STRICT LOW STOCK CHECK
+            // We only look for "Only X left" if the text DOES NOT start with "In Stock"
+            // This prevents false positives where "In Stock" is main, but "Only X left" is hidden.
+            if (!availText.startsWith("In Stock")) {
+                const lowStockMatch = availText.match(/Only\s+(\d+)\s+left/i);
+                if (lowStockMatch) {
+                    stockLevel = `Low Stock: ${lowStockMatch[1]}`;
+                    // Force In Stock if we see a number
+                    availability = "In Stock";
+                }
+            } else {
+                stockLevel = "Normal";
+            }
+
+            // 4. SELLER
+            let seller = "N/A";
+            if (isOrderable) {
+                const merchantDiv = document.querySelector('#merchantInfoFeature_feature_div');
+                const buyBoxDiv = document.querySelector('#buybox');
+                const sellerText = (merchantDiv ? merchantDiv.innerText : "") + (buyBoxDiv ? buyBoxDiv.innerText : "");
+
+                if (sellerText.toLowerCase().includes("amazon")) seller = "Amazon";
+                else seller = "3rd Party";
+            }
+
+            // 5. PRICE
+            const price = document.querySelector('.a-price .a-offscreen')?.innerText ||
+                          document.querySelector('#price_inside_buybox')?.innerText || "N/A";
+
+            // 6. RANK
+            let rank = "N/A";
+            const rankMatch = document.body.innerText.match(/#([0-9,]+) in [a-zA-Z &]+/);
+            if(rankMatch) rank = rankMatch[0];
+
+            return {
+                header: document.querySelector('#productTitle')?.innerText.trim() || document.title,
+                price,
+                seller,
+                availability,
+                stock_level: stockLevel,
+                ranking: rank
+            };
+        });
+    } catch (e) {
+        console.log(`   --> Error: ${e.message}`);
+        return null;
     }
 }
 
 (async () => {
-    await client.connect();
-    const userDataDir = path.join(__dirname, 'amazon_session');
+    let browser;
+    try {
+        console.log(`🚀 Launching (Headless: ${USE_HEADLESS})...`);
+        await client.connect();
 
-    // --- STEALTH UPGRADE ---
-    const context = await chromium.launchPersistentContext(userDataDir, {
-        headless: true,
-        // This makes your headless browser look like a standard Windows Chrome browser
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-        viewport: { width: 1280, height: 800 }
-    });
+        browser = await chromium.launch({
+            headless: USE_HEADLESS,
+            channel: 'chrome',
+            args: ['--no-sandbox', '--disable-setuid-sandbox', '--window-size=1920,1080']
+        });
 
-    const page = context.pages()[0] || await context.newPage();
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        });
 
-    const dbRes = await client.query('SELECT asin FROM products');
-    const asins = dbRes.rows.map(r => r.asin);
+        await loadCookies(context);
 
-    console.log(`🚀 STARTING PROTECTED SCRAPE FOR ${asins.length} ITEMS...\n`);
+        const page = await context.newPage();
+        await page.setViewportSize({ width: 1920, height: 1080 });
 
-    for (let i = 0; i < asins.length; i++) {
-        const asin = asins[i];
-        const data = await checkAsin(page, asin);
+        const locSuccess = await setLocation(page, POSTAL_CODE);
 
-        // Standard Insert
-        try {
-            const prevRes = await client.query('SELECT price FROM daily_reports WHERE asin = $1 ORDER BY id DESC LIMIT 1', [asin]);
-            let hasChanged = (prevRes.rows.length > 0 && prevRes.rows[0].price !== data.price);
+        if (locSuccess) {
+            await saveCookies(context); // Refresh cookie expiration
+            const { rows } = await client.query('SELECT asin FROM products');
+            console.log(`📋 Processing ${rows.length} ASINs...`);
 
-            await client.query(`
-                INSERT INTO daily_reports (asin, header, availability, is_doggy, seller, price, ranking, is_changed, check_date)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE)
-            `, [data.asin, data.header, data.availability, data.doggy, data.seller, data.price, data.ranking, hasChanged]);
+            for (let row of rows) {
+                const asin = row.asin.trim();
+                console.log(`🔍 Checking ${asin}...`);
+                const data = await scrapeAsin(page, asin);
 
-            console.log(`[${i+1}] ${asin} | ${data.availability} | ${data.price} | ${data.header.substring(0, 25)}...`);
-        } catch (dbErr) {
-            console.error(`❌ DB Error: ${dbErr.message}`);
+                if (data) {
+                    console.log(`   --> ${data.availability} | ${data.stock_level} | ${data.seller}`);
+                    await client.query(`
+                        INSERT INTO daily_reports (asin, header, availability, stock_level, seller, price, ranking, check_date)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_TIMESTAMP)`,
+                        [asin, data.header, data.availability, data.stock_level, data.seller, data.price, data.ranking]);
+                } else {
+                    console.log(`   --> ⚠️ Skipped`);
+                }
+
+                if(Math.random() > 0.8) await saveCookies(context);
+            }
         }
-
-        // --- THE RESET ---
-        // Every 5 items, we wait longer to let the Amazon "Anti-Spam" cooling period pass
-        const delay = (i > 0 && i % 5 === 0) ? 15000 : (8000 + Math.random() * 4000);
-        await page.waitForTimeout(delay);
+    } catch (e) { console.error("Fatal:", e); }
+    finally {
+        if (browser) await browser.close();
+        await client.end();
+        console.log("🏁 Done.");
+        process.exit(0);
     }
-
-    await context.close();
-    await client.end();
 })();

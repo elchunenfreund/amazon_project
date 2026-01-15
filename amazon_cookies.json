@@ -1,0 +1,92 @@
+[
+  {
+    "name": "session-id",
+    "value": "137-0924736-0469415",
+    "domain": ".amazon.ca",
+    "path": "/",
+    "expires": 1800045305.054395,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "session-id-time",
+    "value": "2082787201l",
+    "domain": ".amazon.ca",
+    "path": "/",
+    "expires": 1800045305.054585,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "i18n-prefs",
+    "value": "CAD",
+    "domain": ".amazon.ca",
+    "path": "/",
+    "expires": 1800045305.0546,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "lc-acbca",
+    "value": "en_CA",
+    "domain": ".amazon.ca",
+    "path": "/",
+    "expires": 1800045305.054611,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "ubid-acbca",
+    "value": "134-0408880-5838315",
+    "domain": ".amazon.ca",
+    "path": "/",
+    "expires": 1800045307.780229,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "ad-id",
+    "value": "A1D6P-os1kGBjcuPxwN7uUU|t",
+    "domain": ".amazon-adsystem.com",
+    "path": "/",
+    "expires": 1790887040.779842,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "session-token",
+    "value": "kbxQzwbhoHOJjgSG6OQC9gK19LD0wKebrbIpa8V4zZjOubVX5rp5UnBAvenolEKqgwxtWt3YDkqUOEkpManWG4x2Za5mmqEOijL5UE/7Y8VYge1mGV8ILnB/xZjfwxrhU2yuqO43EWs3y0thJZNE4b/idh0ajpy56fHTMsNcJer/rH/VE+VXi/nwX1/HtexIaimQEmyhRZZUXveBNOKeHXMX8reA5l/YZsZvurlUrhRFzOQ/2iJD9t5SIpzDJ7kGvnDAJTfT77cv+r/x/hM+M3Q5IU0behTiFYzL52LtifhutPvTHodQnNpflPx1jhMjy8Rax1GJaZsw2/bbewHOgv6fgQbyFJ47",
+    "domain": ".amazon.ca",
+    "path": "/",
+    "expires": 1800045969.122985,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "rxc",
+    "value": "AKgPdGeOJwPWFrwFg60",
+    "domain": "www.amazon.ca",
+    "path": "/",
+    "expires": 1768596424.756578,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "csm-hit",
+    "value": "tb:s-0XFNN9VGG6WYD1T8TBK6|1768510029418&t:1768510029485&adb:adblk_no",
+    "domain": "www.amazon.ca",
+    "path": "/",
+    "expires": 1798750029,
+    "httpOnly": false,
+    "secure": false,
+    "sameSite": "Lax"
+  }
+]
