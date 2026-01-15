@@ -71,20 +71,20 @@
   },
   {
     "name": "rxc",
-    "value": "AKgPdGfEIwPWFrwFgK0",
+    "value": "AKgPdGf7IwPWFrwFgK0",
     "domain": "www.amazon.ca",
     "path": "/",
-    "expires": 1768597378.60398,
+    "expires": 1768597437.233551,
     "httpOnly": false,
     "secure": false,
     "sameSite": "Lax"
   },
   {
     "name": "csm-hit",
-    "value": "tb:s-4N9ME75S32D75DH5CWBN|1768510980747&t:1768510980800&adb:adblk_no",
+    "value": "tb:s-RXVG4ZAE9TAWXAHZMQ4S|1768511040035&t:1768511040095&adb:adblk_no",
     "domain": "www.amazon.ca",
     "path": "/",
-    "expires": 1798750980,
+    "expires": 1798751040,
     "httpOnly": false,
     "secure": false,
     "sameSite": "Lax"
