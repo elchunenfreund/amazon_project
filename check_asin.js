@@ -1,8 +1,8 @@
-const { chromium } = require('playwright-core');
-const { Client } = require('pg'); // KEEP
-const fs = require('fs');         // KEEP
+const { chromium } = require('playwright-core'); // Standard light version
+const { Client } = require('pg');
+const fs = require('fs');
 
-chromium.use(stealth);
+// --- REMOVED: chromium.use(stealth); <--- This was the cause of the error
 
 const client = new Client({
     connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/amazon_tracker',
@@ -10,7 +10,7 @@ const client = new Client({
 });
 
 // --- SETTINGS ---
-const USE_HEADLESS = true; // Set to true for deployment
+const USE_HEADLESS = true;
 const COOKIE_FILE = 'amazon_cookies.json';
 const POSTAL_CODE = "H2V3T9";
 // ----------------
@@ -45,19 +45,17 @@ async function setLocation(page, postalCode) {
             await page.goto('https://www.amazon.ca', { waitUntil: 'domcontentloaded' });
             await page.waitForTimeout(3000);
 
-            // Check Captcha
             if (await page.locator('form[action="/errors/validateCaptcha"]').count() > 0) {
                 console.log("🚨 AMAZON CAPTCHA DETECTED!");
                 if (!USE_HEADLESS) {
                     console.log("👉 Solve manual captcha now...");
                     await page.waitForSelector('#nav-global-location-popover-link', { timeout: 0 });
                 } else {
-                    return false; // Blocked in headless
+                    return false;
                 }
             }
 
             const locEl = page.locator('#nav-global-location-popover-link');
-            // Check if element exists before grabbing text
             if (await locEl.count() === 0) continue;
 
             const locationText = await locEl.innerText();
@@ -103,7 +101,6 @@ async function scrapeAsin(page, asin) {
         await page.waitForSelector('#ppd', { timeout: 8000 }).catch(() => {});
 
         return await page.evaluate(() => {
-            // 1. BUTTON CHECK
             const cartBtn = document.querySelector('#add-to-cart-button') ||
                             document.querySelector('input[name="submit.add-to-cart"]') ||
                             document.querySelector('#exports_desktop_qualifiedBuybox_addToCart_feature_div') ||
@@ -114,7 +111,6 @@ async function scrapeAsin(page, asin) {
 
             const isOrderable = !!(cartBtn || buyNowBtn);
 
-            // 2. AVAILABILITY TEXT
             const availContainer = document.querySelector('#availability') ||
                                    document.querySelector('#availabilityInsideBuyBox_feature_div') ||
                                    document.querySelector('#exports_desktop_qualifiedBuybox_availabilityInsideBuyBox');
@@ -127,8 +123,6 @@ async function scrapeAsin(page, asin) {
 
             if (isOrderable) {
                 availability = "In Stock";
-
-                // Downgrade only if specific "delayed" words exist
                 if (availLower.includes("usually ships") ||
                     availLower.includes("ships from") ||
                     availLower.includes("weeks") ||
@@ -136,28 +130,22 @@ async function scrapeAsin(page, asin) {
                     availLower.includes("not yet released") ||
                     availLower.includes("temporarily out of stock")) {
 
-                    // "Ships from Amazon" is NOT a delay
                     if(!availLower.includes("ships from amazon")) {
                         availability = "Back Order";
                     }
                 }
             }
 
-            // 3. STRICT LOW STOCK CHECK
-            // We only look for "Only X left" if the text DOES NOT start with "In Stock"
-            // This prevents false positives where "In Stock" is main, but "Only X left" is hidden.
             if (!availText.startsWith("In Stock")) {
                 const lowStockMatch = availText.match(/Only\s+(\d+)\s+left/i);
                 if (lowStockMatch) {
                     stockLevel = `Low Stock: ${lowStockMatch[1]}`;
-                    // Force In Stock if we see a number
                     availability = "In Stock";
                 }
             } else {
                 stockLevel = "Normal";
             }
 
-            // 4. SELLER
             let seller = "N/A";
             if (isOrderable) {
                 const merchantDiv = document.querySelector('#merchantInfoFeature_feature_div');
@@ -168,11 +156,9 @@ async function scrapeAsin(page, asin) {
                 else seller = "3rd Party";
             }
 
-            // 5. PRICE
             const price = document.querySelector('.a-price .a-offscreen')?.innerText ||
                           document.querySelector('#price_inside_buybox')?.innerText || "N/A";
 
-            // 6. RANK
             let rank = "N/A";
             const rankMatch = document.body.innerText.match(/#([0-9,]+) in [a-zA-Z &]+/);
             if(rankMatch) rank = rankMatch[0];
@@ -193,22 +179,23 @@ async function scrapeAsin(page, asin) {
 }
 
 (async () => {
-    let browser;
+    let browserInstance; // Renamed to avoid confusion
     try {
         console.log(`🚀 Launching (Headless: ${USE_HEADLESS})...`);
         await client.connect();
 
-        const browser = await chromium.launch({
+        // Launch using playwright-core with native stealth args
+        browserInstance = await chromium.launch({
             headless: true,
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
-                '--disable-blink-features=AutomationControlled', // Native stealth fix
+                '--disable-blink-features=AutomationControlled',
                 '--window-size=1920,1080'
             ]
         });
 
-        const context = await browser.newContext({
+        const context = await browserInstance.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         });
 
@@ -220,7 +207,7 @@ async function scrapeAsin(page, asin) {
         const locSuccess = await setLocation(page, POSTAL_CODE);
 
         if (locSuccess) {
-            await saveCookies(context); // Refresh cookie expiration
+            await saveCookies(context);
             const { rows } = await client.query('SELECT asin FROM products');
             console.log(`📋 Processing ${rows.length} ASINs...`);
 
@@ -244,7 +231,7 @@ async function scrapeAsin(page, asin) {
         }
     } catch (e) { console.error("Fatal:", e); }
     finally {
-        if (browser) await browser.close();
+        if (browserInstance) await browserInstance.close();
         await client.end();
         console.log("🏁 Done.");
         process.exit(0);

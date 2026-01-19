@@ -1,0 +1,18 @@
+# Ignore heavy local dev folders
+node_modules/
+.git/
+.github/
+
+# Ignore documentation and images
+*.png
+*.jpg
+*.jpeg
+*.pdf
+*.md
+docs/
+screenshots/
+
+# Ignore test files
+test/
+spec/
+tests/
