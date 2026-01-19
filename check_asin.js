@@ -179,11 +179,17 @@ async function scrapeAsin(page, asin) {
 }
 
 (async () => {
-    let browserInstance;
-    try {
-        console.log(`🚀 Launching (Headless: ${USE_HEADLESS})...`);
-        await client.connect();
+    let browserInstance = null;
+    let context = null;
+    let page = null;
 
+    // Helper to start/restart browser
+    const launchBrowser = async () => {
+        if (browserInstance) {
+            console.log("♻️  Closing old browser to free memory...");
+            await browserInstance.close();
+        }
+        console.log("🚀 Launching Fresh Browser...");
         browserInstance = await chromium.launch({
             headless: true,
             executablePath: process.env.GOOGLE_CHROME_BIN || '/usr/bin/google-chrome',
@@ -195,60 +201,62 @@ async function scrapeAsin(page, asin) {
                 '--disable-blink-features=AutomationControlled'
             ]
         });
-
-        const context = await browserInstance.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        context = await browserInstance.newContext({
+             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         });
-
         await loadCookies(context);
-
-        // Initialize the first page
-        let page = await context.newPage();
+        page = await context.newPage();
         await page.setViewportSize({ width: 1920, height: 1080 });
+        await setLocation(page, POSTAL_CODE);
+    };
 
-        const locSuccess = await setLocation(page, POSTAL_CODE);
+    try {
+        await client.connect();
+        await launchBrowser(); // Initial launch
 
-        if (locSuccess) {
-            await saveCookies(context);
-            const { rows } = await client.query('SELECT asin FROM products ORDER BY id ASC'); // Added ORDER BY for consistency
-            console.log(`📋 Processing ${rows.length} ASINs...`);
+        const { rows } = await client.query('SELECT asin FROM products ORDER BY id ASC');
+        console.log(`📋 Processing ${rows.length} ASINs...`);
 
-            // Use .entries() to get the index for the reset logic
-            for (let [index, row] of rows.entries()) {
-
-                // --- MEMORY SAVER: Refresh Page every 25 items ---
-                if (index > 0 && index % 25 === 0) {
-                    console.log(`♻️  [Memory Check] Refreshing browser tab to free RAM...`);
-                    try { await page.close(); } catch(e) {}
-                    page = await context.newPage();
-                    await page.setViewportSize({ width: 1920, height: 1080 });
-                    // Optional: Re-verify location if paranoid, but usually cookies hold it
-                }
-                // -------------------------------------------------
-
-                const asin = row.asin.trim();
-                console.log(`[${index + 1}/${rows.length}] 🔍 Checking ${asin}...`);
-
+        for (let [index, row] of rows.entries()) {
+            // --- FULL RESTART EVERY 50 ITEMS ---
+            if (index > 0 && index % 50 === 0) {
                 try {
-                    const data = await scrapeAsin(page, asin);
-
-                    if (data) {
-                        console.log(`   --> ${data.availability} | ${data.stock_level} | ${data.seller}`);
-                        await client.query(`
-                            INSERT INTO daily_reports (asin, header, availability, stock_level, seller, price, ranking, check_date)
-                            VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_TIMESTAMP)`,
-                            [asin, data.header, data.availability, data.stock_level, data.seller, data.price, data.ranking]);
-                    } else {
-                        console.log(`   --> ⚠️ Skipped (No Data)`);
-                    }
-                } catch (innerError) {
-                    console.error(`   --> ❌ Failed to process ${asin}: ${innerError.message}`);
-                    // Continue to next item, do not crash
+                    await launchBrowser();
+                } catch (err) {
+                    console.error("⚠️ Browser restart failed, trying to continue:", err);
                 }
-
-                // Periodic Cookie Save
-                if(Math.random() > 0.8) await saveCookies(context);
             }
+            // -----------------------------------
+
+            const asin = row.asin.trim();
+            console.log(`[${index + 1}/${rows.length}] 🔍 Checking ${asin}...`);
+
+            // Add a timeout race so one bad page doesn't freeze the script forever
+            try {
+                const data = await Promise.race([
+                    scrapeAsin(page, asin),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 90000))
+                ]);
+
+                if (data) {
+                    console.log(`   --> ${data.availability} | ${data.stock_level} | ${data.seller}`);
+                    await client.query(`
+                        INSERT INTO daily_reports (asin, header, availability, stock_level, seller, price, ranking, check_date)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_TIMESTAMP)`,
+                        [asin, data.header, data.availability, data.stock_level, data.seller, data.price, data.ranking]);
+                } else {
+                    console.log(`   --> ⚠️ Skipped (No Data)`);
+                }
+            } catch (innerError) {
+                console.error(`   --> ❌ Failed ${asin}: ${innerError.message}`);
+                // If it was a timeout or crash, force a reload next time
+                if (innerError.message === "Timeout") {
+                    console.log("   --> 🔄 Timeout detected, reloading page...");
+                    try { await page.reload(); } catch(e) {}
+                }
+            }
+
+            if(Math.random() > 0.8) await saveCookies(context);
         }
     } catch (e) {
         console.error("❌ Fatal Script Error:", e);
