@@ -179,7 +179,7 @@ async function scrapeAsin(page, asin) {
 }
 
 (async () => {
-    let browserInstance; // Renamed to avoid confusion
+    let browserInstance; //Renamed to avoid confusion
     try {
         console.log(`🚀 Launching (Headless: ${USE_HEADLESS})...`);
         await client.connect();

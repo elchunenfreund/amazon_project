@@ -1,18 +1,15 @@
-# Ignore heavy local dev folders
-node_modules/
+# Remove documentation and large git history
 .git/
 .github/
-
-# Ignore documentation and images
+README.md
 *.png
 *.jpg
 *.jpeg
-*.pdf
-*.md
-docs/
 screenshots/
 
-# Ignore test files
-test/
-spec/
-tests/
+# Remove browser caches that might have leaked in
+node_modules/playwright-core/.local-browsers/
+node_modules/playwright/.local-browsers/
+
+# Remove any playwright-related shell files
+*headless-shell*
