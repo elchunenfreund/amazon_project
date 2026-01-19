@@ -179,15 +179,13 @@ async function scrapeAsin(page, asin) {
 }
 
 (async () => {
-    let browserInstance; //Renamed to avoid confusion
+    let browserInstance;
     try {
         console.log(`🚀 Launching (Headless: ${USE_HEADLESS})...`);
         await client.connect();
 
-        // Launch using playwright-core with native stealth args
         browserInstance = await chromium.launch({
             headless: true,
-            // This tells Playwright: "Use the browser Heroku just installed for us"
             executablePath: process.env.GOOGLE_CHROME_BIN || '/usr/bin/google-chrome',
             args: [
                 '--no-sandbox',
@@ -204,36 +202,57 @@ async function scrapeAsin(page, asin) {
 
         await loadCookies(context);
 
-        const page = await context.newPage();
+        // Initialize the first page
+        let page = await context.newPage();
         await page.setViewportSize({ width: 1920, height: 1080 });
 
         const locSuccess = await setLocation(page, POSTAL_CODE);
 
         if (locSuccess) {
             await saveCookies(context);
-            const { rows } = await client.query('SELECT asin FROM products');
+            const { rows } = await client.query('SELECT asin FROM products ORDER BY id ASC'); // Added ORDER BY for consistency
             console.log(`📋 Processing ${rows.length} ASINs...`);
 
-            for (let row of rows) {
-                const asin = row.asin.trim();
-                console.log(`🔍 Checking ${asin}...`);
-                const data = await scrapeAsin(page, asin);
+            // Use .entries() to get the index for the reset logic
+            for (let [index, row] of rows.entries()) {
 
-                if (data) {
-                    console.log(`   --> ${data.availability} | ${data.stock_level} | ${data.seller}`);
-                    await client.query(`
-                        INSERT INTO daily_reports (asin, header, availability, stock_level, seller, price, ranking, check_date)
-                        VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_TIMESTAMP)`,
-                        [asin, data.header, data.availability, data.stock_level, data.seller, data.price, data.ranking]);
-                } else {
-                    console.log(`   --> ⚠️ Skipped`);
+                // --- MEMORY SAVER: Refresh Page every 25 items ---
+                if (index > 0 && index % 25 === 0) {
+                    console.log(`♻️  [Memory Check] Refreshing browser tab to free RAM...`);
+                    try { await page.close(); } catch(e) {}
+                    page = await context.newPage();
+                    await page.setViewportSize({ width: 1920, height: 1080 });
+                    // Optional: Re-verify location if paranoid, but usually cookies hold it
+                }
+                // -------------------------------------------------
+
+                const asin = row.asin.trim();
+                console.log(`[${index + 1}/${rows.length}] 🔍 Checking ${asin}...`);
+
+                try {
+                    const data = await scrapeAsin(page, asin);
+
+                    if (data) {
+                        console.log(`   --> ${data.availability} | ${data.stock_level} | ${data.seller}`);
+                        await client.query(`
+                            INSERT INTO daily_reports (asin, header, availability, stock_level, seller, price, ranking, check_date)
+                            VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_TIMESTAMP)`,
+                            [asin, data.header, data.availability, data.stock_level, data.seller, data.price, data.ranking]);
+                    } else {
+                        console.log(`   --> ⚠️ Skipped (No Data)`);
+                    }
+                } catch (innerError) {
+                    console.error(`   --> ❌ Failed to process ${asin}: ${innerError.message}`);
+                    // Continue to next item, do not crash
                 }
 
+                // Periodic Cookie Save
                 if(Math.random() > 0.8) await saveCookies(context);
             }
         }
-    } catch (e) { console.error("Fatal:", e); }
-    finally {
+    } catch (e) {
+        console.error("❌ Fatal Script Error:", e);
+    } finally {
         if (browserInstance) await browserInstance.close();
         await client.end();
         console.log("🏁 Done.");
