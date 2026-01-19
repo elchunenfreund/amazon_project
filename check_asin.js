@@ -187,6 +187,8 @@ async function scrapeAsin(page, asin) {
         // Launch using playwright-core with native stealth args
         browserInstance = await chromium.launch({
             headless: true,
+            // Add this specific line to point to the Heroku Buildpack browser:
+            executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || '/usr/bin/google-chrome',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
