@@ -1,7 +1,6 @@
-const { chromium } = require('playwright-extra');
-const stealth = require('puppeteer-extra-plugin-stealth')();
-const { Client } = require('pg');
-const fs = require('fs');
+const { chromium } = require('playwright-core');
+const { Client } = require('pg'); // KEEP
+const fs = require('fs');         // KEEP
 
 chromium.use(stealth);
 
@@ -199,12 +198,12 @@ async function scrapeAsin(page, asin) {
         console.log(`🚀 Launching (Headless: ${USE_HEADLESS})...`);
         await client.connect();
 
-        browser = await chromium.launch({
+        const browser = await chromium.launch({
             headless: true,
             args: [
-                '--no-sandbox',               // REQUIRED for Heroku
-                '--disable-setuid-sandbox',   // REQUIRED for Heroku
-                '--disable-dev-shm-usage',
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-blink-features=AutomationControlled', // Native stealth fix
                 '--window-size=1920,1080'
             ]
         });

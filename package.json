@@ -1,11 +1,10 @@
 {
   "name": "amazon_project",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Amazon Scraper - Optimized for Heroku",
+  "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "postinstall": "npx playwright install chromium"
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
@@ -15,9 +14,7 @@
     "exceljs": "^4.4.0",
     "express": "^5.2.1",
     "pg": "^8.17.1",
-    "playwright": "^1.57.0",
-    "playwright-extra": "^4.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
+    "playwright-core": "^1.50.1",
     "socket.io": "^4.8.3"
   }
 }
