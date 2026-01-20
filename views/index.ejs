@@ -861,7 +861,7 @@
 
         function updateStatusFilter() {
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:updateStatusFilter:entry',message:'updateStatusFilter called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:updateStatusFilter:entry',message:'updateStatusFilter called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});
             // #endregion
             const checkboxes = document.querySelectorAll('.status-checkbox');
             const allCheckbox = document.querySelector('.status-checkbox[value="all"]');
@@ -873,15 +873,22 @@
 
             selectedStatuses = [];
 
-            // If "all" is checked, uncheck others and select all
-            if (allCheckbox && allCheckbox.checked) {
+            // Check if any non-"all" checkboxes are checked
+            const anyOtherChecked = otherCheckboxes.some(cb => cb.checked);
+
+            // If "all" is checked AND no other checkbox is checked, keep "all" selected
+            // But if a user clicks another checkbox while "all" is checked, uncheck "all" first
+            if (allCheckbox && allCheckbox.checked && !anyOtherChecked) {
+                // "All" is selected and no others are checked - this is the default state
                 otherCheckboxes.forEach(cb => cb.checked = false);
                 selectedStatuses = ['all'];
                 const statusText = document.getElementById('statusFilterText');
                 if (statusText) statusText.textContent = 'ALL';
             } else {
                 // Uncheck "all" if other checkboxes are selected
-                if (allCheckbox) allCheckbox.checked = false;
+                if (allCheckbox && anyOtherChecked) {
+                    allCheckbox.checked = false;
+                }
 
                 // Get selected statuses
                 otherCheckboxes.forEach(cb => {
