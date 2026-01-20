@@ -18,6 +18,18 @@ let currentScraperProcess = null;
 
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
+app.use(express.json());
+
+// Helper function to format time in Montreal timezone
+function formatMontrealTime(date) {
+    if (!date) return '--:--:--';
+    return new Date(date).toLocaleTimeString('en-US', { timeZone: 'America/Montreal' });
+}
+
+function formatMontrealDateTime(date) {
+    if (!date) return '';
+    return new Date(date).toLocaleString('en-US', { timeZone: 'America/Montreal' });
+}
 
 app.get('/', async (req, res) => {
     try {
@@ -26,6 +38,13 @@ app.get('/', async (req, res) => {
         result.rows.forEach(row => {
             if (!grouped[row.asin]) grouped[row.asin] = [];
             grouped[row.asin].push(row);
+        });
+
+        // Get product metadata (comment, snooze_until) for each ASIN
+        const productMeta = await pool.query(`SELECT asin, comment, snooze_until FROM products`);
+        const metaMap = {};
+        productMeta.rows.forEach(row => {
+            metaMap[row.asin] = { comment: row.comment, snooze_until: row.snooze_until };
         });
 
         const dashboardData = [];
@@ -42,15 +61,24 @@ app.get('/', async (req, res) => {
                 if (latest.seller !== previous.seller) hasChanged = true;
             }
             latest.hasChanged = hasChanged;
+
+            // Add metadata
+            const meta = metaMap[asin] || {};
+            latest.comment = meta.comment || '';
+            latest.snooze_until = meta.snooze_until;
+            latest.isSnoozed = meta.snooze_until && new Date(meta.snooze_until) > new Date();
+
             dashboardData.push(latest);
         }
 
         const timeResult = await pool.query(`SELECT check_date FROM daily_reports ORDER BY check_date DESC LIMIT 1`);
-        const lastSync = (timeResult.rows.length > 0)
-            ? new Date(timeResult.rows[0].check_date).toLocaleTimeString('en-US')
-            : '--:--:--';
+        const lastSync = formatMontrealTime(timeResult.rows[0]?.check_date);
 
-        dashboardData.sort((a, b) => (b.hasChanged - a.hasChanged) || a.asin.localeCompare(b.asin));
+        // Sort: snoozed items to bottom, then by hasChanged, then by ASIN
+        dashboardData.sort((a, b) => {
+            if (a.isSnoozed !== b.isSnoozed) return a.isSnoozed ? 1 : -1;
+            return (b.hasChanged - a.hasChanged) || a.asin.localeCompare(b.asin);
+        });
 
         res.render('index', { reports: dashboardData, lastSyncTime: lastSync });
     } catch (err) { res.status(500).send(err.message); }
@@ -67,7 +95,7 @@ app.post('/run-report', (req, res) => {
 
     currentScraperProcess.on('close', () => {
         currentScraperProcess = null;
-        io.emit('scraper-done', new Date().toLocaleTimeString('en-US'));
+        io.emit('scraper-done', formatMontrealTime(new Date()));
     });
 
     res.sendStatus(200);
@@ -92,7 +120,7 @@ app.post('/stop-report', (req, res) => {
     });
 
     io.emit('scraper-log', "🛑 FORCE STOPPED ALL SCRAPERS");
-    io.emit('scraper-done', new Date().toLocaleTimeString('en-US'));
+    io.emit('scraper-done', formatMontrealTime(new Date()));
 
     res.sendStatus(200);
 });
@@ -106,8 +134,81 @@ app.get('/history/:asin', async (req, res) => {
         curr.isPriceChange = (curr.price !== prev.price);
         curr.isStockChange = (curr.availability !== prev.availability) || (curr.stock_level !== prev.stock_level);
         curr.isSellerChange = (curr.seller !== prev.seller);
+        // Format date in Montreal timezone
+        curr.check_date_formatted = formatMontrealDateTime(curr.check_date);
+    }
+    if (rows.length > 0 && !rows[0].check_date_formatted) {
+        rows[0].check_date_formatted = formatMontrealDateTime(rows[0].check_date);
     }
     res.render('history', { reports: rows, asin: req.params.asin });
+});
+
+// API Endpoints
+app.post('/api/asins', async (req, res) => {
+    try {
+        const { asin } = req.body;
+        if (!asin || typeof asin !== 'string' || asin.trim().length === 0) {
+            return res.status(400).json({ error: 'ASIN is required' });
+        }
+
+        const cleanAsin = asin.trim().toUpperCase();
+        // Basic ASIN validation (10 characters, alphanumeric)
+        if (!/^[A-Z0-9]{10}$/.test(cleanAsin)) {
+            return res.status(400).json({ error: 'Invalid ASIN format. ASIN must be 10 alphanumeric characters.' });
+        }
+
+        await pool.query('INSERT INTO products (asin) VALUES ($1) ON CONFLICT (asin) DO NOTHING', [cleanAsin]);
+        res.json({ success: true, asin: cleanAsin });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/asins/:asin', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const result = await pool.query('DELETE FROM products WHERE asin = $1', [asin]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'ASIN not found' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.patch('/api/asins/:asin/comment', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const { comment } = req.body;
+        const result = await pool.query(
+            'UPDATE products SET comment = $1 WHERE asin = $2',
+            [comment || null, asin]
+        );
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'ASIN not found' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.patch('/api/asins/:asin/snooze', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const { snooze_until } = req.body;
+        const result = await pool.query(
+            'UPDATE products SET snooze_until = $1 WHERE asin = $2',
+            [snooze_until || null, asin]
+        );
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'ASIN not found' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 server.listen(port, () => console.log(`Active on ${port}`));

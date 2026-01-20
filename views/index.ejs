@@ -6,7 +6,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { font-family: 'Inter', sans-serif; }
+        body { font-family: 'Inter', sans-serif; font-size: 16px; }
         .hidden-row { display: none !important; }
         .terminal-scrollbar::-webkit-scrollbar { width: 4px; }
         .terminal-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
@@ -24,6 +24,78 @@
             outline: none;
         }
         select.filter-select:hover { border-color: #94a3b8; }
+
+        /* Sticky header */
+        #inventoryTable thead {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            background: #0f172a;
+        }
+
+        /* Sortable price header */
+        .sortable-header {
+            cursor: pointer;
+            user-select: none;
+            position: relative;
+        }
+        .sortable-header:hover {
+            background-color: #1e293b;
+        }
+        .sort-indicator {
+            display: inline-block;
+            margin-left: 4px;
+            font-size: 0.7rem;
+        }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        .modal-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            font-size: 20px;
+            font-weight: 900;
+            margin-bottom: 20px;
+            color: #0f172a;
+        }
+        .modal-close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .modal-close:hover {
+            color: #000;
+        }
+
+        /* Snooze badge */
+        .snooze-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background-color: #fbbf24;
+            color: #78350f;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body class="bg-slate-100 p-8">
@@ -45,11 +117,13 @@
             <div class="flex gap-4 items-end">
                 <div class="flex flex-col">
                     <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Search</label>
-                    <input type="text" id="searchInput" onkeyup="applyFilters()" placeholder="ASIN or Title..." class="px-5 py-3 rounded-xl border-2 border-slate-200 w-64 outline-none focus:ring-2 focus:ring-blue-500">
+                    <input type="text" id="searchInput" onkeyup="applyFilters()" placeholder="ASIN or Title..." class="px-5 py-3 rounded-xl border-2 border-slate-200 w-64 outline-none focus:ring-2 focus:ring-blue-500 text-base">
                 </div>
 
-                <button onclick="runReport()" id="run-btn" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all">RUN REPORT</button>
-                <button onclick="stopReport()" id="stop-btn" class="hidden bg-rose-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-rose-700 active:scale-95 transition-all animate-pulse">STOP</button>
+                <button onclick="openAddAsinModal()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-green-700 active:scale-95 transition-all text-base">+ ADD ASIN</button>
+
+                <button onclick="runReport()" id="run-btn" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all text-base">RUN REPORT</button>
+                <button onclick="stopReport()" id="stop-btn" class="hidden bg-rose-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-rose-700 active:scale-95 transition-all animate-pulse text-base">STOP</button>
 
                 <div class="bg-white px-6 py-2.5 rounded-xl border border-slate-200 shadow-sm min-w-[160px]">
                     <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Report End</p>
@@ -62,6 +136,7 @@
             <table class="w-full text-left border-collapse" id="inventoryTable">
                 <thead>
                     <tr class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
+                        <th class="p-6">#</th>
                         <th class="p-6">Status</th>
                         <th class="p-6">ASIN</th>
                         <th class="p-6 w-1/3">Product</th>
@@ -86,13 +161,21 @@
                             </select>
                         </th>
 
-                        <th class="p-6">Price</th>
-                        <th class="p-6 text-center">History</th>
+                        <th class="p-6 sortable-header" onclick="sortByPrice()" id="priceHeader">
+                            Price
+                            <span class="sort-indicator" id="priceSortIndicator">↕</span>
+                        </th>
+                        <th class="p-6">Comment</th>
+                        <th class="p-6">Snooze</th>
+                        <th class="p-6 text-center">Actions</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100">
-                    <% reports.forEach(item => { %>
-                        <tr class="inventory-row transition-all <%= item.hasChanged ? 'bg-orange-200 border-l-8 border-orange-500' : 'hover:bg-slate-50' %>">
+                <tbody class="divide-y divide-slate-100" id="tableBody">
+                    <% reports.forEach((item, index) => { %>
+                        <tr class="inventory-row transition-all <%= item.hasChanged ? 'bg-orange-200 border-l-8 border-orange-500' : 'hover:bg-slate-50' %> <%= item.isSnoozed ? 'opacity-60' : '' %>"
+                            data-asin="<%= item.asin %>"
+                            data-price="<%= (item.price || 'N/A').replace(/"/g, '&quot;') %>">
+                            <td class="p-6 text-base font-mono text-slate-500"><%= index + 1 %></td>
                             <td class="p-6 font-bold">
                                 <% if(item.hasChanged) { %>
                                     <span class="px-2 py-1 rounded text-[10px] font-black bg-orange-600 text-white shadow-sm uppercase">UPDATED</span>
@@ -100,10 +183,10 @@
                                     <span class="px-2 py-1 rounded text-[10px] font-black bg-slate-200 text-slate-500 shadow-sm uppercase">STABLE</span>
                                 <% } %>
                             </td>
-                            <td class="p-6 asin-cell font-mono text-blue-600 font-bold"><a href="https://www.amazon.ca/dp/<%= item.asin %>" target="_blank" class="hover:underline"><%= item.asin %></a></td>
-                            <td class="p-6 title-cell text-slate-700 font-semibold text-sm"><div class="title-clamp"><%= item.header %></div></td>
+                            <td class="p-6 asin-cell font-mono text-blue-600 font-bold text-base"><a href="https://www.amazon.ca/dp/<%= item.asin %>" target="_blank" class="hover:underline"><%= item.asin %></a></td>
+                            <td class="p-6 title-cell text-slate-700 font-semibold text-base"><div class="title-clamp"><%= item.header %></div></td>
 
-                            <td class="p-6 text-center stock-cell font-black"
+                            <td class="p-6 text-center stock-cell font-black text-base"
                                 data-availability-val="<%= (item.availability || '').toUpperCase() %>"
                                 data-stocklevel-val="<%= (item.stock_level || '').toUpperCase() %>">
 
@@ -126,12 +209,101 @@
                                 <%= item.seller %>
                             </td>
 
-                            <td class="p-6 text-xl font-black text-slate-900 price-cell"><%= item.price %></td>
-                            <td class="p-6 text-center"><a href="/history/<%= item.asin %>" class="px-4 py-2 bg-white text-slate-900 text-[10px] font-black rounded-lg border-2 border-slate-900 hover:bg-slate-900 hover:text-white transition-all">VIEW</a></td>
+                            <td class="p-6 text-xl font-black text-slate-900 price-cell text-base"><%= item.price %></td>
+                            <td class="p-6 text-base">
+                                <div class="flex items-center gap-2">
+                                    <span class="comment-text"><%= item.comment || '' %></span>
+                                    <button onclick="openCommentModal('<%= item.asin %>', <%= JSON.stringify(item.comment || '') %>)" class="text-blue-600 hover:text-blue-800 text-sm font-bold">✏️</button>
+                                </div>
+                            </td>
+                            <td class="p-6 text-base">
+                                <%
+                                let snoozeOption = '';
+                                if (item.snooze_until && item.isSnoozed) {
+                                    const snoozeDate = new Date(item.snooze_until);
+                                    const now = new Date();
+                                    const diff = snoozeDate - now;
+                                    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+                                    if (days <= 1) snoozeOption = '1d';
+                                    else if (days <= 7) snoozeOption = '1w';
+                                    else if (days <= 30) snoozeOption = '1m';
+                                    else snoozeOption = 'custom';
+                                }
+                                %>
+                                <select onchange="setSnooze('<%= item.asin %>', this.value)" class="snooze-select border border-slate-300 rounded px-2 py-1 text-sm">
+                                    <option value="" <%= snoozeOption === '' ? 'selected' : '' %>>No Snooze</option>
+                                    <option value="1d" <%= snoozeOption === '1d' ? 'selected' : '' %>>1 Day</option>
+                                    <option value="1w" <%= snoozeOption === '1w' ? 'selected' : '' %>>1 Week</option>
+                                    <option value="1m" <%= snoozeOption === '1m' ? 'selected' : '' %>>1 Month</option>
+                                    <option value="custom" <%= snoozeOption === 'custom' ? 'selected' : '' %>>Custom Date</option>
+                                </select>
+                                <% if(item.isSnoozed) { %>
+                                    <div class="snooze-badge">
+                                        Until <%= new Date(item.snooze_until).toLocaleDateString('en-US', { timeZone: 'America/Montreal', month: 'short', day: 'numeric' }) %>
+                                    </div>
+                                <% } %>
+                            </td>
+                            <td class="p-6 text-center text-base">
+                                <div class="flex gap-2 justify-center">
+                                    <a href="/history/<%= item.asin %>" class="px-4 py-2 bg-white text-slate-900 text-[10px] font-black rounded-lg border-2 border-slate-900 hover:bg-slate-900 hover:text-white transition-all">VIEW</a>
+                                    <button onclick="removeAsin('<%= item.asin %>')" class="px-4 py-2 bg-rose-600 text-white text-[10px] font-black rounded-lg hover:bg-rose-700 transition-all">DELETE</button>
+                                </div>
+                            </td>
                         </tr>
                     <% }); %>
                 </tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- Add ASIN Modal -->
+    <div id="addAsinModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeAddAsinModal()">&times;</span>
+            <div class="modal-header">Add New ASIN</div>
+            <div class="mb-4">
+                <label class="block text-sm font-bold mb-2">ASIN (10 characters)</label>
+                <input type="text" id="newAsinInput" placeholder="B08XYZ1234" maxlength="10" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
+            </div>
+            <div class="flex gap-3">
+                <button onclick="addAsin()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Add ASIN</button>
+                <button onclick="closeAddAsinModal()" class="flex-1 bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all text-base">Cancel</button>
+            </div>
+            <div id="addAsinError" class="mt-3 text-red-600 text-sm font-bold hidden"></div>
+        </div>
+    </div>
+
+    <!-- Comment Modal -->
+    <div id="commentModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeCommentModal()">&times;</span>
+            <div class="modal-header">Edit Comment</div>
+            <div class="mb-4">
+                <label class="block text-sm font-bold mb-2">ASIN: <span id="commentAsinDisplay" class="font-mono text-blue-600"></span></label>
+                <textarea id="commentTextarea" rows="4" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500" placeholder="Enter comment..."></textarea>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="saveComment()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Save</button>
+                <button onclick="closeCommentModal()" class="flex-1 bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all text-base">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Custom Date Picker Modal -->
+    <div id="datePickerModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeDatePickerModal()">&times;</span>
+            <div class="modal-header">Set Snooze Date</div>
+            <div class="mb-4">
+                <label class="block text-sm font-bold mb-2">ASIN: <span id="datePickerAsinDisplay" class="font-mono text-blue-600"></span></label>
+                <label class="block text-sm font-bold mb-2">Snooze Until:</label>
+                <input type="datetime-local" id="snoozeDateInput" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            <div class="flex gap-3">
+                <button onclick="saveCustomSnooze()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Set Snooze</button>
+                <button onclick="clearSnooze()" class="flex-1 bg-rose-600 text-white px-6 py-3 rounded-lg font-black hover:bg-rose-700 transition-all text-base">Clear Snooze</button>
+                <button onclick="closeDatePickerModal()" class="flex-1 bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all text-base">Cancel</button>
+            </div>
         </div>
     </div>
 
@@ -164,7 +336,8 @@
             else if (msg.includes('Unavailable')) line.classList.add('text-rose-400');
             else line.classList.add('text-slate-300');
 
-            line.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            const montrealTime = new Date().toLocaleTimeString('en-US', { timeZone: 'America/Montreal' });
+            line.innerText = `[${montrealTime}] ${msg}`;
             terminal.appendChild(line);
             terminal.scrollTop = terminal.scrollHeight;
         });
@@ -198,6 +371,238 @@
                 syncStatus.innerText = "STOPPING...";
                 await fetch('/stop-report', { method: 'POST' });
             }
+        }
+
+        // Price sorting state
+        let priceSortState = 'none'; // 'none', 'asc', 'desc'
+        let currentAsinForComment = null;
+        let currentAsinForSnooze = null;
+
+        // ASIN Management
+        function openAddAsinModal() {
+            document.getElementById('addAsinModal').style.display = 'block';
+            document.getElementById('newAsinInput').value = '';
+            document.getElementById('addAsinError').classList.add('hidden');
+            document.getElementById('newAsinInput').focus();
+        }
+
+        function closeAddAsinModal() {
+            document.getElementById('addAsinModal').style.display = 'none';
+        }
+
+        async function addAsin() {
+            const asin = document.getElementById('newAsinInput').value.trim().toUpperCase();
+            const errorDiv = document.getElementById('addAsinError');
+
+            if (!asin || asin.length !== 10) {
+                errorDiv.textContent = 'ASIN must be exactly 10 characters';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/asins', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asin })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    closeAddAsinModal();
+                    window.location.reload();
+                } else {
+                    errorDiv.textContent = data.error || 'Failed to add ASIN';
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Error: ' + err.message;
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        async function removeAsin(asin) {
+            if (!confirm(`Are you sure you want to remove ASIN ${asin}?`)) return;
+
+            try {
+                const response = await fetch(`/api/asins/${asin}`, { method: 'DELETE' });
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.error || 'Failed to remove ASIN'));
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Comment Management
+        function openCommentModal(asin, currentComment) {
+            currentAsinForComment = asin;
+            document.getElementById('commentAsinDisplay').textContent = asin;
+            document.getElementById('commentTextarea').value = currentComment || '';
+            document.getElementById('commentModal').style.display = 'block';
+            document.getElementById('commentTextarea').focus();
+        }
+
+        function closeCommentModal() {
+            document.getElementById('commentModal').style.display = 'none';
+            currentAsinForComment = null;
+        }
+
+        async function saveComment() {
+            if (!currentAsinForComment) return;
+
+            const comment = document.getElementById('commentTextarea').value.trim();
+
+            try {
+                const response = await fetch(`/api/asins/${currentAsinForComment}/comment`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comment })
+                });
+
+                if (response.ok) {
+                    closeCommentModal();
+                    window.location.reload();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.error || 'Failed to save comment'));
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Snooze Management
+        function setSnooze(asin, option) {
+            currentAsinForSnooze = asin;
+
+            if (option === 'custom') {
+                document.getElementById('datePickerAsinDisplay').textContent = asin;
+                document.getElementById('datePickerModal').style.display = 'block';
+                // Set default to tomorrow
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                document.getElementById('snoozeDateInput').value = tomorrow.toISOString().slice(0, 16);
+            } else if (option === '') {
+                clearSnooze();
+            } else {
+                let date = new Date();
+                if (option === '1d') date.setDate(date.getDate() + 1);
+                else if (option === '1w') date.setDate(date.getDate() + 7);
+                else if (option === '1m') date.setMonth(date.getMonth() + 1);
+
+                saveSnooze(asin, date.toISOString());
+            }
+        }
+
+        function closeDatePickerModal() {
+            document.getElementById('datePickerModal').style.display = 'none';
+            currentAsinForSnooze = null;
+        }
+
+        async function saveCustomSnooze() {
+            if (!currentAsinForSnooze) return;
+
+            const dateValue = document.getElementById('snoozeDateInput').value;
+            if (!dateValue) {
+                alert('Please select a date');
+                return;
+            }
+
+            const date = new Date(dateValue);
+            await saveSnooze(currentAsinForSnooze, date.toISOString());
+        }
+
+        async function clearSnooze() {
+            if (!currentAsinForSnooze) return;
+
+            await saveSnooze(currentAsinForSnooze, null);
+        }
+
+        async function saveSnooze(asin, snoozeUntil) {
+            try {
+                const response = await fetch(`/api/asins/${asin}/snooze`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ snooze_until: snoozeUntil })
+                });
+
+                if (response.ok) {
+                    closeDatePickerModal();
+                    window.location.reload();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.error || 'Failed to set snooze'));
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Price Sorting
+        function sortByPrice() {
+            const rows = Array.from(document.querySelectorAll('.inventory-row'));
+            const indicator = document.getElementById('priceSortIndicator');
+
+            // Toggle sort state
+            if (priceSortState === 'none') priceSortState = 'asc';
+            else if (priceSortState === 'asc') priceSortState = 'desc';
+            else priceSortState = 'none';
+
+            // Update indicator
+            if (priceSortState === 'asc') indicator.textContent = '↑';
+            else if (priceSortState === 'desc') indicator.textContent = '↓';
+            else indicator.textContent = '↕';
+
+            if (priceSortState === 'none') {
+                // Reload page to get default sort
+                window.location.reload();
+                return;
+            }
+
+            // Separate snoozed and non-snoozed items
+            const snoozed = rows.filter(r => r.classList.contains('opacity-60'));
+            const notSnoozed = rows.filter(r => !r.classList.contains('opacity-60'));
+
+            // Sort non-snoozed items by price
+            notSnoozed.sort((a, b) => {
+                const priceA = parsePrice(a.getAttribute('data-price'));
+                const priceB = parsePrice(b.getAttribute('data-price'));
+                return priceSortState === 'asc' ? priceA - priceB : priceB - priceA;
+            });
+
+            // Reorder: non-snoozed (sorted) first, then snoozed
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+            notSnoozed.forEach((row, index) => {
+                row.querySelector('td:first-child').textContent = index + 1;
+                tbody.appendChild(row);
+            });
+            snoozed.forEach((row, index) => {
+                row.querySelector('td:first-child').textContent = notSnoozed.length + index + 1;
+                tbody.appendChild(row);
+            });
+        }
+
+        function parsePrice(priceStr) {
+            if (!priceStr || priceStr === 'N/A') return 0;
+            // Remove currency symbols and extract number
+            const match = priceStr.match(/[\d,]+\.?\d*/);
+            if (!match) return 0;
+            return parseFloat(match[0].replace(/,/g, ''));
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const addModal = document.getElementById('addAsinModal');
+            const commentModal = document.getElementById('commentModal');
+            const dateModal = document.getElementById('datePickerModal');
+            if (event.target === addModal) closeAddAsinModal();
+            if (event.target === commentModal) closeCommentModal();
+            if (event.target === dateModal) closeDatePickerModal();
         }
 
         function applyFilters() {

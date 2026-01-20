@@ -14,10 +14,26 @@ const client = new Client({
         await client.query(`
             CREATE TABLE IF NOT EXISTS products (
                 id SERIAL PRIMARY KEY,
-                asin TEXT UNIQUE NOT NULL
+                asin TEXT UNIQUE NOT NULL,
+                comment TEXT,
+                snooze_until TIMESTAMP
             );
         `);
         console.log("✅ Table 'products' is ready.");
+
+        // Add new columns if they don't exist (for existing databases)
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='products' AND column_name='comment') THEN
+                    ALTER TABLE products ADD COLUMN comment TEXT;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='products' AND column_name='snooze_until') THEN
+                    ALTER TABLE products ADD COLUMN snooze_until TIMESTAMP;
+                END IF;
+            END $$;
+        `);
+        console.log("✅ Table 'products' columns verified.");
 
         // 2. Create the Daily Reports table (where results are saved)
         await client.query(`
