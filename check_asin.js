@@ -276,6 +276,10 @@ async function scrapeAsin(page, asin) {
         await client.connect();
         await launchBrowser(); // Initial launch
 
+        // Get list of valid ASINs from products table first
+        const validAsinsResult = await client.query('SELECT asin FROM products');
+        const validAsins = new Set(validAsinsResult.rows.map(row => row.asin));
+
         // Check if ASINs were passed as command line arguments or environment variable
         let asinsToProcess = [];
         if (process.argv.length > 2) {
@@ -288,13 +292,26 @@ async function scrapeAsin(page, asin) {
 
         let rows;
         if (asinsToProcess.length > 0) {
-            // Process only selected ASINs
-            console.log(`📋 Processing ${asinsToProcess.length} selected ASINs...`);
-            rows = asinsToProcess.map(asin => ({ asin: asin.trim() }));
+            // Filter out ASINs that don't exist in products table
+            const validSelectedAsins = asinsToProcess.filter(asin => {
+                const trimmed = asin.trim();
+                if (!validAsins.has(trimmed)) {
+                    console.log(`   ⚠️ Skipping ${trimmed} - ASIN not found in products table`);
+                    return false;
+                }
+                return true;
+            });
+
+            if (validSelectedAsins.length === 0) {
+                console.log('❌ No valid ASINs to process');
+                return;
+            }
+
+            console.log(`📋 Processing ${validSelectedAsins.length} selected ASINs...`);
+            rows = validSelectedAsins.map(asin => ({ asin: asin.trim() }));
         } else {
             // Process all ASINs (default behavior)
-            const result = await client.query('SELECT asin FROM products ORDER BY id ASC');
-            rows = result.rows;
+            rows = validAsinsResult.rows;
             console.log(`📋 Processing ${rows.length} ASINs...`);
         }
 

@@ -149,11 +149,11 @@
                         <th class="p-6 text-center w-48">
                             <div>STOCK STATUS</div>
                             <div class="relative inline-block w-full">
-                                <button onclick="toggleStatusDropdown()" id="statusFilterBtn" class="filter-select w-full text-left px-3 py-2 flex items-center justify-between">
+                                <button onclick="toggleStatusDropdown(event)" id="statusFilterBtn" class="filter-select w-full text-left px-3 py-2 flex items-center justify-between">
                                     <span id="statusFilterText">ALL</span>
                                     <span class="ml-auto">▼</span>
                                 </button>
-                                <div id="statusDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto">
+                                <div id="statusDropdown" class="hidden absolute z-[200] w-full mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto" style="top: 100%; left: 0;">
                                     <div class="p-2">
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
                                             <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="all" onchange="updateStatusFilter()" checked>
@@ -301,7 +301,10 @@
                             <td class="p-6 text-center text-base">
                                 <div class="flex gap-2 justify-center">
                                     <% if(item.hasReports && item.history.length > 0) { %>
-                                        <button onclick="toggleHistory('<%= item.asin %>')" class="px-4 py-2 bg-white text-slate-900 text-[10px] font-black rounded-lg border-2 border-slate-900 hover:bg-slate-900 hover:text-white transition-all history-toggle" data-asin="<%= item.asin %>">HISTORY</button>
+                                        <button onclick="toggleHistory('<%= item.asin %>')" class="px-4 py-2 bg-white text-slate-900 text-[10px] font-black rounded-lg border-2 border-slate-900 hover:bg-slate-900 hover:text-white transition-all history-toggle flex items-center gap-1" data-asin="<%= item.asin %>">
+                                            <span>HISTORY</span>
+                                            <span class="history-arrow transition-transform duration-200" id="arrow-<%= item.asin %>">▼</span>
+                                        </button>
                                     <% } else { %>
                                         <span class="px-4 py-2 bg-slate-200 text-slate-400 text-[10px] font-black rounded-lg border-2 border-slate-300 cursor-not-allowed">NO HISTORY</span>
                                     <% } %>
@@ -816,6 +819,80 @@
             if (event.target === dateModal) closeDatePickerModal();
         }
 
+        // Multi-select status filter
+        let selectedStatuses = ['all'];
+
+        function toggleStatusDropdown(event) {
+            if (event) {
+                event.stopPropagation();
+            }
+            const dropdown = document.getElementById('statusDropdown');
+            if (!dropdown) return;
+
+            const isHidden = dropdown.classList.contains('hidden');
+
+            // Close all other dropdowns first
+            document.querySelectorAll('[id^="statusDropdown"]').forEach(dd => {
+                if (dd !== dropdown) {
+                    dd.classList.add('hidden');
+                }
+            });
+
+            if (isHidden) {
+                dropdown.classList.remove('hidden');
+            } else {
+                dropdown.classList.add('hidden');
+            }
+        }
+
+        function updateStatusFilter() {
+            const checkboxes = document.querySelectorAll('.status-checkbox');
+            const allCheckbox = document.querySelector('.status-checkbox[value="all"]');
+            const otherCheckboxes = Array.from(checkboxes).filter(cb => cb.value !== 'all');
+
+            selectedStatuses = [];
+
+            // If "all" is checked, uncheck others and select all
+            if (allCheckbox && allCheckbox.checked) {
+                otherCheckboxes.forEach(cb => cb.checked = false);
+                selectedStatuses = ['all'];
+                const statusText = document.getElementById('statusFilterText');
+                if (statusText) statusText.textContent = 'ALL';
+            } else {
+                // Get selected statuses
+                otherCheckboxes.forEach(cb => {
+                    if (cb.checked) {
+                        selectedStatuses.push(cb.value);
+                    }
+                });
+
+                // If nothing is selected, default to "all"
+                if (selectedStatuses.length === 0) {
+                    if (allCheckbox) allCheckbox.checked = true;
+                    selectedStatuses = ['all'];
+                    const statusText = document.getElementById('statusFilterText');
+                    if (statusText) statusText.textContent = 'ALL';
+                } else {
+                    const count = selectedStatuses.length;
+                    const statusText = document.getElementById('statusFilterText');
+                    if (statusText) {
+                        statusText.textContent = count === 1 ? selectedStatuses[0].replace(/_/g, ' ') : `${count} Selected`;
+                    }
+                }
+            }
+
+            applyFilters();
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('statusDropdown');
+            const button = document.getElementById('statusFilterBtn');
+            if (dropdown && button && !dropdown.contains(event.target) && !button.contains(event.target)) {
+                dropdown.classList.add('hidden');
+            }
+        });
+
         function applyFilters() {
             const search = document.getElementById('searchInput').value.toLowerCase();
             const seller = document.getElementById('sellerFilter').value;
@@ -884,17 +961,33 @@
         function toggleHistory(asin) {
             const historyRow = document.getElementById(`history-row-${asin}`);
             const toggleBtn = document.querySelector(`.history-toggle[data-asin="${asin}"]`);
+            const arrow = document.getElementById(`arrow-${asin}`);
 
             if (historyRow) {
-                historyRow.classList.toggle('hidden');
-                if (historyRow.classList.contains('hidden')) {
-                    toggleBtn.textContent = 'HISTORY';
-                    toggleBtn.classList.remove('bg-slate-900', 'text-white');
-                    toggleBtn.classList.add('bg-white', 'text-slate-900');
-                } else {
-                    toggleBtn.textContent = 'HIDE HISTORY';
+                const isHidden = historyRow.classList.contains('hidden');
+
+                if (isHidden) {
+                    // Show history
+                    historyRow.classList.remove('hidden');
+                    const historyText = toggleBtn.querySelector('span:first-child');
+                    if (historyText) historyText.textContent = 'HIDE HISTORY';
                     toggleBtn.classList.remove('bg-white', 'text-slate-900');
                     toggleBtn.classList.add('bg-slate-900', 'text-white');
+                    if (arrow) {
+                        arrow.textContent = '▲';
+                        arrow.style.transform = 'rotate(0deg)';
+                    }
+                } else {
+                    // Hide history
+                    historyRow.classList.add('hidden');
+                    const historyText = toggleBtn.querySelector('span:first-child');
+                    if (historyText) historyText.textContent = 'HISTORY';
+                    toggleBtn.classList.remove('bg-slate-900', 'text-white');
+                    toggleBtn.classList.add('bg-white', 'text-slate-900');
+                    if (arrow) {
+                        arrow.textContent = '▼';
+                        arrow.style.transform = 'rotate(0deg)';
+                    }
                 }
             }
         }

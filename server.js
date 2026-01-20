@@ -47,10 +47,17 @@ app.get('/', async (req, res) => {
             metaMap[row.asin] = { comment: row.comment, snooze_until: row.snooze_until };
         });
 
+        // Create Set of valid ASINs (only those in products table)
+        const validAsins = new Set(productMeta.rows.map(row => row.asin));
+
         const dashboardData = [];
 
-        // Process ASINs that have reports
+        // Process ASINs that have reports - only include those that still exist in products table
         for (const asin in grouped) {
+            // Skip ASINs that have been deleted from products table
+            if (!validAsins.has(asin)) {
+                continue;
+            }
             const history = grouped[asin];
             const latest = history[0];
             const previous = history[1];
