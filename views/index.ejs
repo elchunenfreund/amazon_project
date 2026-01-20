@@ -151,6 +151,7 @@
                             <select id="stockFilter" onchange="applyFilters()" class="filter-select">
                                 <option value="all">ALL</option>
                                 <option value="IN STOCK">In Stock</option>
+                                <option value="NOT IN STOCK">❌ Not In Stock</option>
                                 <option value="BACK ORDER">Back Order</option>
                                 <option value="UNAVAILABLE">Unavailable</option>
                                 <option value="DOGGY">🐕 Doggy</option>
@@ -767,6 +768,9 @@
                     matchStock = stockLevelVal.includes('LOW STOCK');
                 } else if (stock === 'DOGGY') {
                     matchStock = (stockVal === 'DOGGY');
+                } else if (stock === 'NOT IN STOCK') {
+                    // Show all items that are NOT "IN STOCK"
+                    matchStock = (stockVal !== 'IN STOCK' && stockVal !== '');
                 } else if (stock !== 'all') {
                     matchStock = (stockVal === stock.toUpperCase());
                 }
