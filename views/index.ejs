@@ -146,17 +146,46 @@
                         <th class="p-6">ASIN</th>
                         <th class="p-6 w-1/3">Product</th>
 
-                        <th class="p-6 text-center w-32">
+                        <th class="p-6 text-center w-48">
                             <div>STOCK STATUS</div>
-                            <select id="stockFilter" onchange="applyFilters()" class="filter-select">
-                                <option value="all">ALL</option>
-                                <option value="IN STOCK">In Stock</option>
-                                <option value="NOT IN STOCK">❌ Not In Stock</option>
-                                <option value="BACK ORDER">Back Order</option>
-                                <option value="UNAVAILABLE">Unavailable</option>
-                                <option value="DOGGY">🐕 Doggy</option>
-                                <option value="LOW STOCK">⚠️ Low Stock</option>
-                            </select>
+                            <div class="relative inline-block w-full">
+                                <button onclick="toggleStatusDropdown()" id="statusFilterBtn" class="filter-select w-full text-left px-3 py-2 flex items-center justify-between">
+                                    <span id="statusFilterText">ALL</span>
+                                    <span class="ml-auto">▼</span>
+                                </button>
+                                <div id="statusDropdown" class="hidden absolute z-50 w-full mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto">
+                                    <div class="p-2">
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="all" onchange="updateStatusFilter()" checked>
+                                            <span class="text-white text-xs">ALL</span>
+                                        </label>
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="IN STOCK" onchange="updateStatusFilter()">
+                                            <span class="text-white text-xs">In Stock</span>
+                                        </label>
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="BACK ORDER" onchange="updateStatusFilter()">
+                                            <span class="text-white text-xs">Back Order</span>
+                                        </label>
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="UNAVAILABLE" onchange="updateStatusFilter()">
+                                            <span class="text-white text-xs">Unavailable</span>
+                                        </label>
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="DOGGY" onchange="updateStatusFilter()">
+                                            <span class="text-white text-xs">🐕 Doggy</span>
+                                        </label>
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="LOW STOCK" onchange="updateStatusFilter()">
+                                            <span class="text-white text-xs">⚠️ Low Stock</span>
+                                        </label>
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="PENDING" onchange="updateStatusFilter()">
+                                            <span class="text-white text-xs">Pending</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
                         </th>
 
                         <th class="p-6 w-32">
@@ -194,7 +223,14 @@
                                 <% } %>
                             </td>
                             <td class="p-6 asin-cell font-mono text-blue-600 font-bold text-base"><a href="https://www.amazon.ca/dp/<%= item.asin %>" target="_blank" class="hover:underline"><%= item.asin %></a></td>
-                            <td class="p-6 title-cell text-slate-700 font-semibold text-base"><div class="title-clamp"><%= item.header %></div></td>
+                            <td class="p-6 title-cell text-slate-700 font-semibold text-base">
+                                <div class="title-clamp <%= !item.hasReports ? 'text-slate-400 italic' : '' %>"><%= item.header %></div>
+                                <% if(!item.hasReports) { %>
+                                    <div class="mt-1 text-xs text-amber-600 font-bold bg-amber-100 border border-amber-300 rounded px-2 py-1 inline-block">
+                                        ⚠️ No Report Yet
+                                    </div>
+                                <% } %>
+                            </td>
 
                             <td class="p-6 text-center stock-cell font-black text-base"
                                 data-availability-val="<%= (item.availability || '').toUpperCase() %>"
@@ -264,11 +300,51 @@
                             </td>
                             <td class="p-6 text-center text-base">
                                 <div class="flex gap-2 justify-center">
-                                    <a href="/history/<%= item.asin %>" class="px-4 py-2 bg-white text-slate-900 text-[10px] font-black rounded-lg border-2 border-slate-900 hover:bg-slate-900 hover:text-white transition-all">VIEW</a>
+                                    <% if(item.hasReports && item.history.length > 0) { %>
+                                        <button onclick="toggleHistory('<%= item.asin %>')" class="px-4 py-2 bg-white text-slate-900 text-[10px] font-black rounded-lg border-2 border-slate-900 hover:bg-slate-900 hover:text-white transition-all history-toggle" data-asin="<%= item.asin %>">HISTORY</button>
+                                    <% } else { %>
+                                        <span class="px-4 py-2 bg-slate-200 text-slate-400 text-[10px] font-black rounded-lg border-2 border-slate-300 cursor-not-allowed">NO HISTORY</span>
+                                    <% } %>
                                     <button onclick="removeAsin('<%= item.asin %>')" class="px-4 py-2 bg-rose-600 text-white text-[10px] font-black rounded-lg hover:bg-rose-700 transition-all">DELETE</button>
                                 </div>
                             </td>
                         </tr>
+                        <!-- History row (initially hidden) -->
+                        <% if(item.hasReports && item.history.length > 0) { %>
+                            <tr id="history-row-<%= item.asin %>" class="history-row hidden bg-slate-50">
+                                <td colspan="11" class="p-6">
+                                    <div class="bg-white rounded-lg border-2 border-slate-300 shadow-sm p-4">
+                                        <h3 class="text-lg font-bold mb-4 text-slate-800">History for <span class="font-mono text-blue-600"><%= item.asin %></span> (<%= item.history.length %> entries)</h3>
+                                        <div class="overflow-x-auto">
+                                            <table class="w-full text-left text-sm">
+                                                <thead class="bg-slate-800 text-white text-xs uppercase font-bold">
+                                                    <tr>
+                                                        <th class="p-3 border-b border-slate-700">Date</th>
+                                                        <th class="p-3 border-b border-slate-700">Status</th>
+                                                        <th class="p-3 border-b border-slate-700">Stock Level</th>
+                                                        <th class="p-3 border-b border-slate-700">Seller</th>
+                                                        <th class="p-3 border-b border-slate-700">Price</th>
+                                                        <th class="p-3 border-b border-slate-700">Rank</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-200">
+                                                    <% item.history.forEach(historyItem => { %>
+                                                        <tr class="hover:bg-slate-50 transition-colors">
+                                                            <td class="p-3 font-mono text-slate-500"><%= historyItem.check_date_formatted %></td>
+                                                            <td class="p-3 font-bold <%= historyItem.isStockChange ? 'text-red-600' : 'text-slate-700' %>"><%= historyItem.availability %></td>
+                                                            <td class="p-3 <%= historyItem.isStockChange ? 'text-red-600 font-bold' : 'text-slate-600' %>"><%= historyItem.stock_level %></td>
+                                                            <td class="p-3 <%= historyItem.isSellerChange ? 'text-red-600 font-bold' : 'text-slate-600' %>"><%= historyItem.seller %></td>
+                                                            <td class="p-3 font-mono <%= historyItem.isPriceChange ? 'bg-red-100 text-red-700 font-bold' : 'text-slate-800' %>"><%= historyItem.price %></td>
+                                                            <td class="p-3 text-slate-500"><%= historyItem.ranking %></td>
+                                                        </tr>
+                                                    <% }); %>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        <% } %>
                     <% }); %>
                 </tbody>
             </table>
@@ -519,17 +595,9 @@
 
                 const data = await response.json();
                 if (response.ok) {
-                    // Show success message
-                    errorDiv.textContent = `✅ ASIN ${asin} added successfully!`;
-                    errorDiv.classList.remove('hidden');
-                    errorDiv.classList.remove('text-red-600');
-                    errorDiv.classList.add('text-green-600');
-
-                    // Close modal and reload after brief delay
-                    setTimeout(() => {
-                        closeAddAsinModal();
-                        window.location.reload();
-                    }, 1000);
+                    closeAddAsinModal();
+                    // Immediately reload to show new ASIN
+                    window.location.reload();
                 } else {
                     errorDiv.textContent = data.error || 'Failed to add ASIN';
                     errorDiv.classList.remove('hidden');
@@ -554,6 +622,7 @@
             try {
                 const response = await fetch(`/api/asins/${asin}`, { method: 'DELETE' });
                 if (response.ok) {
+                    // Immediately reload to show removal
                     window.location.reload();
                 } else {
                     const data = await response.json();
@@ -749,7 +818,6 @@
 
         function applyFilters() {
             const search = document.getElementById('searchInput').value.toLowerCase();
-            const stock = document.getElementById('stockFilter').value;
             const seller = document.getElementById('sellerFilter').value;
 
             const rows = document.querySelectorAll('.inventory-row');
@@ -763,16 +831,25 @@
 
                 const matchSearch = title.includes(search) || asin.includes(search);
 
+                // Multi-select status matching
                 let matchStock = true;
-                if (stock === 'LOW STOCK') {
-                    matchStock = stockLevelVal.includes('LOW STOCK');
-                } else if (stock === 'DOGGY') {
-                    matchStock = (stockVal === 'DOGGY');
-                } else if (stock === 'NOT IN STOCK') {
-                    // Show all items that are NOT "IN STOCK"
-                    matchStock = (stockVal !== 'IN STOCK' && stockVal !== '');
-                } else if (stock !== 'all') {
-                    matchStock = (stockVal === stock.toUpperCase());
+                if (!selectedStatuses.includes('all')) {
+                    matchStock = false;
+                    for (const status of selectedStatuses) {
+                        if (status === 'LOW STOCK' && stockLevelVal.includes('LOW STOCK')) {
+                            matchStock = true;
+                            break;
+                        } else if (status === 'DOGGY' && stockVal === 'DOGGY') {
+                            matchStock = true;
+                            break;
+                        } else if (status === 'PENDING' && stockVal === 'PENDING') {
+                            matchStock = true;
+                            break;
+                        } else if (stockVal === status.toUpperCase()) {
+                            matchStock = true;
+                            break;
+                        }
+                    }
                 }
 
                 let matchSeller = true;
@@ -781,10 +858,45 @@
 
                 if (matchSearch && matchStock && matchSeller) {
                     row.classList.remove('hidden-row');
+                    // Also show/hide history rows if they exist
+                    const asinValue = row.getAttribute('data-asin');
+                    if (asinValue) {
+                        const historyRow = document.getElementById(`history-row-${asinValue}`);
+                        if (historyRow && !historyRow.classList.contains('hidden')) {
+                            historyRow.classList.remove('hidden-row');
+                        }
+                    }
                 } else {
                     row.classList.add('hidden-row');
+                    // Hide history rows when parent is hidden
+                    const asinValue = row.getAttribute('data-asin');
+                    if (asinValue) {
+                        const historyRow = document.getElementById(`history-row-${asinValue}`);
+                        if (historyRow) {
+                            historyRow.classList.add('hidden-row');
+                        }
+                    }
                 }
             });
+        }
+
+        // History toggle function
+        function toggleHistory(asin) {
+            const historyRow = document.getElementById(`history-row-${asin}`);
+            const toggleBtn = document.querySelector(`.history-toggle[data-asin="${asin}"]`);
+
+            if (historyRow) {
+                historyRow.classList.toggle('hidden');
+                if (historyRow.classList.contains('hidden')) {
+                    toggleBtn.textContent = 'HISTORY';
+                    toggleBtn.classList.remove('bg-slate-900', 'text-white');
+                    toggleBtn.classList.add('bg-white', 'text-slate-900');
+                } else {
+                    toggleBtn.textContent = 'HIDE HISTORY';
+                    toggleBtn.classList.remove('bg-white', 'text-slate-900');
+                    toggleBtn.classList.add('bg-slate-900', 'text-white');
+                }
+            }
         }
 
         // Initialize on page load

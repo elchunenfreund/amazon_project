@@ -69,6 +69,23 @@ app.get('/', async (req, res) => {
             latest.comment = meta.comment || '';
             latest.snooze_until = meta.snooze_until;
             latest.isSnoozed = meta.snooze_until && new Date(meta.snooze_until) > new Date();
+            latest.hasReports = true;
+            latest.history = history.map(row => ({
+                ...row,
+                check_date_formatted: formatMontrealDateTime(row.check_date),
+                isPriceChange: false,
+                isStockChange: false,
+                isSellerChange: false
+            }));
+
+            // Mark changes in history
+            for(let i = 0; i < latest.history.length - 1; i++) {
+                const curr = latest.history[i];
+                const prev = latest.history[i + 1];
+                curr.isPriceChange = (curr.price !== prev.price);
+                curr.isStockChange = (curr.availability !== prev.availability) || (curr.stock_level !== prev.stock_level);
+                curr.isSellerChange = (curr.seller !== prev.seller);
+            }
 
             dashboardData.push(latest);
         }
@@ -89,7 +106,9 @@ app.get('/', async (req, res) => {
                     hasChanged: false,
                     comment: product.comment || '',
                     snooze_until: product.snooze_until,
-                    isSnoozed: product.snooze_until && new Date(product.snooze_until) > new Date()
+                    isSnoozed: product.snooze_until && new Date(product.snooze_until) > new Date(),
+                    hasReports: false,
+                    history: []
                 };
                 dashboardData.push(placeholder);
             }
