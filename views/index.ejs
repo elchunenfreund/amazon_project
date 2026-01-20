@@ -194,6 +194,8 @@
                                     <div class="text-emerald-600 uppercase">IN STOCK</div>
                                 <% } else if(item.availability === 'Back Order') { %>
                                     <div class="text-amber-600 uppercase">BACK ORDER</div>
+                                <% } else if(item.availability === 'Pending') { %>
+                                    <div class="text-slate-400 uppercase italic">PENDING</div>
                                 <% } else { %>
                                     <div class="text-rose-600 uppercase">UNAVAILABLE</div>
                                 <% } %>
@@ -213,7 +215,7 @@
                             <td class="p-6 text-base">
                                 <div class="flex items-center gap-2">
                                     <span class="comment-text"><%= item.comment || '' %></span>
-                                    <button onclick="openCommentModal('<%= item.asin %>', <%= JSON.stringify(item.comment || '') %>)" class="text-blue-600 hover:text-blue-800 text-sm font-bold">✏️</button>
+                                    <button data-asin="<%= item.asin %>" onclick="openCommentModalFromButton(this)" class="text-blue-600 hover:text-blue-800 text-sm font-bold">✏️</button>
                                 </div>
                             </td>
                             <td class="p-6 text-base">
@@ -266,10 +268,10 @@
                 <input type="text" id="newAsinInput" placeholder="B08XYZ1234" maxlength="10" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
             </div>
             <div class="flex gap-3">
-                <button onclick="addAsin()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Add ASIN</button>
+                <button id="addAsinButton" onclick="addAsin()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Add ASIN</button>
                 <button onclick="closeAddAsinModal()" class="flex-1 bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all text-base">Cancel</button>
             </div>
-            <div id="addAsinError" class="mt-3 text-red-600 text-sm font-bold hidden"></div>
+            <div id="addAsinError" class="mt-3 text-sm font-bold hidden"></div>
         </div>
     </div>
 
@@ -393,12 +395,19 @@
         async function addAsin() {
             const asin = document.getElementById('newAsinInput').value.trim().toUpperCase();
             const errorDiv = document.getElementById('addAsinError');
+            const addButton = document.getElementById('addAsinButton');
+            const originalText = addButton.textContent;
 
             if (!asin || asin.length !== 10) {
                 errorDiv.textContent = 'ASIN must be exactly 10 characters';
                 errorDiv.classList.remove('hidden');
                 return;
             }
+
+            // Show loading state
+            addButton.disabled = true;
+            addButton.textContent = 'Adding...';
+            errorDiv.classList.add('hidden');
 
             try {
                 const response = await fetch('/api/asins', {
@@ -409,15 +418,32 @@
 
                 const data = await response.json();
                 if (response.ok) {
-                    closeAddAsinModal();
-                    window.location.reload();
+                    // Show success message
+                    errorDiv.textContent = `✅ ASIN ${asin} added successfully!`;
+                    errorDiv.classList.remove('hidden');
+                    errorDiv.classList.remove('text-red-600');
+                    errorDiv.classList.add('text-green-600');
+
+                    // Close modal and reload after brief delay
+                    setTimeout(() => {
+                        closeAddAsinModal();
+                        window.location.reload();
+                    }, 1000);
                 } else {
                     errorDiv.textContent = data.error || 'Failed to add ASIN';
                     errorDiv.classList.remove('hidden');
+                    errorDiv.classList.remove('text-green-600');
+                    errorDiv.classList.add('text-red-600');
+                    addButton.disabled = false;
+                    addButton.textContent = originalText;
                 }
             } catch (err) {
                 errorDiv.textContent = 'Error: ' + err.message;
                 errorDiv.classList.remove('hidden');
+                errorDiv.classList.remove('text-green-600');
+                errorDiv.classList.add('text-red-600');
+                addButton.disabled = false;
+                addButton.textContent = originalText;
             }
         }
 
@@ -438,6 +464,12 @@
         }
 
         // Comment Management
+        function openCommentModalFromButton(button) {
+            const asin = button.dataset.asin;
+            const commentText = button.previousElementSibling.textContent;
+            openCommentModal(asin, commentText);
+        }
+
         function openCommentModal(asin, currentComment) {
             currentAsinForComment = asin;
             document.getElementById('commentAsinDisplay').textContent = asin;
@@ -482,10 +514,16 @@
             if (option === 'custom') {
                 document.getElementById('datePickerAsinDisplay').textContent = asin;
                 document.getElementById('datePickerModal').style.display = 'block';
-                // Set default to tomorrow
+                // Set default to tomorrow in local time
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
-                document.getElementById('snoozeDateInput').value = tomorrow.toISOString().slice(0, 16);
+                // Format as YYYY-MM-DDTHH:mm for datetime-local (local time)
+                const year = tomorrow.getFullYear();
+                const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
+                const day = String(tomorrow.getDate()).padStart(2, '0');
+                const hours = String(tomorrow.getHours()).padStart(2, '0');
+                const minutes = String(tomorrow.getMinutes()).padStart(2, '0');
+                document.getElementById('snoozeDateInput').value = `${year}-${month}-${day}T${hours}:${minutes}`;
             } else if (option === '') {
                 clearSnooze();
             } else {
@@ -512,8 +550,11 @@
                 return;
             }
 
-            const date = new Date(dateValue);
-            await saveSnooze(currentAsinForSnooze, date.toISOString());
+            // datetime-local gives local time, convert to ISO string for storage
+            // Create date from local time string (browser interprets as local)
+            const localDate = new Date(dateValue);
+            // Convert to ISO string for storage (server expects UTC)
+            await saveSnooze(currentAsinForSnooze, localDate.toISOString());
         }
 
         async function clearSnooze() {

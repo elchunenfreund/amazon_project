@@ -48,6 +48,8 @@ app.get('/', async (req, res) => {
         });
 
         const dashboardData = [];
+
+        // Process ASINs that have reports
         for (const asin in grouped) {
             const history = grouped[asin];
             const latest = history[0];
@@ -69,6 +71,28 @@ app.get('/', async (req, res) => {
             latest.isSnoozed = meta.snooze_until && new Date(meta.snooze_until) > new Date();
 
             dashboardData.push(latest);
+        }
+
+        // Add ASINs from products table that don't have reports yet
+        for (const product of productMeta.rows) {
+            if (!grouped[product.asin]) {
+                // Create placeholder entry for ASINs without reports
+                const placeholder = {
+                    asin: product.asin,
+                    header: 'No data yet - Run report to fetch product info',
+                    availability: 'Pending',
+                    stock_level: 'N/A',
+                    seller: 'N/A',
+                    price: 'N/A',
+                    ranking: 'N/A',
+                    check_date: null,
+                    hasChanged: false,
+                    comment: product.comment || '',
+                    snooze_until: product.snooze_until,
+                    isSnoozed: product.snooze_until && new Date(product.snooze_until) > new Date()
+                };
+                dashboardData.push(placeholder);
+            }
         }
 
         const timeResult = await pool.query(`SELECT check_date FROM daily_reports ORDER BY check_date DESC LIMIT 1`);
@@ -128,18 +152,21 @@ app.post('/stop-report', (req, res) => {
 app.get('/history/:asin', async (req, res) => {
     const result = await pool.query(`SELECT * FROM daily_reports WHERE asin = $1 ORDER BY check_date DESC`, [req.params.asin]);
     const rows = result.rows;
+
+    // Format dates for all rows first
+    rows.forEach(row => {
+        row.check_date_formatted = formatMontrealDateTime(row.check_date);
+    });
+
+    // Then compare adjacent rows for change detection
     for(let i=0; i<rows.length-1; i++) {
         const curr = rows[i];
         const prev = rows[i+1];
         curr.isPriceChange = (curr.price !== prev.price);
         curr.isStockChange = (curr.availability !== prev.availability) || (curr.stock_level !== prev.stock_level);
         curr.isSellerChange = (curr.seller !== prev.seller);
-        // Format date in Montreal timezone
-        curr.check_date_formatted = formatMontrealDateTime(curr.check_date);
     }
-    if (rows.length > 0 && !rows[0].check_date_formatted) {
-        rows[0].check_date_formatted = formatMontrealDateTime(rows[0].check_date);
-    }
+
     res.render('history', { reports: rows, asin: req.params.asin });
 });
 
