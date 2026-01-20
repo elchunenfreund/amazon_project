@@ -122,7 +122,9 @@
 
                 <button onclick="openAddAsinModal()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-green-700 active:scale-95 transition-all text-base">+ ADD ASIN</button>
 
-                <button onclick="runReport()" id="run-btn" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all text-base">RUN REPORT</button>
+                <button onclick="runReportOnSelected()" id="run-selected-btn" class="bg-purple-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-purple-700 active:scale-95 transition-all text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>RUN ON SELECTED</button>
+
+                <button onclick="runReport()" id="run-btn" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all text-base">RUN ALL</button>
                 <button onclick="stopReport()" id="stop-btn" class="hidden bg-rose-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-rose-700 active:scale-95 transition-all animate-pulse text-base">STOP</button>
 
                 <div class="bg-white px-6 py-2.5 rounded-xl border border-slate-200 shadow-sm min-w-[160px]">
@@ -136,6 +138,9 @@
             <table class="w-full text-left border-collapse" id="inventoryTable">
                 <thead>
                     <tr class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
+                        <th class="p-6">
+                            <input type="checkbox" id="selectAll" onchange="toggleSelectAll()" class="w-5 h-5 cursor-pointer">
+                        </th>
                         <th class="p-6">#</th>
                         <th class="p-6">Status</th>
                         <th class="p-6">ASIN</th>
@@ -175,6 +180,9 @@
                         <tr class="inventory-row transition-all <%= item.hasChanged ? 'bg-orange-200 border-l-8 border-orange-500' : 'hover:bg-slate-50' %> <%= item.isSnoozed ? 'opacity-60' : '' %>"
                             data-asin="<%= item.asin %>"
                             data-price="<%= (item.price || 'N/A').replace(/"/g, '&quot;') %>">
+                            <td class="p-6 text-center">
+                                <input type="checkbox" class="asin-checkbox w-5 h-5 cursor-pointer" value="<%= item.asin %>" onchange="updateSelectAllState()">
+                            </td>
                             <td class="p-6 text-base font-mono text-slate-500"><%= index + 1 %></td>
                             <td class="p-6 font-bold">
                                 <% if(item.hasChanged) { %>
@@ -326,7 +334,10 @@
             if (container.classList.contains('hidden')) container.classList.remove('hidden');
             if (msg.includes('Processing')) {
                 const match = msg.match(/\d+/);
-                if (match) totalItems = parseInt(match[0]);
+                if (match) {
+                    totalItems = parseInt(match[0]);
+                    itemsProcessed = 0; // Reset counter for new report
+                }
             }
             if (msg.includes('-->')) itemsProcessed++;
             if (totalItems > 0) syncStatus.innerText = `RUNNING: ${itemsProcessed} / ${totalItems}`;
@@ -348,6 +359,8 @@
             syncStatus.innerText = '🏁 COMPLETE';
             runBtn.classList.remove('hidden');
             stopBtn.classList.add('hidden');
+            document.getElementById('run-selected-btn').disabled = false;
+            updateRunSelectedButton(); // Update button text
             if(newTime) lastSyncTimeEl.innerText = newTime;
 
             const reloadPrompt = document.createElement('div');
@@ -359,9 +372,11 @@
 
         async function runReport() {
             itemsProcessed = 0;
+            totalItems = 0;
             container.classList.remove('hidden');
             runBtn.classList.add('hidden');
             stopBtn.classList.remove('hidden');
+            document.getElementById('run-selected-btn').disabled = true;
             terminal.innerHTML = '<div class="text-amber-400 font-bold mb-2">Connecting...</div>';
             await fetch('/run-report', { method: 'POST' });
         }
@@ -379,6 +394,83 @@
         let priceSortState = 'none'; // 'none', 'asc', 'desc'
         let currentAsinForComment = null;
         let currentAsinForSnooze = null;
+
+        // Selection management
+        function toggleSelectAll() {
+            const selectAll = document.getElementById('selectAll');
+            const checkboxes = document.querySelectorAll('.asin-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            updateRunSelectedButton();
+        }
+
+        function updateSelectAllState() {
+            const checkboxes = document.querySelectorAll('.asin-checkbox');
+            const selectAll = document.getElementById('selectAll');
+            const checkedCount = document.querySelectorAll('.asin-checkbox:checked').length;
+            selectAll.checked = checkedCount === checkboxes.length && checkboxes.length > 0;
+            selectAll.indeterminate = checkedCount > 0 && checkedCount < checkboxes.length;
+            updateRunSelectedButton();
+        }
+
+        function updateRunSelectedButton() {
+            const checkedCount = document.querySelectorAll('.asin-checkbox:checked').length;
+            const runSelectedBtn = document.getElementById('run-selected-btn');
+            if (checkedCount > 0) {
+                runSelectedBtn.disabled = false;
+                runSelectedBtn.textContent = `RUN ON SELECTED (${checkedCount})`;
+            } else {
+                runSelectedBtn.disabled = true;
+                runSelectedBtn.textContent = 'RUN ON SELECTED';
+            }
+        }
+
+        async function runReportOnSelected() {
+            const checkedBoxes = document.querySelectorAll('.asin-checkbox:checked');
+            if (checkedBoxes.length === 0) {
+                alert('Please select at least one ASIN');
+                return;
+            }
+
+            const asins = Array.from(checkedBoxes).map(cb => cb.value);
+
+            if (!confirm(`Run report on ${asins.length} selected ASIN${asins.length > 1 ? 's' : ''}?`)) {
+                return;
+            }
+
+            const runSelectedBtn = document.getElementById('run-selected-btn');
+            const runBtn = document.getElementById('run-btn');
+            const stopBtn = document.getElementById('stop-btn');
+            const container = document.getElementById('status-container');
+            const terminal = document.getElementById('terminal-stream');
+            const syncStatus = document.getElementById('sync-status');
+
+            try {
+                runSelectedBtn.disabled = true;
+                runBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+                container.classList.remove('hidden');
+                syncStatus.innerText = `RUNNING: 0 / ${asins.length}`;
+                terminal.innerHTML = '<div class="text-amber-400 font-bold mb-2">Starting report on selected ASINs...</div>';
+
+                const response = await fetch('/run-report-selected', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asins })
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to start report');
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+                runSelectedBtn.disabled = false;
+                runBtn.classList.remove('hidden');
+                stopBtn.classList.add('hidden');
+            }
+        }
 
         // ASIN Management
         function openAddAsinModal() {
@@ -680,6 +772,11 @@
                 }
             });
         }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            updateSelectAllState();
+        });
     </script>
 </body>
 </html>

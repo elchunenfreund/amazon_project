@@ -214,8 +214,27 @@ async function scrapeAsin(page, asin) {
         await client.connect();
         await launchBrowser(); // Initial launch
 
-        const { rows } = await client.query('SELECT asin FROM products ORDER BY id ASC');
-        console.log(`📋 Processing ${rows.length} ASINs...`);
+        // Check if ASINs were passed as command line arguments or environment variable
+        let asinsToProcess = [];
+        if (process.argv.length > 2) {
+            // ASINs passed as command line arguments
+            asinsToProcess = process.argv.slice(2);
+        } else if (process.env.SELECTED_ASINS) {
+            // ASINs passed as environment variable (comma-separated)
+            asinsToProcess = process.env.SELECTED_ASINS.split(',').map(a => a.trim());
+        }
+
+        let rows;
+        if (asinsToProcess.length > 0) {
+            // Process only selected ASINs
+            console.log(`📋 Processing ${asinsToProcess.length} selected ASINs...`);
+            rows = asinsToProcess.map(asin => ({ asin: asin.trim() }));
+        } else {
+            // Process all ASINs (default behavior)
+            const result = await client.query('SELECT asin FROM products ORDER BY id ASC');
+            rows = result.rows;
+            console.log(`📋 Processing ${rows.length} ASINs...`);
+        }
 
         for (let [index, row] of rows.entries()) {
             // --- FULL RESTART EVERY 50 ITEMS ---

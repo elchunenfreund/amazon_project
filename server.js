@@ -125,6 +125,30 @@ app.post('/run-report', (req, res) => {
     res.sendStatus(200);
 });
 
+app.post('/run-report-selected', (req, res) => {
+    if (currentScraperProcess) return res.status(400).json({ error: "A report is already running" });
+
+    const { asins } = req.body;
+    if (!asins || !Array.isArray(asins) || asins.length === 0) {
+        return res.status(400).json({ error: "No ASINs selected" });
+    }
+
+    // Spawn with selected ASINs as arguments
+    currentScraperProcess = spawn(process.execPath, ['check_asin.js', ...asins], {
+        env: { ...process.env }
+    });
+
+    currentScraperProcess.stdout.on('data', (data) => io.emit('scraper-log', data.toString().trim()));
+    currentScraperProcess.stderr.on('data', (data) => io.emit('scraper-log', `⚠️ ${data}`));
+
+    currentScraperProcess.on('close', () => {
+        currentScraperProcess = null;
+        io.emit('scraper-done', formatMontrealTime(new Date()));
+    });
+
+    res.json({ success: true, count: asins.length });
+});
+
 // --- NUCLEAR STOP OPTION ---
 app.post('/stop-report', (req, res) => {
     // 1. Kill the reference we know about
