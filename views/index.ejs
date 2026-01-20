@@ -153,34 +153,34 @@
                                     <span id="statusFilterText">ALL</span>
                                     <span class="ml-auto">▼</span>
                                 </button>
-                                <div id="statusDropdown" class="hidden absolute z-[200] w-full mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto" style="top: 100%; left: 0;">
+                                <div id="statusDropdown" class="hidden absolute z-[200] w-full mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto" style="top: 100%; left: 0;" onclick="(function(e){e.stopPropagation();})();">
                                     <div class="p-2">
-                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="all" onchange="updateStatusFilter()" checked>
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:checkbox:click',message:'Checkbox label clicked',data:{value:'all',target:e.target.tagName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="all" onchange="updateStatusFilter()" checked onclick="(function(e){e.stopPropagation();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:checkbox:inputClick',message:'Checkbox input clicked',data:{value:'all',checked:e.target.checked},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});})(event)">
                                             <span class="text-white text-xs">ALL</span>
                                         </label>
-                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="IN STOCK" onchange="updateStatusFilter()">
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="IN STOCK" onchange="updateStatusFilter()" onclick="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">In Stock</span>
                                         </label>
-                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="BACK ORDER" onchange="updateStatusFilter()">
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="BACK ORDER" onchange="updateStatusFilter()" onclick="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">Back Order</span>
                                         </label>
-                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="UNAVAILABLE" onchange="updateStatusFilter()">
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="UNAVAILABLE" onchange="updateStatusFilter()" onclick="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">Unavailable</span>
                                         </label>
-                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="DOGGY" onchange="updateStatusFilter()">
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="DOGGY" onchange="updateStatusFilter()" onclick="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">🐕 Doggy</span>
                                         </label>
-                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="LOW STOCK" onchange="updateStatusFilter()">
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="LOW STOCK" onchange="updateStatusFilter()" onclick="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">⚠️ Low Stock</span>
                                         </label>
-                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="PENDING" onchange="updateStatusFilter()">
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="PENDING" onchange="updateStatusFilter()" onclick="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">Pending</span>
                                         </label>
                                     </div>
@@ -823,13 +823,24 @@
         let selectedStatuses = ['all'];
 
         function toggleStatusDropdown(event) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:toggleStatusDropdown:entry',message:'toggleStatusDropdown called',data:{eventPresent:!!event},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
             if (event) {
                 event.stopPropagation();
             }
             const dropdown = document.getElementById('statusDropdown');
-            if (!dropdown) return;
+            if (!dropdown) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:toggleStatusDropdown:noElement',message:'Dropdown element not found',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
+                return;
+            }
 
             const isHidden = dropdown.classList.contains('hidden');
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:toggleStatusDropdown:beforeToggle',message:'Dropdown state before toggle',data:{isHidden,hasHiddenClass:dropdown.classList.contains('hidden'),displayStyle:window.getComputedStyle(dropdown).display,zIndex:window.getComputedStyle(dropdown).zIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
 
             // Close all other dropdowns first
             document.querySelectorAll('[id^="statusDropdown"]').forEach(dd => {
@@ -840,15 +851,24 @@
 
             if (isHidden) {
                 dropdown.classList.remove('hidden');
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:toggleStatusDropdown:afterShow',message:'Dropdown shown',data:{hasHiddenClass:dropdown.classList.contains('hidden'),displayStyle:window.getComputedStyle(dropdown).display},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
             } else {
                 dropdown.classList.add('hidden');
             }
         }
 
         function updateStatusFilter() {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:updateStatusFilter:entry',message:'updateStatusFilter called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
             const checkboxes = document.querySelectorAll('.status-checkbox');
             const allCheckbox = document.querySelector('.status-checkbox[value="all"]');
             const otherCheckboxes = Array.from(checkboxes).filter(cb => cb.value !== 'all');
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:updateStatusFilter:checkboxesFound',message:'Checkboxes found',data:{totalCheckboxes:checkboxes.length,otherCheckboxes:otherCheckboxes.length,allCheckboxFound:!!allCheckbox},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
 
             selectedStatuses = [];
 
@@ -888,7 +908,13 @@
         document.addEventListener('click', function(event) {
             const dropdown = document.getElementById('statusDropdown');
             const button = document.getElementById('statusFilterBtn');
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:clickOutside:entry',message:'Click outside handler fired',data:{dropdownFound:!!dropdown,buttonFound:!!button,targetId:event.target?.id,targetClass:event.target?.className,dropdownContains:dropdown?.contains(event.target),buttonContains:button?.contains(event.target)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            // #endregion
             if (dropdown && button && !dropdown.contains(event.target) && !button.contains(event.target)) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:clickOutside:closing',message:'Closing dropdown due to outside click',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                // #endregion
                 dropdown.classList.add('hidden');
             }
         });
