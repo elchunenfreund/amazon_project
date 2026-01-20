@@ -153,14 +153,14 @@
                                     <span id="statusFilterText">ALL</span>
                                     <span class="ml-auto">▼</span>
                                 </button>
-                                <div id="statusDropdown" class="hidden absolute z-[200] w-full mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto" style="top: 100%; left: 0;" onclick="(function(e){e.stopPropagation();})();">
+                                <div id="statusDropdown" class="hidden absolute z-[200] w-full mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto" style="top: 100%; left: 0;" onmousedown="(function(e){e.stopPropagation();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:dropdown:mousedown',message:'Dropdown mousedown',data:{target:e.target.tagName,id:e.target.id,class:e.target.className},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})}).catch(()=>{});})(event)" onclick="(function(e){e.stopPropagation();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:dropdown:click',message:'Dropdown click',data:{target:e.target.tagName,id:e.target.id,class:e.target.className},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'E'})}).catch(()=>{});})(event)">
                                     <div class="p-2">
-                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:checkbox:click',message:'Checkbox label clicked',data:{value:'all',target:e.target.tagName},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});})(event)">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="all" onchange="updateStatusFilter()" checked onclick="(function(e){e.stopPropagation();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:checkbox:inputClick',message:'Checkbox input clicked',data:{value:'all',checked:e.target.checked},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});})(event)">
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:label:mousedown',message:'Label mousedown',data:{value:'all',target:e.target.tagName},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});})(event)" onclick="(function(e){e.stopPropagation();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:checkbox:click',message:'Checkbox label clicked',data:{value:'all',target:e.target.tagName},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="all" onchange="updateStatusFilter()" checked onmousedown="(function(e){e.stopPropagation();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:checkbox:mousedown',message:'Checkbox input mousedown',data:{value:'all'},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});})(event)" onclick="(function(e){e.stopPropagation();e.preventDefault();fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:checkbox:inputClick',message:'Checkbox input clicked',data:{value:'all',checked:e.target.checked},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'C'})}).catch(()=>{});})(event)">
                                             <span class="text-white text-xs">ALL</span>
                                         </label>
-                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();})(event)">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="IN STOCK" onchange="updateStatusFilter()" onclick="(function(e){e.stopPropagation();})(event)">
+                                        <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();})(event)" onclick="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="IN STOCK" onchange="updateStatusFilter()" onmousedown="(function(e){e.stopPropagation();})(event)" onclick="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">In Stock</span>
                                         </label>
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onclick="(function(e){e.stopPropagation();})(event)">
@@ -904,20 +904,33 @@
             applyFilters();
         }
 
-        // Close dropdown when clicking outside
+        // Close dropdown when clicking outside - use capture phase to check before event propagates
         document.addEventListener('click', function(event) {
             const dropdown = document.getElementById('statusDropdown');
             const button = document.getElementById('statusFilterBtn');
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:clickOutside:entry',message:'Click outside handler fired',data:{dropdownFound:!!dropdown,buttonFound:!!button,targetId:event.target?.id,targetClass:event.target?.className,dropdownContains:dropdown?.contains(event.target),buttonContains:button?.contains(event.target)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:clickOutside:entry',message:'Click outside handler fired',data:{dropdownFound:!!dropdown,buttonFound:!!button,targetId:event.target?.id,targetClass:event.target?.className,targetTag:event.target?.tagName,dropdownContains:dropdown?.contains(event.target),buttonContains:button?.contains(event.target),isCheckbox:event.target?.type==='checkbox',isLabel:event.target?.tagName==='LABEL'},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
             // #endregion
-            if (dropdown && button && !dropdown.contains(event.target) && !button.contains(event.target)) {
+            if (dropdown && button) {
+                // Check if click is on a checkbox or label inside dropdown
+                const isInsideDropdown = dropdown.contains(event.target);
+                const isOnButton = button.contains(event.target);
+                const isCheckbox = event.target.type === 'checkbox';
+                const isLabel = event.target.tagName === 'LABEL';
+                const isInDropdownContent = isCheckbox || isLabel;
+
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:clickOutside:closing',message:'Closing dropdown due to outside click',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:clickOutside:check',message:'Click outside check',data:{isInsideDropdown,isOnButton,isCheckbox,isLabel,isInDropdownContent,shouldClose:!isInsideDropdown && !isOnButton},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
                 // #endregion
-                dropdown.classList.add('hidden');
+
+                if (!isInsideDropdown && !isOnButton) {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'index.ejs:clickOutside:closing',message:'Closing dropdown due to outside click',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'D'})}).catch(()=>{});
+                    // #endregion
+                    dropdown.classList.add('hidden');
+                }
             }
-        });
+        }, true); // Use capture phase
 
         function applyFilters() {
             const search = document.getElementById('searchInput').value.toLowerCase();
