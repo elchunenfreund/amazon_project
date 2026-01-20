@@ -91,14 +91,76 @@ async function scrapeAsin(page, asin) {
         const delay = Math.floor(Math.random() * (5000 - 2000 + 1) + 2000);
         await sleep(delay);
 
-        await page.goto(`https://www.amazon.ca/dp/${asin.trim()}?th=1&psc=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        const response = await page.goto(`https://www.amazon.ca/dp/${asin.trim()}?th=1&psc=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+
+        // Check for 404 or invalid page status
+        if (response && response.status() === 404) {
+            console.log(`   --> 🐕 404 - Page Not Found`);
+            return {
+                header: 'Page Not Found',
+                price: 'N/A',
+                seller: 'N/A',
+                availability: 'Doggy',
+                stock_level: 'Invalid Page',
+                ranking: 'N/A'
+            };
+        }
 
         if (await page.locator('form[action="/errors/validateCaptcha"]').count() > 0) {
             console.log(`   --> 🤖 CAPTCHA HIT on product page!`);
             return null;
         }
 
+        // Check for Amazon error pages (404, page not found, etc.)
+        const pageContent = await page.content();
+        const pageText = await page.evaluate(() => document.body.innerText);
+
+        // Check for common Amazon error indicators
+        if (pageText.includes("We're sorry") &&
+            (pageText.includes("We couldn't find that page") ||
+             pageText.includes("Page Not Found") ||
+             pageText.includes("Sorry, we just need to make sure you're not a robot"))) {
+            console.log(`   --> 🐕 Invalid Page Detected`);
+            return {
+                header: 'Invalid Page',
+                price: 'N/A',
+                seller: 'N/A',
+                availability: 'Doggy',
+                stock_level: 'Invalid Page',
+                ranking: 'N/A'
+            };
+        }
+
         await page.waitForSelector('#ppd', { timeout: 8000 }).catch(() => {});
+
+        // Check if product page elements exist, if not, might be invalid
+        const hasProductPage = await page.evaluate(() => {
+            return !!document.querySelector('#productTitle') ||
+                   !!document.querySelector('#ppd') ||
+                   !!document.querySelector('#dp-container');
+        });
+
+        if (!hasProductPage) {
+            // Check if it's an error page
+            const isErrorPage = await page.evaluate(() => {
+                const bodyText = document.body.innerText.toLowerCase();
+                return bodyText.includes("we're sorry") ||
+                       bodyText.includes("page not found") ||
+                       bodyText.includes("we couldn't find");
+            });
+
+            if (isErrorPage) {
+                console.log(`   --> 🐕 Invalid Page - No Product Found`);
+                return {
+                    header: 'Invalid Page',
+                    price: 'N/A',
+                    seller: 'N/A',
+                    availability: 'Doggy',
+                    stock_level: 'Invalid Page',
+                    ranking: 'N/A'
+                };
+            }
+        }
 
         return await page.evaluate(() => {
             const cartBtn = document.querySelector('#add-to-cart-button') ||

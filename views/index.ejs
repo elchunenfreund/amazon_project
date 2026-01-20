@@ -153,6 +153,7 @@
                                 <option value="IN STOCK">In Stock</option>
                                 <option value="BACK ORDER">Back Order</option>
                                 <option value="UNAVAILABLE">Unavailable</option>
+                                <option value="DOGGY">🐕 Doggy</option>
                                 <option value="LOW STOCK">⚠️ Low Stock</option>
                             </select>
                         </th>
@@ -177,7 +178,7 @@
                 </thead>
                 <tbody class="divide-y divide-slate-100" id="tableBody">
                     <% reports.forEach((item, index) => { %>
-                        <tr class="inventory-row transition-all <%= item.hasChanged ? 'bg-orange-200 border-l-8 border-orange-500' : 'hover:bg-slate-50' %> <%= item.isSnoozed ? 'opacity-60' : '' %>"
+                        <tr class="inventory-row transition-all <%= item.hasChanged ? 'bg-orange-200 border-l-8 border-orange-500' : 'hover:bg-slate-50' %> <%= item.isSnoozed ? 'opacity-60' : '' %> <%= item.availability === 'Doggy' ? 'border-l-4 border-purple-500' : '' %>"
                             data-asin="<%= item.asin %>"
                             data-price="<%= (item.price || 'N/A').replace(/"/g, '&quot;') %>">
                             <td class="p-6 text-center">
@@ -202,6 +203,13 @@
                                     <div class="text-emerald-600 uppercase">IN STOCK</div>
                                 <% } else if(item.availability === 'Back Order') { %>
                                     <div class="text-amber-600 uppercase">BACK ORDER</div>
+                                <% } else if(item.availability === 'Doggy') { %>
+                                    <div class="text-purple-600 uppercase font-bold">
+                                        <span class="text-xl">🐕</span> DOGGY
+                                    </div>
+                                    <div class="mt-1 text-[9px] text-purple-900 bg-purple-200 border border-purple-400 rounded px-1 py-0.5">
+                                        Invalid Page
+                                    </div>
                                 <% } else if(item.availability === 'Pending') { %>
                                     <div class="text-slate-400 uppercase italic">PENDING</div>
                                 <% } else { %>
@@ -757,6 +765,8 @@
                 let matchStock = true;
                 if (stock === 'LOW STOCK') {
                     matchStock = stockLevelVal.includes('LOW STOCK');
+                } else if (stock === 'DOGGY') {
+                    matchStock = (stockVal === 'DOGGY');
                 } else if (stock !== 'all') {
                     matchStock = (stockVal === stock.toUpperCase());
                 }
