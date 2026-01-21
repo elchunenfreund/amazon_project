@@ -266,6 +266,21 @@ async function scrapeAsin(page, asin) {
             debugData.matchedUnavailableIndicator = unavailableIndicators.find(indicator => availLower.includes(indicator)) || null;
             // #endregion
 
+            // Determine seller early (needed for back-order logic)
+            let seller = "N/A";
+            if (isOrderable) {
+                const merchantDiv = document.querySelector('#merchantInfoFeature_feature_div');
+                const buyBoxDiv = document.querySelector('#buybox');
+                const sellerText = (merchantDiv ? merchantDiv.innerText : "") + (buyBoxDiv ? buyBoxDiv.innerText : "");
+
+                if (sellerText.toLowerCase().includes("amazon")) seller = "Amazon";
+                else seller = "3rd Party";
+            }
+
+            // #region agent log
+            debugData.seller = seller;
+            // #endregion
+
             if (isUnavailable) {
                 availability = "Unavailable";
             } else if (isOrderable) {
@@ -279,37 +294,55 @@ async function scrapeAsin(page, asin) {
                     hasMonths: availLower.includes("months"),
                     hasNotYetReleased: availLower.includes("not yet released"),
                     hasTemporarilyOutOfStock: availLower.includes("temporarily out of stock"),
-                    hasShipsFromAmazon: availLower.includes("ships from amazon")
+                    hasShipsFromAmazon: availLower.includes("ships from amazon"),
+                    isAmazonSeller: seller === "Amazon"
                 };
                 debugData.backOrderChecks = backOrderChecks;
                 // #endregion
 
-                if (availLower.includes("usually ships") ||
-                    availLower.includes("ships from") ||
-                    availLower.includes("weeks") ||
-                    availLower.includes("months") ||
-                    availLower.includes("not yet released") ||
-                    availLower.includes("temporarily out of stock")) {
+                // Back-order detection: Only flag as back-order if:
+                // 1. Strong back-order indicators (regardless of seller)
+                // 2. Third-party seller with shipping delays
+                // 3. NOT if it's Amazon with "Usually ships within X" (that's just a shipping estimate)
 
+                const hasStrongBackOrderIndicator = availLower.includes("not yet released") ||
+                                                    availLower.includes("temporarily out of stock");
+
+                const hasShippingDelay = availLower.includes("usually ships") ||
+                                        availLower.includes("ships from") ||
+                                        availLower.includes("weeks") ||
+                                        availLower.includes("months");
+
+                // #region agent log
+                debugData.hasStrongBackOrderIndicator = hasStrongBackOrderIndicator;
+                debugData.hasShippingDelay = hasShippingDelay;
+                // #endregion
+
+                if (hasStrongBackOrderIndicator) {
+                    // Strong indicators always mean back-order
+                    availability = "Back Order";
                     // #region agent log
-                    debugData.backOrderConditionMatched = true;
+                    debugData.backOrderSet = true;
+                    debugData.backOrderReason = "Strong back-order indicator detected";
                     // #endregion
-
-                    if(!availLower.includes("ships from amazon")) {
-                        availability = "Back Order";
-                        // #region agent log
-                        debugData.backOrderSet = true;
-                        debugData.backOrderReason = "Matched back-order indicator but NOT 'ships from amazon'";
-                        // #endregion
-                    } else {
-                        // #region agent log
-                        debugData.backOrderSet = false;
-                        debugData.backOrderReason = "Matched back-order indicator but ALSO matched 'ships from amazon'";
-                        // #endregion
-                    }
+                } else if (hasShippingDelay && seller === "3rd Party") {
+                    // Third-party sellers with shipping delays = back-order
+                    availability = "Back Order";
+                    // #region agent log
+                    debugData.backOrderSet = true;
+                    debugData.backOrderReason = "Third-party seller with shipping delay";
+                    // #endregion
+                } else if (hasShippingDelay && seller === "Amazon") {
+                    // Amazon with "Usually ships within X" is just a shipping estimate, NOT back-order
+                    // Keep as "In Stock"
+                    // #region agent log
+                    debugData.backOrderSet = false;
+                    debugData.backOrderReason = "Amazon seller with shipping estimate (not back-order)";
+                    // #endregion
                 } else {
                     // #region agent log
-                    debugData.backOrderConditionMatched = false;
+                    debugData.backOrderSet = false;
+                    debugData.backOrderReason = "No back-order indicators matched";
                     // #endregion
                 }
             }
@@ -324,15 +357,7 @@ async function scrapeAsin(page, asin) {
                 stockLevel = "Normal";
             }
 
-            let seller = "N/A";
-            if (isOrderable && availability !== "Unavailable") {
-                const merchantDiv = document.querySelector('#merchantInfoFeature_feature_div');
-                const buyBoxDiv = document.querySelector('#buybox');
-                const sellerText = (merchantDiv ? merchantDiv.innerText : "") + (buyBoxDiv ? buyBoxDiv.innerText : "");
-
-                if (sellerText.toLowerCase().includes("amazon")) seller = "Amazon";
-                else seller = "3rd Party";
-            }
+            // Seller already determined above for back-order logic
 
             // Price extraction: prioritize buy box price, set N/A for unavailable items
             let price = "N/A";
