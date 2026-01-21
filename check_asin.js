@@ -340,10 +340,36 @@ async function scrapeAsin(page, asin) {
 
     // Helper to start/restart browser
     const launchBrowser = async () => {
+        // Properly close and cleanup old browser instance
+        if (page) {
+            try {
+                await page.close().catch(() => {});
+            } catch (e) {
+                // Ignore errors if page is already closed
+            }
+            page = null;
+        }
+        if (context) {
+            try {
+                await context.close().catch(() => {});
+            } catch (e) {
+                // Ignore errors if context is already closed
+            }
+            context = null;
+        }
         if (browserInstance) {
             console.log("♻️  Closing old browser to free memory...");
-            await browserInstance.close();
+            try {
+                await browserInstance.close();
+            } catch (e) {
+                console.error("Error closing browser:", e.message);
+            }
+            browserInstance = null;
         }
+
+        // Small delay to allow cleanup to complete
+        await sleep(1000);
+
         console.log("🚀 Launching Fresh Browser...");
         browserInstance = await chromium.launch({
             headless: true,
@@ -353,11 +379,23 @@ async function scrapeAsin(page, asin) {
                 '--disable-setuid-sandbox',
                 '--disable-gpu',
                 '--disable-dev-shm-usage',
-                '--disable-blink-features=AutomationControlled'
+                '--disable-blink-features=AutomationControlled',
+                '--disable-extensions',
+                '--disable-plugins',
+                '--disable-images', // Don't load images to save memory
+                '--disable-javascript-harmony-shipping',
+                '--disable-background-networking',
+                '--disable-background-timer-throttling',
+                '--disable-renderer-backgrounding',
+                '--disable-backgrounding-occluded-windows',
+                '--disable-software-rasterizer',
+                '--disable-features=TranslateUI',
+                '--disable-ipc-flooding-protection'
             ]
         });
         context = await browserInstance.newContext({
-             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+             viewport: { width: 1920, height: 1080 }
         });
         await loadCookies(context);
         page = await context.newPage();
@@ -440,11 +478,13 @@ async function scrapeAsin(page, asin) {
                     console.error("⚠️ Watchdog restart failed:", err);
                 }
             }
-            // --- FULL RESTART EVERY 50 ITEMS ---
-            if (index > 0 && index % 50 === 0) {
+            // --- FULL RESTART EVERY 25 ITEMS (reduced from 50 to prevent memory issues) ---
+            if (index > 0 && index % 25 === 0) {
                 try {
+                    console.log(`   --> 🔄 Restarting browser at item ${index + 1} to free memory...`);
                     await launchBrowser();
                     consecutiveFailures = 0; // Reset failure counter on successful restart
+                    lastProgressTime = Date.now(); // Update progress time
                 } catch (err) {
                     console.error("⚠️ Browser restart failed, trying to continue:", err);
                 }
@@ -517,10 +557,16 @@ async function scrapeAsin(page, asin) {
                 if (innerError.message === "Timeout" || innerError.message === "Overall timeout" || innerError.message.includes("timeout")) {
                     console.log("   --> 🔄 Timeout detected, attempting recovery...");
                     try {
-                        // Try to close current page and create a new one
+                        // Properly close old page before creating new one
                         if (page) {
-                            await page.close().catch(() => {});
+                            try {
+                                await page.close();
+                            } catch (e) {
+                                // Ignore errors if page is already closed
+                            }
                         }
+                        // Small delay to allow cleanup
+                        await sleep(500);
                         page = await context.newPage();
                         await page.setViewportSize({ width: 1920, height: 1080 });
                         console.log("   --> ✅ Page recreated, continuing...");
@@ -530,6 +576,7 @@ async function scrapeAsin(page, asin) {
                         try {
                             await launchBrowser();
                             consecutiveFailures = 0; // Reset on successful restart
+                            lastProgressTime = Date.now(); // Update progress time
                         } catch (err) {
                             console.error("⚠️ Browser restart failed:", err);
                         }
