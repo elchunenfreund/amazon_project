@@ -957,24 +957,15 @@
 
             selectedStatuses = [];
 
-            // Check if any non-"all" checkboxes are checked
-            const anyOtherChecked = otherCheckboxes.some(cb => cb.checked);
-
-            // If "all" is checked AND no other checkbox is checked, keep "all" selected
-            // But if a user clicks another checkbox while "all" is checked, uncheck "all" first
-            if (allCheckbox && allCheckbox.checked && !anyOtherChecked) {
-                // "All" is selected and no others are checked - this is the default state
+            // If "all" is checked, uncheck all others and set to "all"
+            if (allCheckbox && allCheckbox.checked) {
+                // Uncheck all other checkboxes
                 otherCheckboxes.forEach(cb => cb.checked = false);
                 selectedStatuses = ['all'];
                 const statusText = document.getElementById('statusFilterText');
                 if (statusText) statusText.textContent = 'ALL';
             } else {
-                // Uncheck "all" if other checkboxes are selected
-                if (allCheckbox && anyOtherChecked) {
-                    allCheckbox.checked = false;
-                }
-
-                // Get selected statuses
+                // "All" is not checked - collect selected statuses from other checkboxes
                 otherCheckboxes.forEach(cb => {
                     if (cb.checked) {
                         selectedStatuses.push(cb.value);
@@ -988,6 +979,8 @@
                     const statusText = document.getElementById('statusFilterText');
                     if (statusText) statusText.textContent = 'ALL';
                 } else {
+                    // Ensure "all" is unchecked when other checkboxes are selected
+                    if (allCheckbox) allCheckbox.checked = false;
                     const count = selectedStatuses.length;
                     const statusText = document.getElementById('statusFilterText');
                     if (statusText) {
