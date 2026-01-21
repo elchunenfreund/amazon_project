@@ -206,31 +206,31 @@
                                 <div id="statusDropdown" class="hidden absolute z-[200] w-full min-w-[200px] mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto" style="top: 100%; left: 0; right: auto;" onmousedown="(function(e){e.stopPropagation();})(event)" onclick="(function(e){e.stopPropagation();})(event)">
                                     <div class="p-2">
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();})(event)">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="all" onchange="updateStatusFilter()" checked onmousedown="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="all" onchange="updateStatusFilter(event)" checked onmousedown="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">ALL</span>
                                         </label>
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();})(event)">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="IN STOCK" onchange="updateStatusFilter()" onmousedown="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="IN STOCK" onchange="updateStatusFilter(event)" onmousedown="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">In Stock</span>
                                         </label>
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();})(event)">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="BACK ORDER" onchange="updateStatusFilter()" onmousedown="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="BACK ORDER" onchange="updateStatusFilter(event)" onmousedown="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">Back Order</span>
                                         </label>
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();})(event)">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="UNAVAILABLE" onchange="updateStatusFilter()" onmousedown="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="UNAVAILABLE" onchange="updateStatusFilter(event)" onmousedown="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">Unavailable</span>
                                         </label>
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();})(event)">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="DOGGY" onchange="updateStatusFilter()" onmousedown="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="DOGGY" onchange="updateStatusFilter(event)" onmousedown="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">🐕 Doggy</span>
                                         </label>
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();})(event)">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="LOW STOCK" onchange="updateStatusFilter()" onmousedown="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="LOW STOCK" onchange="updateStatusFilter(event)" onmousedown="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">⚠️ Low Stock</span>
                                         </label>
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();})(event)">
-                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="PENDING" onchange="updateStatusFilter()" onmousedown="(function(e){e.stopPropagation();})(event)">
+                                            <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="PENDING" onchange="updateStatusFilter(event)" onmousedown="(function(e){e.stopPropagation();})(event)">
                                             <span class="text-white text-xs">Pending</span>
                                         </label>
                                     </div>
@@ -950,21 +950,62 @@
             }
         }
 
-        function updateStatusFilter() {
+        function updateStatusFilter(event) {
+            // #region agent log
+            const debugInfo = {
+                timestamp: Date.now(),
+                event: 'updateStatusFilter',
+                clickedElement: event?.target?.value || 'unknown'
+            };
+            console.log('[STATUS FILTER DEBUG] Function called', debugInfo);
+            // #endregion
+
             const checkboxes = document.querySelectorAll('.status-checkbox');
             const allCheckbox = document.querySelector('.status-checkbox[value="all"]');
             const otherCheckboxes = Array.from(checkboxes).filter(cb => cb.value !== 'all');
 
+            // #region agent log
+            debugInfo.allCheckboxChecked = allCheckbox ? allCheckbox.checked : null;
+            debugInfo.otherCheckboxesState = otherCheckboxes.map(cb => ({
+                value: cb.value,
+                checked: cb.checked
+            }));
+            console.log('[STATUS FILTER DEBUG] Initial state', debugInfo);
+            // #endregion
+
             selectedStatuses = [];
+
+            // Determine which checkbox was clicked
+            const clickedCheckbox = event?.target;
+            const clickedValue = clickedCheckbox?.value;
+
+            // If a non-"all" checkbox was clicked while "all" is checked, uncheck "all" first
+            if (clickedValue && clickedValue !== 'all' && allCheckbox && allCheckbox.checked) {
+                // #region agent log
+                debugInfo.action = 'nonAllClickedWhileAllChecked - unchecking all first';
+                console.log('[STATUS FILTER DEBUG] Non-all checkbox clicked while all is checked', debugInfo);
+                // #endregion
+
+                allCheckbox.checked = false;
+            }
 
             // If "all" is checked, uncheck all others and set to "all"
             if (allCheckbox && allCheckbox.checked) {
+                // #region agent log
+                debugInfo.action = 'allChecked - unchecking others';
+                console.log('[STATUS FILTER DEBUG] All is checked, unchecking others', debugInfo);
+                // #endregion
+
                 // Uncheck all other checkboxes
                 otherCheckboxes.forEach(cb => cb.checked = false);
                 selectedStatuses = ['all'];
                 const statusText = document.getElementById('statusFilterText');
                 if (statusText) statusText.textContent = 'ALL';
             } else {
+                // #region agent log
+                debugInfo.action = 'allNotChecked - collecting other selections';
+                // #endregion
+
                 // "All" is not checked - collect selected statuses from other checkboxes
                 otherCheckboxes.forEach(cb => {
                     if (cb.checked) {
@@ -972,13 +1013,26 @@
                     }
                 });
 
+                // #region agent log
+                debugInfo.selectedStatusesBeforeDefault = [...selectedStatuses];
+                // #endregion
+
                 // If nothing is selected, default to "all"
                 if (selectedStatuses.length === 0) {
+                    // #region agent log
+                    debugInfo.action = 'nothingSelected - defaulting to all';
+                    console.log('[STATUS FILTER DEBUG] Nothing selected, defaulting to all', debugInfo);
+                    // #endregion
+
                     if (allCheckbox) allCheckbox.checked = true;
                     selectedStatuses = ['all'];
                     const statusText = document.getElementById('statusFilterText');
                     if (statusText) statusText.textContent = 'ALL';
                 } else {
+                    // #region agent log
+                    debugInfo.action = 'otherCheckboxesSelected';
+                    // #endregion
+
                     // Ensure "all" is unchecked when other checkboxes are selected
                     if (allCheckbox) allCheckbox.checked = false;
                     const count = selectedStatuses.length;
@@ -988,6 +1042,16 @@
                     }
                 }
             }
+
+            // #region agent log
+            debugInfo.finalSelectedStatuses = [...selectedStatuses];
+            debugInfo.finalAllChecked = allCheckbox ? allCheckbox.checked : null;
+            debugInfo.finalOtherCheckboxesState = otherCheckboxes.map(cb => ({
+                value: cb.value,
+                checked: cb.checked
+            }));
+            console.log('[STATUS FILTER DEBUG] Final state', debugInfo);
+            // #endregion
 
             applyFilters();
         }
