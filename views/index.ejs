@@ -158,7 +158,7 @@
             <div id="terminal-stream" class="h-40 overflow-y-auto terminal-scrollbar leading-relaxed"></div>
         </div>
 
-        <header class="flex flex-col lg:flex-row justify-between items-end mb-8 gap-6">
+        <header class="sticky top-0 z-50 bg-slate-100 pt-4 pb-4 -mx-4 md:-mx-8 px-4 md:px-8 flex flex-col lg:flex-row justify-between items-end mb-8 gap-6 shadow-sm">
             <div>
                 <h1 class="text-4xl font-black text-slate-900 tracking-tight text-emerald-600">Inventory Dashboard</h1>
                 <p class="text-slate-500 font-bold italic">Montreal / Outremont (H2V)</p>
@@ -183,8 +183,8 @@
             </div>
         </header>
 
-        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-            <div class="overflow-x-auto min-h-[400px]">
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 min-h-[400px]">
+            <div class="overflow-x-auto">
                 <table class="w-full min-w-full text-left border-collapse" id="inventoryTable">
                 <thead>
                     <tr class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
@@ -1110,10 +1110,14 @@
                 timestamp: Date.now(),
                 search: document.getElementById('searchInput').value.toLowerCase(),
                 seller: document.getElementById('sellerFilter').value,
-                selectedStatuses: [...selectedStatuses]
+                selectedStatuses: [...selectedStatuses],
+                scrollYBefore: window.scrollY
             };
             console.log('[APPLY FILTERS DEBUG] Starting filter application', filterDebug);
             // #endregion
+
+            // Save current scroll position to prevent jumping
+            const scrollPosition = window.scrollY;
 
             const search = document.getElementById('searchInput').value.toLowerCase();
             const seller = document.getElementById('sellerFilter').value;
@@ -1188,12 +1192,43 @@
             // Show/hide "no results" message
             const noResultsMessage = document.getElementById('noResultsMessage');
             const table = document.getElementById('inventoryTable');
+            const tableContainer = table?.closest('.overflow-x-auto');
+
+            // #region agent log
+            filterDebug.showingNoResults = (visibleCount === 0 && rows.length > 0);
+            filterDebug.scrollYAfter = window.scrollY;
+            console.log('[APPLY FILTERS DEBUG] No results handling', filterDebug);
+            // #endregion
+
             if (visibleCount === 0 && rows.length > 0) {
                 if (noResultsMessage) noResultsMessage.classList.remove('hidden');
                 if (table) table.classList.add('hidden');
+                // Ensure container maintains height and doesn't collapse
+                if (tableContainer) {
+                    tableContainer.style.minHeight = '400px';
+                    tableContainer.style.display = 'flex';
+                    tableContainer.style.alignItems = 'center';
+                    tableContainer.style.justifyContent = 'center';
+                }
             } else {
                 if (noResultsMessage) noResultsMessage.classList.add('hidden');
                 if (table) table.classList.remove('hidden');
+                // Reset container styling
+                if (tableContainer) {
+                    tableContainer.style.minHeight = '';
+                    tableContainer.style.display = '';
+                    tableContainer.style.alignItems = '';
+                    tableContainer.style.justifyContent = '';
+                }
+            }
+
+            // Restore scroll position to prevent page jumping
+            // Only if we're not at the top (to avoid issues when header should be visible)
+            if (scrollPosition > 100) {
+                window.scrollTo(0, scrollPosition);
+            } else {
+                // If near top, scroll to top to ensure header is visible
+                window.scrollTo(0, 0);
             }
         }
 
