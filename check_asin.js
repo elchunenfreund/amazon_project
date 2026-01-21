@@ -1,6 +1,32 @@
 const { chromium } = require('playwright-core'); // Standard light version
 const { Client } = require('pg');
 const fs = require('fs');
+const path = require('path');
+
+// Debug logging helper
+const DEBUG_LOG_PATH = path.join(__dirname, '.cursor', 'debug.log');
+function debugLog(location, message, data = {}) {
+    const logEntry = {
+        location,
+        message,
+        data,
+        timestamp: Date.now(),
+        sessionId: 'debug-session',
+        runId: 'run1'
+    };
+    try {
+        // Ensure directory exists
+        const logDir = path.dirname(DEBUG_LOG_PATH);
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+        // Append to log file (NDJSON format)
+        fs.appendFileSync(DEBUG_LOG_PATH, JSON.stringify(logEntry) + '\n');
+    } catch (e) {
+        // Fallback to console if file write fails
+        console.error(`[DEBUG] ${location}: ${message}`, data);
+    }
+}
 
 // --- REMOVED: chromium.use(stealth); <--- This was the cause of the error
 
@@ -87,22 +113,19 @@ async function setLocation(page, postalCode) {
 }
 
 async function scrapeAsin(page, asin) {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:scrapeAsin:start',message:'Starting scrape for ASIN',data:{asin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
+    debugLog('check_asin.js:scrapeAsin:start', 'Starting scrape for ASIN', { asin });
     try {
         const delay = Math.floor(Math.random() * (5000 - 2000 + 1) + 2000);
         await sleep(delay);
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:scrapeAsin:beforeGoto',message:'About to navigate to page',data:{asin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
+        debugLog('check_asin.js:scrapeAsin:beforeGoto', 'About to navigate to page', { asin });
 
-        const response = await page.goto(`https://www.amazon.ca/dp/${asin.trim()}?th=1&psc=1`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+        const response = await Promise.race([
+            page.goto(`https://www.amazon.ca/dp/${asin.trim()}?th=1&psc=1`, { waitUntil: 'domcontentloaded', timeout: 45000 }),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Navigation timeout")), 45000))
+        ]);
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:scrapeAsin:afterGoto',message:'Page navigation completed',data:{asin,status:response?.status()},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
+        debugLog('check_asin.js:scrapeAsin:afterGoto', 'Page navigation completed', { asin, status: response?.status() });
 
         // Check for 404 or invalid page status
         if (response && response.status() === 404) {
@@ -142,15 +165,14 @@ async function scrapeAsin(page, asin) {
             };
         }
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:scrapeAsin:beforeWaitSelector',message:'About to wait for selector',data:{asin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
+        debugLog('check_asin.js:scrapeAsin:beforeWaitSelector', 'About to wait for selector', { asin });
 
-        await page.waitForSelector('#ppd', { timeout: 8000 }).catch(() => {});
+        await Promise.race([
+            page.waitForSelector('#ppd', { timeout: 8000 }),
+            new Promise((resolve) => setTimeout(() => resolve(), 8000))
+        ]).catch(() => {});
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:scrapeAsin:beforeEvaluate',message:'About to evaluate page',data:{asin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
+        debugLog('check_asin.js:scrapeAsin:beforeEvaluate', 'About to evaluate page', { asin });
 
         // Check if product page elements exist, if not, might be invalid
         // Wrap evaluate in timeout to prevent hanging
@@ -185,11 +207,9 @@ async function scrapeAsin(page, asin) {
             }
         }
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:scrapeAsin:beforeMainEvaluate',message:'About to run main page evaluation',data:{asin},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
+        debugLog('check_asin.js:scrapeAsin:beforeMainEvaluate', 'About to run main page evaluation', { asin });
 
-        // Wrap main evaluate in timeout to prevent infinite hangs
+        // Wrap main evaluate in aggressive timeout to prevent infinite hangs
         const result = await Promise.race([
             page.evaluate(() => {
             const cartBtn = document.querySelector('#add-to-cart-button') ||
@@ -294,18 +314,13 @@ async function scrapeAsin(page, asin) {
                 ranking: rank
             };
             }),
-            new Promise((_, reject) => setTimeout(() => reject(new Error("Main evaluate timeout")), 30000))
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Main evaluate timeout")), 20000))
         ]);
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:scrapeAsin:afterMainEvaluate',message:'Main evaluation completed',data:{asin,hasResult:!!result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-        // #endregion
-
+        debugLog('check_asin.js:scrapeAsin:afterMainEvaluate', 'Main evaluation completed', { asin, hasResult: !!result });
         return result;
     } catch (e) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:scrapeAsin:error',message:'Error in scrapeAsin',data:{asin,error:e.message,errorType:e.constructor.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
+        debugLog('check_asin.js:scrapeAsin:error', 'Error in scrapeAsin', { asin, error: e.message, errorType: e.constructor.name });
         console.log(`   --> Error: ${e.message}`);
         return null;
     }
@@ -388,8 +403,23 @@ async function scrapeAsin(page, asin) {
 
         let consecutiveFailures = 0;
         const MAX_CONSECUTIVE_FAILURES = 3;
+        let lastProgressTime = Date.now();
+        const MAX_STALL_TIME = 120000; // 2 minutes without progress = force restart
 
         for (let [index, row] of rows.entries()) {
+            // Watchdog: If we've been stuck for too long, force browser restart
+            const timeSinceLastProgress = Date.now() - lastProgressTime;
+            if (timeSinceLastProgress > MAX_STALL_TIME) {
+                console.log(`   --> ⚠️ Watchdog: No progress for ${Math.round(timeSinceLastProgress/1000)}s, forcing browser restart...`);
+                debugLog('check_asin.js:mainLoop:watchdog', 'Watchdog triggered - forcing restart', { timeSinceLastProgress, index: index + 1 });
+                try {
+                    await launchBrowser();
+                    consecutiveFailures = 0;
+                    lastProgressTime = Date.now();
+                } catch (err) {
+                    console.error("⚠️ Watchdog restart failed:", err);
+                }
+            }
             // --- FULL RESTART EVERY 50 ITEMS ---
             if (index > 0 && index % 50 === 0) {
                 try {
@@ -414,22 +444,19 @@ async function scrapeAsin(page, asin) {
 
             const asin = row.asin.trim();
             console.log(`[${index + 1}/${rows.length}] 🔍 Checking ${asin}...`);
-
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:mainLoop:start',message:'Starting ASIN processing',data:{index:index+1,total:rows.length,asin,consecutiveFailures},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
+            debugLog('check_asin.js:mainLoop:start', 'Starting ASIN processing', { index: index + 1, total: rows.length, asin, consecutiveFailures });
 
             // Add a timeout race so one bad page doesn't freeze the script forever
-            // Reduced timeout to 60 seconds and add better recovery
+            // Reduced timeout to 50 seconds with aggressive recovery
+            const startTime = Date.now();
             try {
                 const data = await Promise.race([
                     scrapeAsin(page, asin),
-                    new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 60000))
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Overall timeout")), 50000))
                 ]);
 
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:mainLoop:scrapeComplete',message:'Scrape completed',data:{asin,hasData:!!data},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-                // #endregion
+                const elapsed = Date.now() - startTime;
+                debugLog('check_asin.js:mainLoop:scrapeComplete', 'Scrape completed', { asin, hasData: !!data, elapsed });
 
                 if (data) {
                     console.log(`   --> ${data.availability} | ${data.stock_level} | ${data.seller}`);
@@ -438,19 +465,21 @@ async function scrapeAsin(page, asin) {
                         VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_TIMESTAMP)`,
                         [asin, data.header, data.availability, data.stock_level, data.seller, data.price, data.ranking]);
                     consecutiveFailures = 0; // Reset on success
+                    lastProgressTime = Date.now(); // Update progress time
                 } else {
                     console.log(`   --> ⚠️ Skipped (No Data)`);
                     consecutiveFailures++; // Count as failure
+                    lastProgressTime = Date.now(); // Still counts as progress
                 }
             } catch (innerError) {
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'check_asin.js:mainLoop:error',message:'Error in main loop',data:{asin,error:innerError.message,errorType:innerError.constructor.name,consecutiveFailures},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-                // #endregion
-                console.error(`   --> ❌ Failed ${asin}: ${innerError.message}`);
+                const elapsed = Date.now() - startTime;
+                debugLog('check_asin.js:mainLoop:error', 'Error in main loop', { asin, error: innerError.message, errorType: innerError.constructor.name, consecutiveFailures, elapsed });
+                console.error(`   --> ❌ Failed ${asin}: ${innerError.message} (took ${elapsed}ms)`);
                 consecutiveFailures++;
+                lastProgressTime = Date.now(); // Error still counts as progress (we're not stuck)
 
                 // Enhanced recovery: try to recover from timeouts and hangs
-                if (innerError.message === "Timeout" || innerError.message.includes("timeout")) {
+                if (innerError.message === "Timeout" || innerError.message === "Overall timeout" || innerError.message.includes("timeout")) {
                     console.log("   --> 🔄 Timeout detected, attempting recovery...");
                     try {
                         // Try to close current page and create a new one
