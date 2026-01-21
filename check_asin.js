@@ -236,6 +236,15 @@ async function scrapeAsin(page, asin) {
             const availText = availContainer ? availContainer.innerText.trim() : "";
             const availLower = availText.toLowerCase();
 
+            // #region agent log
+            const debugData = {
+                availText: availText,
+                availLower: availLower,
+                isOrderable: isOrderable,
+                hasAvailContainer: !!availContainer
+            };
+            // #endregion
+
             let availability = "Unavailable";
             let stockLevel = "Normal";
 
@@ -252,10 +261,29 @@ async function scrapeAsin(page, asin) {
 
             const isUnavailable = unavailableIndicators.some(indicator => availLower.includes(indicator));
 
+            // #region agent log
+            debugData.isUnavailable = isUnavailable;
+            debugData.matchedUnavailableIndicator = unavailableIndicators.find(indicator => availLower.includes(indicator)) || null;
+            // #endregion
+
             if (isUnavailable) {
                 availability = "Unavailable";
             } else if (isOrderable) {
                 availability = "In Stock";
+
+                // #region agent log
+                const backOrderChecks = {
+                    hasUsuallyShips: availLower.includes("usually ships"),
+                    hasShipsFrom: availLower.includes("ships from"),
+                    hasWeeks: availLower.includes("weeks"),
+                    hasMonths: availLower.includes("months"),
+                    hasNotYetReleased: availLower.includes("not yet released"),
+                    hasTemporarilyOutOfStock: availLower.includes("temporarily out of stock"),
+                    hasShipsFromAmazon: availLower.includes("ships from amazon")
+                };
+                debugData.backOrderChecks = backOrderChecks;
+                // #endregion
+
                 if (availLower.includes("usually ships") ||
                     availLower.includes("ships from") ||
                     availLower.includes("weeks") ||
@@ -263,9 +291,26 @@ async function scrapeAsin(page, asin) {
                     availLower.includes("not yet released") ||
                     availLower.includes("temporarily out of stock")) {
 
+                    // #region agent log
+                    debugData.backOrderConditionMatched = true;
+                    // #endregion
+
                     if(!availLower.includes("ships from amazon")) {
                         availability = "Back Order";
+                        // #region agent log
+                        debugData.backOrderSet = true;
+                        debugData.backOrderReason = "Matched back-order indicator but NOT 'ships from amazon'";
+                        // #endregion
+                    } else {
+                        // #region agent log
+                        debugData.backOrderSet = false;
+                        debugData.backOrderReason = "Matched back-order indicator but ALSO matched 'ships from amazon'";
+                        // #endregion
                     }
+                } else {
+                    // #region agent log
+                    debugData.backOrderConditionMatched = false;
+                    // #endregion
                 }
             }
 
@@ -312,19 +357,69 @@ async function scrapeAsin(page, asin) {
             const rankMatch = document.body.innerText.match(/#([0-9,]+) in [a-zA-Z &]+/);
             if(rankMatch) rank = rankMatch[0];
 
+            // #region agent log
+            debugData.finalAvailability = availability;
+            debugData.finalStockLevel = stockLevel;
+            // #endregion
+
             return {
                 header: document.querySelector('#productTitle')?.innerText.trim() || document.title,
                 price,
                 seller,
                 availability,
                 stock_level: stockLevel,
-                ranking: rank
+                ranking: rank,
+                _debug: debugData
             };
             }),
             new Promise((_, reject) => setTimeout(() => reject(new Error("Main evaluate timeout")), 20000))
         ]);
 
         debugLog('check_asin.js:scrapeAsin:afterMainEvaluate', 'Main evaluation completed', { asin, hasResult: !!result });
+
+        // #region agent log
+        if (result && result._debug) {
+            const debugInfo = result._debug;
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    location: 'check_asin.js:scrapeAsin:availabilityDebug',
+                    message: 'Availability detection debug data',
+                    data: {
+                        asin: asin,
+                        availText: debugInfo.availText,
+                        availLower: debugInfo.availLower,
+                        isOrderable: debugInfo.isOrderable,
+                        isUnavailable: debugInfo.isUnavailable,
+                        matchedUnavailableIndicator: debugInfo.matchedUnavailableIndicator,
+                        backOrderChecks: debugInfo.backOrderChecks,
+                        backOrderConditionMatched: debugInfo.backOrderConditionMatched,
+                        backOrderSet: debugInfo.backOrderSet,
+                        backOrderReason: debugInfo.backOrderReason,
+                        finalAvailability: debugInfo.finalAvailability,
+                        finalStockLevel: debugInfo.finalStockLevel
+                    },
+                    timestamp: Date.now(),
+                    sessionId: 'debug-session',
+                    runId: 'run1',
+                    hypothesisId: 'A'
+                })
+            }).catch(() => {});
+
+            // Also log to console for immediate visibility
+            if (debugInfo.finalAvailability === "Back Order") {
+                console.log(`   [BACK-ORDER DEBUG] ${asin}:`);
+                console.log(`      availText: "${debugInfo.availText}"`);
+                console.log(`      backOrderChecks:`, debugInfo.backOrderChecks);
+                console.log(`      reason: ${debugInfo.backOrderReason || 'N/A'}`);
+            }
+
+            // Remove debug data from result before returning
+            delete result._debug;
+        }
+        // #endregion
+
         return result;
     } catch (e) {
         debugLog('check_asin.js:scrapeAsin:error', 'Error in scrapeAsin', { asin, error: e.message, errorType: e.constructor.name });
