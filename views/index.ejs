@@ -183,8 +183,8 @@
             </div>
         </header>
 
-        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200 min-h-[400px]">
-            <div class="overflow-x-auto">
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200" id="tableWrapper">
+            <div class="overflow-x-auto min-h-[400px]" id="tableContainer">
                 <table class="w-full min-w-full text-left border-collapse" id="inventoryTable">
                 <thead>
                     <tr class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
@@ -1192,17 +1192,28 @@
             // Show/hide "no results" message
             const noResultsMessage = document.getElementById('noResultsMessage');
             const table = document.getElementById('inventoryTable');
-            const tableContainer = table?.closest('.overflow-x-auto');
+            const tableContainer = document.getElementById('tableContainer');
+            const tableWrapper = document.getElementById('tableWrapper');
+            const header = document.querySelector('header');
 
             // #region agent log
             filterDebug.showingNoResults = (visibleCount === 0 && rows.length > 0);
+            filterDebug.scrollYBefore = scrollPosition;
             filterDebug.scrollYAfter = window.scrollY;
-            console.log('[APPLY FILTERS DEBUG] No results handling', filterDebug);
+            filterDebug.headerExists = !!header;
+            filterDebug.headerVisible = header ? window.getComputedStyle(header).display !== 'none' : false;
+            filterDebug.headerPosition = header ? window.getComputedStyle(header).position : 'N/A';
+            filterDebug.headerTop = header ? window.getComputedStyle(header).top : 'N/A';
+            filterDebug.headerRect = header ? header.getBoundingClientRect() : null;
+            filterDebug.bodyHeight = document.body.scrollHeight;
+            filterDebug.windowHeight = window.innerHeight;
+            console.log('[APPLY FILTERS DEBUG] No results handling - BEFORE changes', filterDebug);
             // #endregion
 
             if (visibleCount === 0 && rows.length > 0) {
                 if (noResultsMessage) noResultsMessage.classList.remove('hidden');
                 if (table) table.classList.add('hidden');
+
                 // Ensure container maintains height and doesn't collapse
                 if (tableContainer) {
                     tableContainer.style.minHeight = '400px';
@@ -1210,9 +1221,31 @@
                     tableContainer.style.alignItems = 'center';
                     tableContainer.style.justifyContent = 'center';
                 }
+
+                // Ensure wrapper maintains minimum height to prevent collapse
+                if (tableWrapper) {
+                    tableWrapper.style.minHeight = '500px';
+                }
+
+                // #region agent log
+                filterDebug.action = 'showingNoResults';
+                filterDebug.afterHeaderRect = header ? header.getBoundingClientRect() : null;
+                filterDebug.afterScrollY = window.scrollY;
+                filterDebug.afterBodyHeight = document.body.scrollHeight;
+                console.log('[APPLY FILTERS DEBUG] No results shown - AFTER changes', filterDebug);
+                // #endregion
+
+                // Immediately scroll to top to ensure header is visible (don't wait)
+                requestAnimationFrame(() => {
+                    window.scrollTo(0, 0);
+                    // #region agent log
+                    console.log('[APPLY FILTERS DEBUG] Scrolled to top immediately, scrollY:', window.scrollY, 'header top:', header ? header.getBoundingClientRect().top : 'N/A');
+                    // #endregion
+                });
             } else {
                 if (noResultsMessage) noResultsMessage.classList.add('hidden');
                 if (table) table.classList.remove('hidden');
+
                 // Reset container styling
                 if (tableContainer) {
                     tableContainer.style.minHeight = '';
@@ -1220,16 +1253,19 @@
                     tableContainer.style.alignItems = '';
                     tableContainer.style.justifyContent = '';
                 }
+
+                // Reset wrapper styling
+                if (tableWrapper) {
+                    tableWrapper.style.minHeight = '';
+                }
             }
 
-            // Restore scroll position to prevent page jumping
-            // Only if we're not at the top (to avoid issues when header should be visible)
-            if (scrollPosition > 100) {
-                window.scrollTo(0, scrollPosition);
-            } else {
-                // If near top, scroll to top to ensure header is visible
-                window.scrollTo(0, 0);
-            }
+            // #region agent log
+            filterDebug.finalScrollY = window.scrollY;
+            filterDebug.finalHeaderRect = header ? header.getBoundingClientRect() : null;
+            filterDebug.finalBodyHeight = document.body.scrollHeight;
+            console.log('[APPLY FILTERS DEBUG] Final state', filterDebug);
+            // #endregion
         }
 
         // History toggle function
