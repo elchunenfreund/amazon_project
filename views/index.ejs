@@ -33,6 +33,16 @@
             background: #0f172a;
         }
 
+        /* Ensure main header is always visible */
+        #mainHeader {
+            position: sticky !important;
+            top: 0 !important;
+            z-index: 100 !important;
+            display: flex !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+        }
+
         /* Sortable price header */
         .sortable-header {
             cursor: pointer;
@@ -158,7 +168,7 @@
             <div id="terminal-stream" class="h-40 overflow-y-auto terminal-scrollbar leading-relaxed"></div>
         </div>
 
-        <header class="sticky top-0 z-50 bg-slate-100 pt-4 pb-4 -mx-4 md:-mx-8 px-4 md:px-8 flex flex-col lg:flex-row justify-between items-end mb-8 gap-6 shadow-sm">
+        <header id="mainHeader" class="sticky top-0 z-[100] bg-slate-100 pt-4 pb-4 -mx-4 md:-mx-8 px-4 md:px-8 flex flex-col lg:flex-row justify-between items-end mb-8 gap-6 shadow-lg" style="position: sticky !important; top: 0 !important; z-index: 100 !important;">
             <div>
                 <h1 class="text-4xl font-black text-slate-900 tracking-tight text-emerald-600">Inventory Dashboard</h1>
                 <p class="text-slate-500 font-bold italic">Montreal / Outremont (H2V)</p>
@@ -1235,12 +1245,35 @@
                 console.log('[APPLY FILTERS DEBUG] No results shown - AFTER changes', filterDebug);
                 // #endregion
 
-                // Immediately scroll to top to ensure header is visible (don't wait)
+                // Force header to be visible and scroll to top
+                if (header) {
+                    header.style.position = 'sticky';
+                    header.style.top = '0';
+                    header.style.zIndex = '100';
+                    header.style.display = 'flex';
+                    header.style.visibility = 'visible';
+                    header.style.opacity = '1';
+                }
+
+                // Immediately scroll to top to ensure header is visible
+                window.scrollTo({ top: 0, behavior: 'auto' });
+
+                // Double-check after a brief delay
                 requestAnimationFrame(() => {
-                    window.scrollTo(0, 0);
-                    // #region agent log
-                    console.log('[APPLY FILTERS DEBUG] Scrolled to top immediately, scrollY:', window.scrollY, 'header top:', header ? header.getBoundingClientRect().top : 'N/A');
-                    // #endregion
+                    window.scrollTo({ top: 0, behavior: 'auto' });
+                    if (header) {
+                        const rect = header.getBoundingClientRect();
+                        // #region agent log
+                        console.log('[APPLY FILTERS DEBUG] After scroll - scrollY:', window.scrollY, 'header top:', rect.top, 'header visible:', rect.top >= 0 && rect.top < window.innerHeight);
+                        // #endregion
+
+                        // If header is not visible, force it
+                        if (rect.top < 0 || rect.top > window.innerHeight) {
+                            window.scrollTo({ top: 0, behavior: 'auto' });
+                            header.style.position = 'sticky';
+                            header.style.top = '0';
+                        }
+                    }
                 });
             } else {
                 if (noResultsMessage) noResultsMessage.classList.add('hidden');
