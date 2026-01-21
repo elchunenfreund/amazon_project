@@ -218,8 +218,23 @@ async function scrapeAsin(page, asin) {
                 else seller = "3rd Party";
             }
 
-            const price = document.querySelector('.a-price .a-offscreen')?.innerText ||
-                          document.querySelector('#price_inside_buybox')?.innerText || "N/A";
+            // Price extraction: prioritize buy box price, set N/A for unavailable items
+            let price = "N/A";
+            if (availability !== "Unavailable") {
+                // First, try to get price from buy box-specific containers
+                const buyBoxPrice = document.querySelector('#price_inside_buybox')?.innerText?.trim() ||
+                                    document.querySelector('#buybox .a-price .a-offscreen')?.innerText?.trim() ||
+                                    document.querySelector('#exports_desktop_qualifiedBuybox_price_feature_div .a-price .a-offscreen')?.innerText?.trim() ||
+                                    document.querySelector('#qualifiedBuybox .a-price .a-offscreen')?.innerText?.trim() ||
+                                    document.querySelector('#exports_desktop_qualifiedBuybox_price_feature_div .a-price-whole')?.innerText?.trim();
+
+                if (buyBoxPrice) {
+                    price = buyBoxPrice;
+                } else if (isOrderable) {
+                    // Fallback to general price selectors only if item is orderable
+                    price = document.querySelector('.a-price .a-offscreen')?.innerText?.trim() || "N/A";
+                }
+            }
 
             let rank = "N/A";
             const rankMatch = document.body.innerText.match(/#([0-9,]+) in [a-zA-Z &]+/);
