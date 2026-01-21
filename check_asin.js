@@ -1,6 +1,35 @@
 const { chromium } = require('playwright-core'); // Standard light version
 const { Client } = require('pg');
 const fs = require('fs');
+const path = require('path');
+
+// Debug logging helper
+const DEBUG_LOG_PATH = path.join(__dirname, '.cursor', 'debug.log');
+function debugLog(location, message, data = {}) {
+    const logEntry = {
+        location,
+        message,
+        data,
+        timestamp: Date.now(),
+        sessionId: 'debug-session',
+        runId: 'run1'
+    };
+    // Always log to console as backup
+    console.log(`[DEBUG] ${location}: ${message}`, JSON.stringify(data));
+    try {
+        // Ensure directory exists
+        const logDir = path.dirname(DEBUG_LOG_PATH);
+        if (!fs.existsSync(logDir)) {
+            fs.mkdirSync(logDir, { recursive: true });
+        }
+        // Append to log file (NDJSON format)
+        fs.appendFileSync(DEBUG_LOG_PATH, JSON.stringify(logEntry) + '\n');
+        fs.fsyncSync(fs.openSync(DEBUG_LOG_PATH, 'a')); // Force write to disk
+    } catch (e) {
+        // Fallback to console if file write fails
+        console.error(`[DEBUG FILE ERROR] ${location}: ${message}`, e.message, data);
+    }
+}
 
 // --- REMOVED: chromium.use(stealth); <--- This was the cause of the error
 
@@ -87,14 +116,23 @@ async function setLocation(page, postalCode) {
 }
 
 async function scrapeAsin(page, asin) {
+    const scrapeStartTime = Date.now();
+    debugLog('check_asin.js:scrapeAsin:start', 'Starting scrape for ASIN', { asin, scrapeStartTime });
+    console.log(`   [SCRAPE START] ${asin}`);
     try {
         const delay = Math.floor(Math.random() * (5000 - 2000 + 1) + 2000);
+        debugLog('check_asin.js:scrapeAsin:beforeDelay', 'About to sleep', { asin, delay });
         await sleep(delay);
+        debugLog('check_asin.js:scrapeAsin:afterDelay', 'Sleep completed', { asin });
+
+        debugLog('check_asin.js:scrapeAsin:beforeGoto', 'About to navigate to page', { asin });
 
         const response = await Promise.race([
             page.goto(`https://www.amazon.ca/dp/${asin.trim()}?th=1&psc=1`, { waitUntil: 'domcontentloaded', timeout: 45000 }),
             new Promise((_, reject) => setTimeout(() => reject(new Error("Navigation timeout")), 45000))
         ]);
+
+        debugLog('check_asin.js:scrapeAsin:afterGoto', 'Page navigation completed', { asin, status: response?.status() });
 
         // Check for 404 or invalid page status
         if (response && response.status() === 404) {
@@ -134,10 +172,14 @@ async function scrapeAsin(page, asin) {
             };
         }
 
+        debugLog('check_asin.js:scrapeAsin:beforeWaitSelector', 'About to wait for selector', { asin });
+
         await Promise.race([
             page.waitForSelector('#ppd', { timeout: 8000 }),
             new Promise((resolve) => setTimeout(() => resolve(), 8000))
         ]).catch(() => {});
+
+        debugLog('check_asin.js:scrapeAsin:beforeEvaluate', 'About to evaluate page', { asin });
 
         // Check if product page elements exist, if not, might be invalid
         // Wrap evaluate in timeout to prevent hanging
@@ -171,6 +213,8 @@ async function scrapeAsin(page, asin) {
                 };
             }
         }
+
+        debugLog('check_asin.js:scrapeAsin:beforeMainEvaluate', 'About to run main page evaluation', { asin });
 
         // Wrap main evaluate in aggressive timeout to prevent infinite hangs
         const result = await Promise.race([
@@ -280,8 +324,10 @@ async function scrapeAsin(page, asin) {
             new Promise((_, reject) => setTimeout(() => reject(new Error("Main evaluate timeout")), 20000))
         ]);
 
+        debugLog('check_asin.js:scrapeAsin:afterMainEvaluate', 'Main evaluation completed', { asin, hasResult: !!result });
         return result;
     } catch (e) {
+        debugLog('check_asin.js:scrapeAsin:error', 'Error in scrapeAsin', { asin, error: e.message, errorType: e.constructor.name });
         console.log(`   --> Error: ${e.message}`);
         return null;
     }
@@ -358,12 +404,19 @@ async function scrapeAsin(page, asin) {
     };
 
     try {
+        debugLog('check_asin.js:startup', 'Script starting', { timestamp: new Date().toISOString() });
+        console.log('🚀 Starting scraper...');
+
         await client.connect();
+        debugLog('check_asin.js:startup', 'Database connected', {});
+
         await launchBrowser(); // Initial launch
+        debugLog('check_asin.js:startup', 'Browser launched', {});
 
         // Get list of valid ASINs from products table first
         const validAsinsResult = await client.query('SELECT asin FROM products');
         const validAsins = new Set(validAsinsResult.rows.map(row => row.asin));
+        debugLog('check_asin.js:startup', 'Valid ASINs loaded', { count: validAsins.size });
 
         // Check if ASINs were passed as command line arguments or environment variable
         let asinsToProcess = [];
@@ -405,11 +458,17 @@ async function scrapeAsin(page, asin) {
         let lastProgressTime = Date.now();
         const MAX_STALL_TIME = 120000; // 2 minutes without progress = force restart
 
+        debugLog('check_asin.js:mainLoop', 'Starting main loop', { totalRows: rows.length });
+        console.log(`📋 Starting to process ${rows.length} ASINs...`);
+
         for (let [index, row] of rows.entries()) {
+            debugLog('check_asin.js:mainLoop:iterationStart', 'Loop iteration start', { index: index + 1, total: rows.length });
+
             // Watchdog: If we've been stuck for too long, force browser restart
             const timeSinceLastProgress = Date.now() - lastProgressTime;
             if (timeSinceLastProgress > MAX_STALL_TIME) {
                 console.log(`   --> ⚠️ Watchdog: No progress for ${Math.round(timeSinceLastProgress/1000)}s, forcing browser restart...`);
+                debugLog('check_asin.js:mainLoop:watchdog', 'Watchdog triggered - forcing restart', { timeSinceLastProgress, index: index + 1 });
                 try {
                     await launchBrowser();
                     consecutiveFailures = 0;
@@ -444,22 +503,34 @@ async function scrapeAsin(page, asin) {
 
             const asin = row.asin.trim();
             console.log(`[${index + 1}/${rows.length}] 🔍 Checking ${asin}...`);
+            debugLog('check_asin.js:mainLoop:start', 'Starting ASIN processing', { index: index + 1, total: rows.length, asin, consecutiveFailures });
 
             // Add a timeout race so one bad page doesn't freeze the script forever
             // Reduced timeout to 50 seconds with aggressive recovery
             const startTime = Date.now();
+            debugLog('check_asin.js:mainLoop:beforeRace', 'About to start Promise.race', { asin, startTime });
+            console.log(`   [BEFORE RACE] ${asin} at ${new Date().toISOString()}`);
+
             try {
                 // Create timeout promise first
                 const timeoutPromise = new Promise((_, reject) => {
                     setTimeout(() => {
+                        const elapsed = Date.now() - startTime;
+                        debugLog('check_asin.js:mainLoop:timeoutTriggered', 'Overall timeout triggered', { asin, elapsed });
+                        console.log(`   [TIMEOUT] ${asin} after ${elapsed}ms`);
                         reject(new Error("Overall timeout"));
                     }, 50000);
                 });
 
+                console.log(`   [STARTING RACE] ${asin}`);
                 const data = await Promise.race([
                     scrapeAsin(page, asin),
                     timeoutPromise
                 ]);
+                console.log(`   [RACE COMPLETE] ${asin} - got data: ${!!data}`);
+
+                const elapsed = Date.now() - startTime;
+                debugLog('check_asin.js:mainLoop:scrapeComplete', 'Scrape completed', { asin, hasData: !!data, elapsed });
 
 
                 if (data) {
@@ -477,6 +548,7 @@ async function scrapeAsin(page, asin) {
                 }
             } catch (innerError) {
                 const elapsed = Date.now() - startTime;
+                debugLog('check_asin.js:mainLoop:error', 'Error in main loop', { asin, error: innerError.message, errorType: innerError.constructor.name, consecutiveFailures, elapsed });
                 console.error(`   --> ❌ Failed ${asin}: ${innerError.message} (took ${elapsed}ms)`);
                 consecutiveFailures++;
                 lastProgressTime = Date.now(); // Error still counts as progress (we're not stuck)
