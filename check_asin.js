@@ -183,7 +183,22 @@ async function scrapeAsin(page, asin) {
             let availability = "Unavailable";
             let stockLevel = "Normal";
 
-            if (isOrderable) {
+            // Check for unavailable indicators FIRST before checking if orderable
+            const unavailableIndicators = [
+                "currently unavailable",
+                "unavailable",
+                "out of stock",
+                "we don't know when or if this item will be back in stock",
+                "this item is not available",
+                "temporarily unavailable",
+                "not available"
+            ];
+
+            const isUnavailable = unavailableIndicators.some(indicator => availLower.includes(indicator));
+
+            if (isUnavailable) {
+                availability = "Unavailable";
+            } else if (isOrderable) {
                 availability = "In Stock";
                 if (availLower.includes("usually ships") ||
                     availLower.includes("ships from") ||
@@ -198,18 +213,18 @@ async function scrapeAsin(page, asin) {
                 }
             }
 
-            if (!availText.startsWith("In Stock")) {
+            if (!availText.startsWith("In Stock") && availability !== "Unavailable") {
                 const lowStockMatch = availText.match(/Only\s+(\d+)\s+left/i);
                 if (lowStockMatch) {
                     stockLevel = `Low Stock: ${lowStockMatch[1]}`;
                     availability = "In Stock";
                 }
-            } else {
+            } else if (availability === "In Stock") {
                 stockLevel = "Normal";
             }
 
             let seller = "N/A";
-            if (isOrderable) {
+            if (isOrderable && availability !== "Unavailable") {
                 const merchantDiv = document.querySelector('#merchantInfoFeature_feature_div');
                 const buyBoxDiv = document.querySelector('#buybox');
                 const sellerText = (merchantDiv ? merchantDiv.innerText : "") + (buyBoxDiv ? buyBoxDiv.innerText : "");
@@ -232,7 +247,8 @@ async function scrapeAsin(page, asin) {
                     price = buyBoxPrice;
                 } else if (isOrderable) {
                     // Fallback to general price selectors only if item is orderable
-                    price = document.querySelector('.a-price .a-offscreen')?.innerText?.trim() || "N/A";
+                    const generalPrice = document.querySelector('.a-price .a-offscreen')?.innerText?.trim();
+                    price = generalPrice || "N/A";
                 }
             }
 
