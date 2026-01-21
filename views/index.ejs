@@ -1080,57 +1080,19 @@
 
         // History toggle function
         function toggleHistory(asin) {
-            // #region agent log
-            const debugInfo = {
-                asin: asin,
-                timestamp: Date.now()
-            };
-            console.log('[HISTORY TOGGLE DEBUG]', debugInfo);
-            // #endregion
-
             const historyRow = document.getElementById(`history-row-${asin}`);
             const toggleBtn = document.querySelector(`.history-toggle[data-asin="${asin}"]`);
             const arrow = document.getElementById(`arrow-${asin}`);
-
-            // #region agent log
-            debugInfo.historyRowFound = !!historyRow;
-            debugInfo.toggleBtnFound = !!toggleBtn;
-            debugInfo.arrowFound = !!arrow;
-            if (historyRow) {
-                debugInfo.hasHiddenClass = historyRow.classList.contains('hidden');
-                debugInfo.hasHiddenRowClass = historyRow.classList.contains('hidden-row');
-                debugInfo.computedDisplay = window.getComputedStyle(historyRow).display;
-                debugInfo.parentRow = historyRow.closest('tbody')?.querySelector(`tr[data-asin="${asin}"]`);
-                debugInfo.parentRowFound = !!debugInfo.parentRow;
-                if (debugInfo.parentRow) {
-                    debugInfo.parentHasHiddenRow = debugInfo.parentRow.classList.contains('hidden-row');
-                }
-            }
-            console.log('[HISTORY TOGGLE DEBUG] State before toggle:', debugInfo);
-            // #endregion
 
             if (historyRow) {
                 // Check both 'hidden' (Tailwind) and 'hidden-row' (filter) classes
                 const isHidden = historyRow.classList.contains('hidden');
                 const isFilteredOut = historyRow.classList.contains('hidden-row');
 
-                // #region agent log
-                debugInfo.isHidden = isHidden;
-                debugInfo.isFilteredOut = isFilteredOut;
-                // #endregion
-
                 if (isHidden || isFilteredOut) {
                     // Show history - remove BOTH hiding classes
                     historyRow.classList.remove('hidden');
                     historyRow.classList.remove('hidden-row'); // Also remove filter class if present
-
-                    // #region agent log
-                    debugInfo.action = 'showing';
-                    debugInfo.afterRemoveHidden = !historyRow.classList.contains('hidden');
-                    debugInfo.afterRemoveHiddenRow = !historyRow.classList.contains('hidden-row');
-                    debugInfo.afterComputedDisplay = window.getComputedStyle(historyRow).display;
-                    console.log('[HISTORY TOGGLE DEBUG] After showing:', debugInfo);
-                    // #endregion
 
                     const historyText = toggleBtn?.querySelector('span:first-child');
                     if (historyText) historyText.textContent = 'HIDE HISTORY';
@@ -1146,12 +1108,6 @@
                     // Hide history
                     historyRow.classList.add('hidden');
 
-                    // #region agent log
-                    debugInfo.action = 'hiding';
-                    debugInfo.afterAddHidden = historyRow.classList.contains('hidden');
-                    console.log('[HISTORY TOGGLE DEBUG] After hiding:', debugInfo);
-                    // #endregion
-
                     const historyText = toggleBtn?.querySelector('span:first-child');
                     if (historyText) historyText.textContent = 'HISTORY';
                     if (toggleBtn) {
@@ -1163,11 +1119,6 @@
                         arrow.style.transform = 'rotate(0deg)';
                     }
                 }
-            } else {
-                // #region agent log
-                debugInfo.error = 'History row not found';
-                console.error('[HISTORY TOGGLE DEBUG] ERROR:', debugInfo);
-                // #endregion
             }
         }
 
