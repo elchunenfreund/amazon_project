@@ -96,9 +96,58 @@
             font-weight: bold;
             margin-top: 4px;
         }
+
+        /* Enhanced datetime-local input styling */
+        #snoozeDateInput {
+            background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
+            border: 2px solid #cbd5e1;
+            border-radius: 12px;
+            padding: 14px 16px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        #snoozeDateInput:hover {
+            border-color: #94a3b8;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        #snoozeDateInput:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            outline: none;
+        }
+
+        /* Date picker wrapper with clock icon */
+        .date-picker-wrapper {
+            position: relative;
+        }
+
+        .date-picker-wrapper::before {
+            content: "🕐";
+            position: absolute;
+            right: 16px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 20px;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        /* Prevent infinite scrolling in datetime-local */
+        #snoozeDateInput::-webkit-calendar-picker-indicator {
+            cursor: pointer;
+            opacity: 0.7;
+            transition: opacity 0.2s;
+        }
+
+        #snoozeDateInput::-webkit-calendar-picker-indicator:hover {
+            opacity: 1;
+        }
     </style>
 </head>
-<body class="bg-slate-100 p-8">
+<body class="bg-slate-100 p-4 md:p-8">
     <div class="max-w-full mx-auto">
 
         <div id="status-container" class="hidden mb-6 bg-slate-900 text-emerald-400 p-5 rounded-2xl border-l-8 border-emerald-500 font-mono text-xs shadow-2xl">
@@ -114,28 +163,29 @@
                 <h1 class="text-4xl font-black text-slate-900 tracking-tight text-emerald-600">Inventory Dashboard</h1>
                 <p class="text-slate-500 font-bold italic">Montreal / Outremont (H2V)</p>
             </div>
-            <div class="flex gap-4 items-end">
-                <div class="flex flex-col">
+            <div class="flex flex-wrap gap-2 md:gap-4 items-end">
+                <div class="flex flex-col w-full sm:w-auto">
                     <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Search</label>
-                    <input type="text" id="searchInput" onkeyup="applyFilters()" placeholder="ASIN or Title..." class="px-5 py-3 rounded-xl border-2 border-slate-200 w-64 outline-none focus:ring-2 focus:ring-blue-500 text-base">
+                    <input type="text" id="searchInput" onkeyup="applyFilters()" placeholder="ASIN or Title..." class="px-3 md:px-5 py-2 md:py-3 rounded-xl border-2 border-slate-200 w-full sm:w-64 outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base">
                 </div>
 
-                <button onclick="openAddAsinModal()" class="bg-green-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-green-700 active:scale-95 transition-all text-base">+ ADD ASIN</button>
+                <button onclick="openAddAsinModal()" class="bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-green-700 active:scale-95 transition-all text-sm md:text-base">+ ADD ASIN</button>
 
-                <button onclick="runReportOnSelected()" id="run-selected-btn" class="bg-purple-600 text-white px-6 py-3 rounded-xl font-black shadow-lg hover:bg-purple-700 active:scale-95 transition-all text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>RUN ON SELECTED</button>
+                <button onclick="runReportOnSelected()" id="run-selected-btn" class="bg-purple-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-purple-700 active:scale-95 transition-all text-sm md:text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>RUN ON SELECTED</button>
 
-                <button onclick="runReport()" id="run-btn" class="bg-blue-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all text-base">RUN ALL</button>
-                <button onclick="stopReport()" id="stop-btn" class="hidden bg-rose-600 text-white px-8 py-3 rounded-xl font-black shadow-lg hover:bg-rose-700 active:scale-95 transition-all animate-pulse text-base">STOP</button>
+                <button onclick="runReport()" id="run-btn" class="bg-blue-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all text-sm md:text-base">RUN ALL</button>
+                <button onclick="stopReport()" id="stop-btn" class="hidden bg-rose-600 text-white px-4 md:px-8 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-rose-700 active:scale-95 transition-all animate-pulse text-sm md:text-base">STOP</button>
 
-                <div class="bg-white px-6 py-2.5 rounded-xl border border-slate-200 shadow-sm min-w-[160px]">
+                <div class="bg-white px-4 md:px-6 py-2 md:py-2.5 rounded-xl border border-slate-200 shadow-sm min-w-[140px] md:min-w-[160px]">
                     <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Report End</p>
-                    <p id="last-sync-time" class="text-xl font-mono font-black text-blue-600"><%= lastSyncTime %></p>
+                    <p id="last-sync-time" class="text-lg md:text-xl font-mono font-black text-blue-600"><%= lastSyncTime %></p>
                 </div>
             </div>
         </header>
 
         <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
-            <table class="w-full text-left border-collapse" id="inventoryTable">
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-full text-left border-collapse" id="inventoryTable">
                 <thead>
                     <tr class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
                         <th class="p-6">
@@ -153,7 +203,7 @@
                                     <span id="statusFilterText">ALL</span>
                                     <span class="ml-auto">▼</span>
                                 </button>
-                                <div id="statusDropdown" class="hidden absolute z-[200] w-full mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto" style="top: 100%; left: 0;" onmousedown="(function(e){e.stopPropagation();})(event)" onclick="(function(e){e.stopPropagation();})(event)">
+                                <div id="statusDropdown" class="hidden absolute z-[200] w-full min-w-[200px] mt-1 bg-slate-800 border border-slate-700 rounded shadow-lg max-h-64 overflow-y-auto" style="top: 100%; left: 0; right: auto;" onmousedown="(function(e){e.stopPropagation();})(event)" onclick="(function(e){e.stopPropagation();})(event)">
                                     <div class="p-2">
                                         <label class="flex items-center p-2 hover:bg-slate-700 cursor-pointer" onmousedown="(function(e){e.stopPropagation();})(event)">
                                             <input type="checkbox" class="status-checkbox mr-2 w-4 h-4" value="all" onchange="updateStatusFilter()" checked onmousedown="(function(e){e.stopPropagation();})(event)">
@@ -317,7 +367,10 @@
                             <tr id="history-row-<%= item.asin %>" class="history-row hidden bg-slate-50">
                                 <td colspan="11" class="p-6">
                                     <div class="bg-white rounded-lg border-2 border-slate-300 shadow-sm p-4">
-                                        <h3 class="text-lg font-bold mb-4 text-slate-800">History for <span class="font-mono text-blue-600"><%= item.asin %></span> (<%= item.history.length %> entries)</h3>
+                                        <div class="mb-4 pb-4 border-b border-slate-300">
+                                            <h2 class="text-xl font-bold text-slate-900 mb-2"><%= item.header %></h2>
+                                            <h3 class="text-lg font-semibold text-slate-600">History for <span class="font-mono text-blue-600"><%= item.asin %></span> (<%= item.history.length %> entries)</h3>
+                                        </div>
                                         <div class="overflow-x-auto">
                                             <table class="w-full text-left text-sm">
                                                 <thead class="bg-slate-800 text-white text-xs uppercase font-bold">
@@ -351,6 +404,7 @@
                     <% }); %>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
@@ -395,7 +449,9 @@
             <div class="mb-4">
                 <label class="block text-sm font-bold mb-2">ASIN: <span id="datePickerAsinDisplay" class="font-mono text-blue-600"></span></label>
                 <label class="block text-sm font-bold mb-2">Snooze Until:</label>
-                <input type="datetime-local" id="snoozeDateInput" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <div class="date-picker-wrapper">
+                    <input type="datetime-local" id="snoozeDateInput" class="w-full pr-12" min="" max="">
+                </div>
             </div>
             <div class="flex gap-3">
                 <button onclick="saveCustomSnooze()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Set Snooze</button>
@@ -687,16 +743,39 @@
             if (option === 'custom') {
                 document.getElementById('datePickerAsinDisplay').textContent = asin;
                 document.getElementById('datePickerModal').style.display = 'block';
+
+                const dateInput = document.getElementById('snoozeDateInput');
+
+                // Set min to now (prevent past dates)
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const day = String(now.getDate()).padStart(2, '0');
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                const minValue = `${year}-${month}-${day}T${hours}:${minutes}`;
+                dateInput.min = minValue;
+
+                // Set max to 1 year from now (prevent infinite scrolling)
+                const maxDate = new Date();
+                maxDate.setFullYear(maxDate.getFullYear() + 1);
+                const maxYear = maxDate.getFullYear();
+                const maxMonth = String(maxDate.getMonth() + 1).padStart(2, '0');
+                const maxDay = String(maxDate.getDate()).padStart(2, '0');
+                const maxHours = String(maxDate.getHours()).padStart(2, '0');
+                const maxMinutes = String(maxDate.getMinutes()).padStart(2, '0');
+                const maxValue = `${maxYear}-${maxMonth}-${maxDay}T${maxHours}:${maxMinutes}`;
+                dateInput.max = maxValue;
+
                 // Set default to tomorrow in local time
                 const tomorrow = new Date();
                 tomorrow.setDate(tomorrow.getDate() + 1);
-                // Format as YYYY-MM-DDTHH:mm for datetime-local (local time)
-                const year = tomorrow.getFullYear();
-                const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
-                const day = String(tomorrow.getDate()).padStart(2, '0');
-                const hours = String(tomorrow.getHours()).padStart(2, '0');
-                const minutes = String(tomorrow.getMinutes()).padStart(2, '0');
-                document.getElementById('snoozeDateInput').value = `${year}-${month}-${day}T${hours}:${minutes}`;
+                const tomorrowYear = tomorrow.getFullYear();
+                const tomorrowMonth = String(tomorrow.getMonth() + 1).padStart(2, '0');
+                const tomorrowDay = String(tomorrow.getDate()).padStart(2, '0');
+                const tomorrowHours = String(tomorrow.getHours()).padStart(2, '0');
+                const tomorrowMinutes = String(tomorrow.getMinutes()).padStart(2, '0');
+                dateInput.value = `${tomorrowYear}-${tomorrowMonth}-${tomorrowDay}T${tomorrowHours}:${tomorrowMinutes}`;
             } else if (option === '') {
                 clearSnooze();
             } else {
@@ -827,7 +906,8 @@
                 event.stopPropagation();
             }
             const dropdown = document.getElementById('statusDropdown');
-            if (!dropdown) {
+            const button = document.getElementById('statusFilterBtn');
+            if (!dropdown || !button) {
                 return;
             }
 
@@ -842,6 +922,29 @@
 
             if (isHidden) {
                 dropdown.classList.remove('hidden');
+
+                // Calculate position to keep dropdown within viewport
+                const buttonRect = button.getBoundingClientRect();
+                const dropdownRect = dropdown.getBoundingClientRect();
+                const viewportWidth = window.innerWidth;
+
+                // Reset positioning
+                dropdown.style.left = '0';
+                dropdown.style.right = 'auto';
+
+                // Check if dropdown would overflow right edge
+                if (buttonRect.left + dropdownRect.width > viewportWidth) {
+                    // Position from right edge instead
+                    dropdown.style.left = 'auto';
+                    dropdown.style.right = '0';
+                }
+
+                // Check if dropdown would overflow left edge
+                const finalRect = dropdown.getBoundingClientRect();
+                if (finalRect.left < 0) {
+                    dropdown.style.left = '0';
+                    dropdown.style.right = 'auto';
+                }
             } else {
                 dropdown.classList.add('hidden');
             }
@@ -1013,6 +1116,27 @@
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             updateSelectAllState();
+
+            // Initialize date picker constraints to prevent infinite scrolling
+            const dateInput = document.getElementById('snoozeDateInput');
+            if (dateInput) {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = String(now.getMonth() + 1).padStart(2, '0');
+                const day = String(now.getDate()).padStart(2, '0');
+                const hours = String(now.getHours()).padStart(2, '0');
+                const minutes = String(now.getMinutes()).padStart(2, '0');
+                dateInput.min = `${year}-${month}-${day}T${hours}:${minutes}`;
+
+                const maxDate = new Date();
+                maxDate.setFullYear(maxDate.getFullYear() + 1);
+                const maxYear = maxDate.getFullYear();
+                const maxMonth = String(maxDate.getMonth() + 1).padStart(2, '0');
+                const maxDay = String(maxDate.getDate()).padStart(2, '0');
+                const maxHours = String(maxDate.getHours()).padStart(2, '0');
+                const maxMinutes = String(maxDate.getMinutes()).padStart(2, '0');
+                dateInput.max = `${maxYear}-${maxMonth}-${maxDay}T${maxHours}:${maxMinutes}`;
+            }
         });
     </script>
 </body>
