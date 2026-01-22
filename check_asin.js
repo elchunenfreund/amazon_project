@@ -195,18 +195,34 @@ async function scrapeAsin(page, asin) {
             let availability = "Unavailable";
             let stockLevel = "Normal";
 
-            // Check for unavailable indicators FIRST before checking if orderable
-            const unavailableIndicators = [
-                "currently unavailable",
-                "unavailable",
-                "out of stock",
-                "we don't know when or if this item will be back in stock",
-                "this item is not available",
-                "temporarily unavailable",
-                "not available"
-            ];
+            // #region agent log
+            const debugLog = (msg, data) => {
+                const logData = {
+                    location: 'check_asin.js:availabilityDetection',
+                    message: msg,
+                    data: data,
+                    timestamp: Date.now(),
+                    sessionId: 'debug-session',
+                    hypothesisId: 'A'
+                };
+                console.log('[BACK-ORDER DEBUG]', msg, data);
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(logData)
+                }).catch(() => {});
+            };
+            debugLog('Availability detection start', { availText, availLower, isOrderable });
+            // #endregion
 
-            const isUnavailable = unavailableIndicators.some(indicator => availLower.includes(indicator));
+            // Check for back-order indicators FIRST (before unavailable check)
+            // This ensures "Temporarily out of stock" is detected as back-order, not unavailable
+            const hasStrongBackOrderIndicator = availLower.includes("not yet released") ||
+                                                availLower.includes("temporarily out of stock");
+
+            // #region agent log
+            debugLog('Back-order check', { hasStrongBackOrderIndicator, availLower });
+            // #endregion
 
             // Determine seller early (needed for back-order logic)
             let seller = "N/A";
@@ -219,35 +235,70 @@ async function scrapeAsin(page, asin) {
                 else seller = "3rd Party";
             }
 
-            if (isUnavailable) {
+            // #region agent log
+            debugLog('Seller determined', { seller, isOrderable });
+            // #endregion
+
+            // Check for unavailable indicators (but exclude "temporarily out of stock" since it's a back-order)
+            const unavailableIndicators = [
+                "currently unavailable",
+                "unavailable",
+                "we don't know when or if this item will be back in stock",
+                "this item is not available",
+                "temporarily unavailable",
+                "not available"
+            ];
+
+            // Only check for "out of stock" if it's NOT "temporarily out of stock"
+            const isOutOfStock = availLower.includes("out of stock") && !availLower.includes("temporarily out of stock");
+            const isUnavailable = unavailableIndicators.some(indicator => availLower.includes(indicator)) || isOutOfStock;
+
+            // #region agent log
+            debugLog('Unavailable check', { isUnavailable, isOutOfStock, matchedIndicators: unavailableIndicators.filter(ind => availLower.includes(ind)) });
+            // #endregion
+
+            if (hasStrongBackOrderIndicator) {
+                // Strong back-order indicators always mean back-order (regardless of seller)
+                availability = "Back Order";
+                // #region agent log
+                debugLog('Set to Back Order (strong indicator)', { availability });
+                // #endregion
+            } else if (isUnavailable) {
                 availability = "Unavailable";
+                // #region agent log
+                debugLog('Set to Unavailable', { availability });
+                // #endregion
             } else if (isOrderable) {
                 availability = "In Stock";
 
-                // Back-order detection: Only flag as back-order if:
-                // 1. Strong back-order indicators (regardless of seller)
-                // 2. Third-party seller with shipping delays
-                // 3. NOT if it's Amazon with "Usually ships within X" (that's just a shipping estimate)
-
-                const hasStrongBackOrderIndicator = availLower.includes("not yet released") ||
-                                                    availLower.includes("temporarily out of stock");
-
+                // Additional back-order detection for shipping delays
                 const hasShippingDelay = availLower.includes("usually ships") ||
                                         availLower.includes("ships from") ||
                                         availLower.includes("weeks") ||
                                         availLower.includes("months");
 
-                if (hasStrongBackOrderIndicator) {
-                    // Strong indicators always mean back-order
-                    availability = "Back Order";
-                } else if (hasShippingDelay && seller === "3rd Party") {
+                // #region agent log
+                debugLog('Shipping delay check', { hasShippingDelay, seller });
+                // #endregion
+
+                if (hasShippingDelay && seller === "3rd Party") {
                     // Third-party sellers with shipping delays = back-order
                     availability = "Back Order";
+                    // #region agent log
+                    debugLog('Set to Back Order (3rd party shipping delay)', { availability });
+                    // #endregion
                 } else if (hasShippingDelay && seller === "Amazon") {
                     // Amazon with "Usually ships within X" is just a shipping estimate, NOT back-order
                     // Keep as "In Stock"
+                    // #region agent log
+                    debugLog('Keep as In Stock (Amazon shipping estimate)', { availability });
+                    // #endregion
                 }
             }
+
+            // #region agent log
+            debugLog('Final availability', { availability, stockLevel, seller });
+            // #endregion
 
             if (!availText.startsWith("In Stock") && availability !== "Unavailable") {
                 const lowStockMatch = availText.match(/Only\s+(\d+)\s+left/i);
