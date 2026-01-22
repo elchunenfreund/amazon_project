@@ -344,9 +344,32 @@ async function scrapeAsin(page, asin) {
         await sleep(1000);
 
         console.log("🚀 Launching Fresh Browser...");
-        browserInstance = await chromium.launch({
+
+        // Try multiple environment variables and paths for Chrome
+        // The new chrome-for-testing buildpack may set different variables
+        const possiblePaths = [
+            process.env.CHROME_BIN,
+            process.env.CHROMIUM_PATH,
+            process.env.GOOGLE_CHROME_BIN,
+            process.env.CHROME_FOR_TESTING_BIN,
+            '/app/.chrome-for-testing/chrome-linux64/chrome',
+            '/app/.chrome-for-testing/chrome-linux64/chrome-headless-shell',
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser'
+        ].filter(Boolean); // Remove undefined/null values
+
+        // Find the first path that exists (if we can check) or use the first available env var
+        let chromePath = possiblePaths.find(path => {
+            try {
+                return fs.existsSync(path);
+            } catch {
+                return false;
+            }
+        }) || possiblePaths[0];
+
+        const launchOptions = {
             headless: true,
-            executablePath: process.env.GOOGLE_CHROME_BIN || '/usr/bin/google-chrome',
             args: [
                 '--no-sandbox',
                 '--disable-setuid-sandbox',
@@ -365,7 +388,30 @@ async function scrapeAsin(page, asin) {
                 '--disable-features=TranslateUI',
                 '--disable-ipc-flooding-protection'
             ]
-        });
+        };
+
+        // Set executablePath if we found a valid path
+        if (chromePath) {
+            launchOptions.executablePath = chromePath;
+            console.log(`   --> Using Chrome at: ${chromePath}`);
+        } else {
+            // If no path found, try to let Playwright find Chrome automatically
+            // This works if Chrome is in PATH or Playwright has a bundled version
+            console.log(`   --> No explicit Chrome path found, attempting auto-detection`);
+        }
+
+        try {
+            browserInstance = await chromium.launch(launchOptions);
+        } catch (error) {
+            // If launch fails with explicit path, try without it (let Playwright find it)
+            if (launchOptions.executablePath && error.message.includes("executable doesn't exist")) {
+                console.log(`   --> Chrome not found at ${launchOptions.executablePath}, trying auto-detection...`);
+                delete launchOptions.executablePath;
+                browserInstance = await chromium.launch(launchOptions);
+            } else {
+                throw error;
+            }
+        }
         context = await browserInstance.newContext({
              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
              viewport: { width: 1920, height: 1080 }
