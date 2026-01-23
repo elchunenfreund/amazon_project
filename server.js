@@ -288,4 +288,24 @@ app.patch('/api/asins/:asin/snooze', async (req, res) => {
     }
 });
 
+// Check if scraper is currently running
+app.get('/api/scraper-status', (req, res) => {
+    // #region agent log
+    const debugInfo = {
+        timestamp: Date.now(),
+        location: 'server.js:scraper-status',
+        message: 'Checking scraper status',
+        data: {
+            currentScraperProcess: currentScraperProcess ? 'exists' : 'null',
+            isRunning: !!currentScraperProcess
+        },
+        sessionId: 'debug-session',
+        runId: 'run1',
+        hypothesisId: 'A'
+    };
+    fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(debugInfo)}).catch(()=>{});
+    // #endregion
+    res.json({ running: !!currentScraperProcess });
+});
+
 server.listen(port, () => console.log(`Active on ${port}`));

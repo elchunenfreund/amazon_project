@@ -1241,9 +1241,108 @@
             }
         }
 
+        // Check scraper status on page load
+        async function checkScraperStatus() {
+            // #region agent log
+            const debugInfo = {
+                timestamp: Date.now(),
+                location: 'index.ejs:checkScraperStatus',
+                message: 'Checking scraper status on page load',
+                data: {
+                    stopBtnExists: !!stopBtn,
+                    stopBtnHidden: stopBtn ? stopBtn.classList.contains('hidden') : null
+                },
+                sessionId: 'debug-session',
+                runId: 'run1',
+                hypothesisId: 'A'
+            };
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(debugInfo)}).catch(()=>{});
+            // #endregion
+            try {
+                const response = await fetch('/api/scraper-status');
+                const data = await response.json();
+                // #region agent log
+                const debugInfo2 = {
+                    timestamp: Date.now(),
+                    location: 'index.ejs:checkScraperStatus',
+                    message: 'Received scraper status response',
+                    data: {
+                        running: data.running,
+                        stopBtnExists: !!stopBtn,
+                        stopBtnHiddenBefore: stopBtn ? stopBtn.classList.contains('hidden') : null
+                    },
+                    sessionId: 'debug-session',
+                    runId: 'run1',
+                    hypothesisId: 'A'
+                };
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(debugInfo2)}).catch(()=>{});
+                // #endregion
+                if (data.running) {
+                    // Scraper is running - show stop button and hide run button
+                    runBtn.classList.add('hidden');
+                    stopBtn.classList.remove('hidden');
+                    container.classList.remove('hidden');
+                    document.getElementById('run-selected-btn').disabled = true;
+                    syncStatus.innerText = 'RUNNING';
+                    // #region agent log
+                    const debugInfo3 = {
+                        timestamp: Date.now(),
+                        location: 'index.ejs:checkScraperStatus',
+                        message: 'Scraper is running - showing stop button',
+                        data: {
+                            stopBtnHiddenAfter: stopBtn.classList.contains('hidden'),
+                            runBtnHiddenAfter: runBtn.classList.contains('hidden')
+                        },
+                        sessionId: 'debug-session',
+                        runId: 'run1',
+                        hypothesisId: 'A'
+                    };
+                    fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(debugInfo3)}).catch(()=>{});
+                    // #endregion
+                } else {
+                    // Scraper is not running - ensure stop button is hidden
+                    runBtn.classList.remove('hidden');
+                    stopBtn.classList.add('hidden');
+                    document.getElementById('run-selected-btn').disabled = false;
+                    // #region agent log
+                    const debugInfo4 = {
+                        timestamp: Date.now(),
+                        location: 'index.ejs:checkScraperStatus',
+                        message: 'Scraper is not running - hiding stop button',
+                        data: {
+                            stopBtnHiddenAfter: stopBtn.classList.contains('hidden'),
+                            runBtnHiddenAfter: runBtn.classList.contains('hidden')
+                        },
+                        sessionId: 'debug-session',
+                        runId: 'run1',
+                        hypothesisId: 'A'
+                    };
+                    fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(debugInfo4)}).catch(()=>{});
+                    // #endregion
+                }
+            } catch (err) {
+                // #region agent log
+                const debugInfo5 = {
+                    timestamp: Date.now(),
+                    location: 'index.ejs:checkScraperStatus',
+                    message: 'Error checking scraper status',
+                    data: {
+                        error: err.message
+                    },
+                    sessionId: 'debug-session',
+                    runId: 'run1',
+                    hypothesisId: 'A'
+                };
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(debugInfo5)}).catch(()=>{});
+                // #endregion
+                console.error('Error checking scraper status:', err);
+            }
+        }
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             updateSelectAllState();
+            checkScraperStatus(); // Check if scraper is running on page load
 
             // Initialize date picker constraints to prevent infinite scrolling
             const dateInput = document.getElementById('snoozeDateInput');
