@@ -292,7 +292,7 @@
                 </div>
                 <div class="mt-6 flex justify-between">
                     <button onclick="goToProductsStep(1)" class="bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all">Back</button>
-                    <button onclick="configureAndImportProducts()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all">Configure & Import</button>
+                    <button onclick="checkProductsDuplicates()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all">Check for Duplicates</button>
                 </div>
             </div>
 
@@ -620,50 +620,13 @@
                 return;
             }
 
-            const newColumnsToAdd = [];
-            document.querySelectorAll('.products-new-col-checkbox:checked').forEach(cb => {
-                newColumnsToAdd.push({
-                    name: cb.dataset.name,
-                    type: cb.dataset.type
-                });
-            });
-
-            const mappings = {};
-            document.querySelectorAll('.products-column-mapping-select').forEach(select => {
-                const excelCol = select.dataset.excelCol;
-                const dbCol = select.value;
-                if (dbCol) {
-                    mappings[excelCol] = dbCol;
-                }
-            });
-
             try {
                 document.getElementById('productsUploadError').classList.add('hidden');
-
-                if (newColumnsToAdd.length > 0) {
-                    const configureResponse = await fetch('/api/upload-excel/configure', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ columnsToAdd: newColumnsToAdd })
-                    });
-
-                    const configureData = await configureResponse.json();
-                    if (!configureResponse.ok) {
-                        throw new Error(configureData.error || 'Failed to configure columns');
-                    }
-
-                    configureData.addedColumns.forEach(col => {
-                        const excelCol = newColumnsToAdd.find(nc => sanitizeProductsColumnName(nc.name) === col.dbName);
-                        if (excelCol) {
-                            mappings[excelCol.name] = col.dbName;
-                        }
-                    });
-                }
 
                 const formData = new FormData();
                 formData.append('file', productsExcelFile);
                 formData.append('asinColumnIndex', asinColumnIndex);
-                formData.append('columnMappings', JSON.stringify(mappings));
+                formData.append('columnMappings', JSON.stringify(productsColumnMappings));
                 formData.append('duplicateDecisions', JSON.stringify(productsDuplicateDecisions));
 
                 const importResponse = await fetch('/api/upload-excel/import', {
@@ -717,6 +680,137 @@
                 .replace(/[^a-z0-9_]/g, '_')
                 .replace(/_{2,}/g, '_')
                 .replace(/^_|_$/g, '');
+        }
+
+        let productsDuplicateDecisions = {};
+        let productsColumnMappings = {};
+        let productsNewColumnsToAdd = [];
+
+        async function checkProductsDuplicates() {
+            const asinColumnIndex = document.getElementById('productsAsinColumnSelect').value;
+            if (!asinColumnIndex) {
+                alert('Please select ASIN column');
+                return;
+            }
+
+            try {
+                document.getElementById('productsUploadError').classList.add('hidden');
+
+                // First, configure new columns if any
+                const newColumnsToAdd = [];
+                document.querySelectorAll('.products-new-col-checkbox:checked').forEach(cb => {
+                    newColumnsToAdd.push({
+                        name: cb.dataset.name,
+                        type: cb.dataset.type
+                    });
+                });
+
+                // Collect column mappings
+                const mappings = {};
+                document.querySelectorAll('.products-column-mapping-select').forEach(select => {
+                    const excelCol = select.dataset.excelCol;
+                    const dbCol = select.value;
+                    if (dbCol) {
+                        mappings[excelCol] = dbCol;
+                    }
+                });
+
+                // Store for later use in import
+                productsNewColumnsToAdd = newColumnsToAdd;
+                productsColumnMappings = mappings;
+
+                // Configure new columns if any
+                if (newColumnsToAdd.length > 0) {
+                    const configureResponse = await fetch('/api/upload-excel/configure', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ columnsToAdd: newColumnsToAdd })
+                    });
+
+                    const configureData = await configureResponse.json();
+                    if (!configureResponse.ok) {
+                        throw new Error(configureData.error || 'Failed to configure columns');
+                    }
+
+                    // Update mappings with newly added columns
+                    configureData.addedColumns.forEach(col => {
+                        const excelCol = newColumnsToAdd.find(nc => sanitizeProductsColumnName(nc.name) === col.dbName);
+                        if (excelCol) {
+                            productsColumnMappings[excelCol.name] = col.dbName;
+                        }
+                    });
+                }
+
+                // Now check for duplicates
+                const formData = new FormData();
+                formData.append('file', productsExcelFile);
+                formData.append('asinColumnIndex', asinColumnIndex);
+
+                const response = await fetch('/api/upload-excel/check-duplicates', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to check duplicates');
+                }
+
+                if (data.duplicates.length === 0) {
+                    // No duplicates, proceed directly to import
+                    productsDuplicateDecisions = {};
+                    await proceedWithProductsImport();
+                    return;
+                }
+
+                // Show duplicates step
+                productsDuplicateDecisions = {};
+                const duplicatesList = document.getElementById('productsDuplicatesList');
+                duplicatesList.innerHTML = '';
+
+                data.duplicates.forEach(dup => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center gap-3 p-4 bg-amber-50 border-2 border-amber-200 rounded-lg';
+                    div.innerHTML = `
+                        <div class="flex-1">
+                            <div class="font-black text-slate-900">ASIN: <span class="font-mono text-blue-600">${dup.asin}</span></div>
+                            <div class="text-sm text-slate-600">Row ${dup.rowNum} in file</div>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="setDuplicateDecision('${dup.asin}', 'replace')" class="px-4 py-2 bg-green-600 text-white text-sm font-black rounded-lg hover:bg-green-700 transition-all duplicate-btn-${dup.asin}" data-decision="replace">Replace</button>
+                            <button onclick="setDuplicateDecision('${dup.asin}', 'skip')" class="px-4 py-2 bg-slate-400 text-white text-sm font-black rounded-lg hover:bg-slate-500 transition-all duplicate-btn-${dup.asin}" data-decision="skip">Skip</button>
+                        </div>
+                    `;
+                    duplicatesList.appendChild(div);
+                    // Default to skip
+                    productsDuplicateDecisions[dup.asin] = 'skip';
+                    updateDuplicateButtonState(dup.asin, 'skip');
+                });
+
+                goToProductsStep(3);
+            } catch (err) {
+                document.getElementById('productsUploadError').textContent = 'Error: ' + err.message;
+                document.getElementById('productsUploadError').classList.remove('hidden');
+            }
+        }
+
+        function setDuplicateDecision(asin, decision) {
+            productsDuplicateDecisions[asin] = decision;
+            updateDuplicateButtonState(asin, decision);
+        }
+
+        function updateDuplicateButtonState(asin, selectedDecision) {
+            document.querySelectorAll(`.duplicate-btn-${asin}`).forEach(btn => {
+                if (btn.dataset.decision === selectedDecision) {
+                    btn.classList.remove('bg-slate-400', 'bg-green-600');
+                    btn.classList.add(selectedDecision === 'replace' ? 'bg-green-700' : 'bg-slate-500');
+                    btn.style.opacity = '1';
+                } else {
+                    btn.classList.remove('bg-green-700', 'bg-slate-500');
+                    btn.classList.add(selectedDecision === 'replace' ? 'bg-slate-400' : 'bg-green-600');
+                    btn.style.opacity = '0.6';
+                }
+            });
         }
 
         // Product Management Functions
