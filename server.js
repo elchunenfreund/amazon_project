@@ -364,21 +364,7 @@ app.get('/products', async (req, res) => {
     }
 });
 
-// Get single product by ASIN
-app.get('/api/products/:asin', async (req, res) => {
-    try {
-        const { asin } = req.params;
-        const result = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Product not found' });
-        }
-        res.json(result.rows[0]);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Get product table columns
+// Get product table columns (must come before /:asin route)
 app.get('/api/products/columns', async (req, res) => {
     try {
         const columns = await getTableColumns();
@@ -388,7 +374,7 @@ app.get('/api/products/columns', async (req, res) => {
     }
 });
 
-// Find duplicate ASINs
+// Find duplicate ASINs (must come before /:asin route)
 app.get('/api/products/duplicates', async (req, res) => {
     try {
         const result = await pool.query(`
@@ -417,6 +403,20 @@ app.get('/api/products/duplicates', async (req, res) => {
         res.json({ duplicates });
     } catch (err) {
         console.error('Find duplicates error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get single product by ASIN (must come AFTER specific routes like /duplicates)
+app.get('/api/products/:asin', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const result = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
@@ -1026,10 +1026,13 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                         duplicateDecisions = typeof req.body.duplicateDecisions === 'string'
                             ? JSON.parse(req.body.duplicateDecisions)
                             : req.body.duplicateDecisions;
+                        console.log('Parsed duplicateDecisions:', duplicateDecisions);
                     } catch (e) {
-                        console.error('Error parsing duplicateDecisions:', e);
+                        console.error('Error parsing duplicateDecisions:', e, req.body.duplicateDecisions);
                         duplicateDecisions = {};
                     }
+                } else {
+                    console.log('No duplicateDecisions in request body');
                 }
 
                 // Check if ASIN exists
@@ -1062,8 +1065,16 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                                 updateValues
                             );
                             updated++;
+                            console.log(`Updated ASIN ${asin} with ${updateFields.length} fields`);
                         } else {
-                            skipped++;
+                            console.log(`ASIN ${asin}: No fields to update (data only has ASIN or no mappings)`);
+                            // Even if no fields to update, if user chose replace, we should count it as updated
+                            // (the ASIN already exists, so nothing to change)
+                            if (decision === 'replace') {
+                                updated++;
+                            } else {
+                                skipped++;
+                            }
                         }
                     } else {
                         // Skip this row (default if no decision provided or decision is 'skip')

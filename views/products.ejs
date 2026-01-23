@@ -1161,11 +1161,13 @@
         async function findDuplicates() {
             try {
                 const response = await fetch('/api/products/duplicates');
-                const data = await response.json();
 
                 if (!response.ok) {
-                    throw new Error(data.error || 'Failed to find duplicates');
+                    const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+                    throw new Error(errorData.error || `HTTP ${response.status}: Failed to find duplicates`);
                 }
+
+                const data = await response.json();
 
                 if (data.duplicates.length === 0) {
                     alert('No duplicate ASINs found!');
