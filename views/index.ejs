@@ -589,7 +589,10 @@
                     </div>
                     <div id="dashboardNewColumnsSection" class="hidden">
                         <div class="mb-4">
-                            <label class="block text-sm font-bold mb-2">New Columns to Add:</label>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="block text-sm font-bold">New Columns to Add:</label>
+                                <button onclick="autoAddAllNewColumns()" class="px-4 py-2 bg-green-600 text-white text-sm font-black rounded hover:bg-green-700">Auto-Add All New Columns</button>
+                            </div>
                             <div id="dashboardNewColumnsList" class="space-y-2"></div>
                         </div>
                     </div>
@@ -1606,6 +1609,19 @@
                 document.getElementById('dashboardNewColumnsSection').classList.remove('hidden');
                 const newColsList = document.getElementById('dashboardNewColumnsList');
                 newColsList.innerHTML = '';
+
+                // Add Select All / Deselect All buttons
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'flex justify-between items-center mb-3 pb-2 border-b border-slate-300';
+                headerDiv.innerHTML = `
+                    <span class="font-bold text-sm">New Columns (${dashboardPreviewData.newColumns.length})</span>
+                    <div class="flex gap-2">
+                        <button onclick="selectAllNewColumns()" class="px-3 py-1 bg-blue-600 text-white text-xs font-black rounded hover:bg-blue-700">Select All</button>
+                        <button onclick="deselectAllNewColumns()" class="px-3 py-1 bg-slate-400 text-white text-xs font-black rounded hover:bg-slate-500">Deselect All</button>
+                    </div>
+                `;
+                newColsList.appendChild(headerDiv);
+
                 dashboardPreviewData.newColumns.forEach(col => {
                     const div = document.createElement('div');
                     div.className = 'flex items-center gap-2 p-2 bg-slate-50 rounded';
@@ -1625,24 +1641,98 @@
             // Column mappings
             const mappingsList = document.getElementById('dashboardColumnMappingsList');
             mappingsList.innerHTML = '';
+
+            // Count auto-matched columns
+            const suggestedMappings = dashboardPreviewData.suggestedMappings || {};
+            let autoMatchedCount = 0;
+            let unmatchedCount = 0;
+
             dashboardPreviewData.excelColumns.forEach(col => {
                 if (!col.isAsin) {
+                    const hasMatch = suggestedMappings[col.name];
+                    if (hasMatch) autoMatchedCount++;
+                    else unmatchedCount++;
+                }
+            });
+
+            // Add summary and Auto-Map All button
+            if (dashboardPreviewData.excelColumns.some(col => !col.isAsin)) {
+                const summaryDiv = document.createElement('div');
+                summaryDiv.className = 'mb-4 p-3 bg-blue-50 border border-blue-200 rounded flex justify-between items-center';
+                summaryDiv.innerHTML = `
+                    <div class="text-sm">
+                        <span class="font-bold text-blue-700">${autoMatchedCount} column(s) auto-matched</span>
+                        ${unmatchedCount > 0 ? `<span class="text-slate-600">, ${unmatchedCount} need manual mapping</span>` : ''}
+                    </div>
+                    <button onclick="autoMapAllColumns()" class="px-4 py-2 bg-blue-600 text-white text-sm font-black rounded hover:bg-blue-700">Auto-Map All</button>
+                `;
+                mappingsList.appendChild(summaryDiv);
+            }
+
+            dashboardPreviewData.excelColumns.forEach(col => {
+                if (!col.isAsin) {
+                    const suggestedMatch = suggestedMappings[col.name];
+                    const isAutoMatched = !!suggestedMatch;
+
                     const div = document.createElement('div');
-                    div.className = 'flex items-center gap-2 p-2 bg-white border border-slate-200 rounded';
+                    div.className = `flex items-center gap-2 p-2 bg-white border rounded ${isAutoMatched ? 'border-blue-300 bg-blue-50' : 'border-slate-200'}`;
                     div.innerHTML = `
                         <label class="flex-1">
-                            <span class="font-bold">${col.name}</span>
-                            <select class="dashboard-column-mapping-select w-full mt-1 px-2 py-1 border border-slate-300 rounded" data-excel-col="${col.name}">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="font-bold">${col.name}</span>
+                                ${isAutoMatched ? '<span class="text-xs text-blue-600 font-bold">✓ Auto-matched</span>' : '<span class="text-xs text-amber-600">⚠ Needs mapping</span>'}
+                            </div>
+                            <select class="dashboard-column-mapping-select w-full px-2 py-1 border border-slate-300 rounded" data-excel-col="${col.name}">
                                 <option value="">-- Skip --</option>
-                                ${dashboardPreviewData.existingColumns.map(dbCol =>
-                                    `<option value="${dbCol.name}">${dbCol.name}</option>`
-                                ).join('')}
+                                ${dashboardPreviewData.existingColumns.map(dbCol => {
+                                    const isSelected = suggestedMatch === dbCol.name;
+                                    return `<option value="${dbCol.name}" ${isSelected ? 'selected' : ''}>${dbCol.name}</option>`;
+                                }).join('')}
                             </select>
                         </label>
                     `;
                     mappingsList.appendChild(div);
                 }
             });
+        }
+
+        function selectAllNewColumns() {
+            document.querySelectorAll('.dashboard-new-col-checkbox').forEach(cb => {
+                cb.checked = true;
+            });
+        }
+
+        function deselectAllNewColumns() {
+            document.querySelectorAll('.dashboard-new-col-checkbox').forEach(cb => {
+                cb.checked = false;
+            });
+        }
+
+        function autoMapAllColumns() {
+            if (!dashboardPreviewData || !dashboardPreviewData.suggestedMappings) return;
+
+            const suggestedMappings = dashboardPreviewData.suggestedMappings;
+            document.querySelectorAll('.dashboard-column-mapping-select').forEach(select => {
+                const excelCol = select.dataset.excelCol;
+                const suggestedMatch = suggestedMappings[excelCol];
+                if (suggestedMatch) {
+                    select.value = suggestedMatch;
+                }
+            });
+        }
+
+        function autoAddAllNewColumns() {
+            const newColumns = dashboardPreviewData?.newColumns || [];
+            if (newColumns.length === 0) {
+                alert('No new columns to add');
+                return;
+            }
+
+            if (confirm(`This will add ${newColumns.length} new column(s) to your database:\n\n${newColumns.map(c => `- ${c.name} (${c.suggestedType})`).join('\n')}\n\nContinue?`)) {
+                // Select all new columns
+                selectAllNewColumns();
+                // Proceed with import (this will be handled by configureAndImportDashboard)
+            }
         }
 
         async function configureAndImportDashboard() {

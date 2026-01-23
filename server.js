@@ -81,6 +81,50 @@ function sanitizeColumnName(name) {
     return sanitized;
 }
 
+// Fuzzy matching function to find best matching database column for an Excel column
+function findBestMatch(excelColName, dbColumns) {
+    if (!excelColName || !dbColumns || dbColumns.length === 0) {
+        return null;
+    }
+
+    const excelLower = excelColName.toLowerCase().trim();
+    const excelSanitized = sanitizeColumnName(excelColName);
+
+    // Priority 1: Exact match (case-insensitive)
+    let match = dbColumns.find(col => col.name.toLowerCase() === excelLower);
+    if (match) return match.name;
+
+    // Priority 2: Sanitized match (excel name sanitized == db name)
+    match = dbColumns.find(col => col.name === excelSanitized);
+    if (match) return match.name;
+
+    // Priority 3: DB column name contains Excel column name (or vice versa)
+    match = dbColumns.find(col => {
+        const dbLower = col.name.toLowerCase();
+        return dbLower.includes(excelLower) || excelLower.includes(dbLower);
+    });
+    if (match) return match.name;
+
+    // Priority 4: Sanitized Excel name contains DB name (or vice versa)
+    match = dbColumns.find(col => {
+        const dbLower = col.name.toLowerCase();
+        return dbLower.includes(excelSanitized) || excelSanitized.includes(dbLower);
+    });
+    if (match) return match.name;
+
+    // Priority 5: Word-based matching (check if key words match)
+    const excelWords = excelLower.split(/[_\s-]+/).filter(w => w.length > 2);
+    if (excelWords.length > 0) {
+        match = dbColumns.find(col => {
+            const dbLower = col.name.toLowerCase();
+            return excelWords.some(word => dbLower.includes(word));
+        });
+        if (match) return match.name;
+    }
+
+    return null; // No match found
+}
+
 async function addColumnToTable(columnName, dataType) {
     const sanitized = sanitizeColumnName(columnName);
 
@@ -580,6 +624,19 @@ app.post('/api/upload-excel/preview', upload.single('file'), async (req, res) =>
             return res.status(400).json({ error: 'No ASIN column found in Excel file' });
         }
 
+        // Generate suggested mappings for each Excel column
+        const suggestedMappings = {};
+        const existingDbColumns = dbColumns.filter(col => !systemColumns.includes(col.name));
+
+        excelColumns.forEach(col => {
+            if (!col.isAsin) {
+                const bestMatch = findBestMatch(col.name, existingDbColumns);
+                if (bestMatch) {
+                    suggestedMappings[col.name] = bestMatch;
+                }
+            }
+        });
+
         res.json({
             excelColumns: excelColumns.map(col => ({
                 name: col.name,
@@ -592,8 +649,9 @@ app.post('/api/upload-excel/preview', upload.single('file'), async (req, res) =>
                 suggestedType: col.suggestedType,
                 sanitizedName: sanitizeColumnName(col.name)
             })),
-            existingColumns: dbColumns.filter(col => !systemColumns.includes(col.name)),
-            asinColumnIndex: asinColumn ? asinColumn.index : null
+            existingColumns: existingDbColumns,
+            asinColumnIndex: asinColumn ? asinColumn.index : null,
+            suggestedMappings: suggestedMappings
         });
     } catch (err) {
         console.error('Excel preview error:', err);
