@@ -787,6 +787,7 @@
                 duplicatesList.innerHTML = '';
 
                 data.duplicates.forEach(dup => {
+                    const asinUpper = dup.asin.toUpperCase();
                     const div = document.createElement('div');
                     div.className = 'flex items-center gap-3 p-4 bg-amber-50 border-2 border-amber-200 rounded-lg';
                     div.innerHTML = `
@@ -795,14 +796,23 @@
                             <div class="text-sm text-slate-600">Row ${dup.rowNum} in file</div>
                         </div>
                         <div class="flex gap-2">
-                            <button onclick="setDuplicateDecision('${dup.asin}', 'replace')" class="px-4 py-2 bg-green-600 text-white text-sm font-black rounded-lg hover:bg-green-700 transition-all duplicate-btn-${dup.asin}" data-decision="replace">Replace</button>
-                            <button onclick="setDuplicateDecision('${dup.asin}', 'skip')" class="px-4 py-2 bg-slate-400 text-white text-sm font-black rounded-lg hover:bg-slate-500 transition-all duplicate-btn-${dup.asin}" data-decision="skip">Skip</button>
+                            <button data-asin="${asinUpper}" data-decision="replace" class="duplicate-decision-btn px-4 py-2 bg-green-600 text-white text-sm font-black rounded-lg hover:bg-green-700 transition-all duplicate-btn-${asinUpper}" data-decision="replace">Replace</button>
+                            <button data-asin="${asinUpper}" data-decision="skip" class="duplicate-decision-btn px-4 py-2 bg-slate-400 text-white text-sm font-black rounded-lg hover:bg-slate-500 transition-all duplicate-btn-${asinUpper}" data-decision="skip">Skip</button>
                         </div>
                     `;
                     duplicatesList.appendChild(div);
                     // Default to skip - use uppercase ASIN to match import
-                    productsDuplicateDecisions[dup.asin.toUpperCase()] = 'skip';
-                    updateDuplicateButtonState(dup.asin, 'skip');
+                    productsDuplicateDecisions[asinUpper] = 'skip';
+                    updateDuplicateButtonState(asinUpper, 'skip');
+                });
+
+                // Add event listeners to buttons
+                document.querySelectorAll('.duplicate-decision-btn').forEach(btn => {
+                    btn.addEventListener('click', function() {
+                        const asin = this.dataset.asin;
+                        const decision = this.dataset.decision;
+                        setDuplicateDecision(asin, decision);
+                    });
                 });
 
                 goToProductsStep(3);
@@ -814,12 +824,15 @@
 
         function setDuplicateDecision(asin, decision) {
             // Store in uppercase to match import processing
-            productsDuplicateDecisions[asin.toUpperCase()] = decision;
-            updateDuplicateButtonState(asin, decision);
+            const asinUpper = typeof asin === 'string' ? asin.toUpperCase() : asin;
+            productsDuplicateDecisions[asinUpper] = decision;
+            console.log('Set duplicate decision:', asinUpper, '=', decision, 'Current decisions:', productsDuplicateDecisions);
+            updateDuplicateButtonState(asinUpper, decision);
         }
 
         function updateDuplicateButtonState(asin, selectedDecision) {
-            document.querySelectorAll(`.duplicate-btn-${asin}`).forEach(btn => {
+            // Find buttons by data-asin attribute (uppercase)
+            document.querySelectorAll(`[data-asin="${asin}"]`).forEach(btn => {
                 if (btn.dataset.decision === selectedDecision) {
                     btn.classList.remove('bg-slate-400', 'bg-green-600');
                     btn.classList.add(selectedDecision === 'replace' ? 'bg-green-700' : 'bg-slate-500');

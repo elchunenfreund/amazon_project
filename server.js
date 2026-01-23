@@ -1037,8 +1037,9 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
 
                 if (existingCheck.rows.length > 0) {
                     // ASIN already exists - check user's decision
-                    const decision = duplicateDecisions[asin]; // 'replace' or 'skip'
-                    console.log(`ASIN ${asin}: decision = ${decision}, duplicateDecisions keys:`, Object.keys(duplicateDecisions));
+                    // Try both uppercase and original case for matching
+                    const decision = duplicateDecisions[asin] || duplicateDecisions[asin.toUpperCase()] || duplicateDecisions[asin.toLowerCase()];
+                    console.log(`ASIN ${asin}: decision = ${decision}, duplicateDecisions:`, duplicateDecisions);
 
                     if (decision === 'replace') {
                         // Update existing
