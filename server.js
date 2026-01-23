@@ -30,12 +30,14 @@ const upload = multer({
         const allowedMimes = [
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
             'application/vnd.ms-excel', // .xls
+            'text/csv', // .csv
+            'application/csv', // .csv alternative
             'application/octet-stream' // fallback
         ];
-        if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls)$/i)) {
+        if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls|csv|numbers)$/i)) {
             cb(null, true);
         } else {
-            cb(new Error('Invalid file type. Only Excel files (.xlsx, .xls) are allowed.'));
+            cb(new Error('Invalid file type. Only Excel files (.xlsx, .xls), CSV files (.csv), or Numbers files (.numbers) are allowed.'));
         }
     }
 });
@@ -386,55 +388,170 @@ app.patch('/api/asins/:asin/snooze', async (req, res) => {
     }
 });
 
-// Excel Upload Endpoints
+// Helper function to parse CSV (handles quoted values, commas in quotes, etc.)
+function parseCSV(buffer) {
+    const text = buffer.toString('utf-8');
+    const lines = text.split(/\r?\n/).filter(line => line.trim());
+    if (lines.length === 0) return { headers: [], rows: [] };
+
+    function parseCSVLine(line) {
+        const values = [];
+        let current = '';
+        let inQuotes = false;
+
+        for (let i = 0; i < line.length; i++) {
+            const char = line[i];
+            const nextChar = line[i + 1];
+
+            if (char === '"') {
+                if (inQuotes && nextChar === '"') {
+                    // Escaped quote
+                    current += '"';
+                    i++; // Skip next quote
+                } else {
+                    // Toggle quote state
+                    inQuotes = !inQuotes;
+                }
+            } else if (char === ',' && !inQuotes) {
+                // Field separator
+                values.push(current.trim());
+                current = '';
+            } else {
+                current += char;
+            }
+        }
+        // Add last value
+        values.push(current.trim());
+
+        return values;
+    }
+
+    // Parse header row
+    const headers = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, ''));
+
+    // Parse data rows
+    const rows = [];
+    for (let i = 1; i < lines.length; i++) {
+        const values = parseCSVLine(lines[i]);
+        // Pad with empty strings if row is shorter than headers
+        while (values.length < headers.length) {
+            values.push('');
+        }
+        // Only add row if it has at least one non-empty value
+        if (values.some(v => v)) {
+            rows.push(values);
+        }
+    }
+
+    return { headers, rows };
+}
+
+// Helper function to detect file type
+function detectFileType(filename, mimetype) {
+    const ext = filename.toLowerCase().split('.').pop();
+    if (ext === 'csv' || mimetype === 'text/csv' || mimetype === 'application/csv') {
+        return 'csv';
+    } else if (ext === 'numbers') {
+        return 'numbers';
+    } else {
+        return 'excel';
+    }
+}
+
+// Excel/CSV/Numbers Upload Endpoints
 app.post('/api/upload-excel/preview', upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
             return res.status(400).json({ error: 'No file uploaded' });
         }
 
-        const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(req.file.buffer);
+        const fileType = detectFileType(req.file.originalname, req.file.mimetype);
+        let excelColumns = [];
+        let rowCount = 0;
 
-        const worksheet = workbook.getWorksheet(1) || workbook.worksheets[0];
-        if (!worksheet) {
-            return res.status(400).json({ error: 'Excel file has no worksheets' });
-        }
+        if (fileType === 'csv') {
+            // Parse CSV
+            const { headers, rows } = parseCSV(req.file.buffer);
+            rowCount = rows.length;
 
-        // Get headers from first row
-        const headerRow = worksheet.getRow(1);
-        const excelColumns = [];
-        headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-            const headerValue = cell.text.trim();
-            if (headerValue) {
-                excelColumns.push({
-                    name: headerValue,
-                    index: colNumber,
-                    suggestedType: 'text' // Will be determined below
-                });
-            }
-        });
+            excelColumns = headers.map((header, index) => ({
+                name: header,
+                index: index + 1,
+                suggestedType: 'text'
+            }));
 
-        // Sample first 10 rows to determine data types
-        const sampleSize = Math.min(10, worksheet.rowCount - 1);
-        for (const col of excelColumns) {
-            let allNumeric = true;
-            let hasData = false;
+            // Sample first 10 rows to determine data types
+            const sampleSize = Math.min(10, rows.length);
+            for (const col of excelColumns) {
+                let allNumeric = true;
+                let hasData = false;
 
-            for (let rowNum = 2; rowNum <= sampleSize + 1; rowNum++) {
-                const cell = worksheet.getCell(rowNum, col.index);
-                if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
-                    hasData = true;
-                    const value = cell.value;
-                    if (typeof value !== 'number' && (typeof value === 'string' && isNaN(parseFloat(value)))) {
-                        allNumeric = false;
-                        break;
+                for (let rowNum = 0; rowNum < sampleSize; rowNum++) {
+                    const value = rows[rowNum][col.index - 1];
+                    if (value !== null && value !== undefined && value !== '') {
+                        hasData = true;
+                        if (isNaN(parseFloat(value))) {
+                            allNumeric = false;
+                            break;
+                        }
                     }
                 }
+
+                if (hasData && allNumeric) {
+                    col.suggestedType = 'numeric';
+                }
+            }
+        } else if (fileType === 'numbers') {
+            return res.status(400).json({
+                error: 'Numbers files (.numbers) are not directly supported. Please export your Numbers file to CSV or Excel format first.',
+                suggestion: 'In Numbers: File > Export To > CSV or Excel'
+            });
+        } else {
+            // Excel file
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(req.file.buffer);
+
+            const worksheet = workbook.getWorksheet(1) || workbook.worksheets[0];
+            if (!worksheet) {
+                return res.status(400).json({ error: 'Excel file has no worksheets' });
             }
 
-            if (hasData && allNumeric) {
-                col.suggestedType = 'numeric';
+            rowCount = worksheet.rowCount;
+
+            // Get headers from first row
+            const headerRow = worksheet.getRow(1);
+            headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+                const headerValue = cell.text.trim();
+                if (headerValue) {
+                    excelColumns.push({
+                        name: headerValue,
+                        index: colNumber,
+                        suggestedType: 'text' // Will be determined below
+                    });
+                }
+            });
+
+            // Sample first 10 rows to determine data types
+            const sampleSize = Math.min(10, worksheet.rowCount - 1);
+            for (const col of excelColumns) {
+                let allNumeric = true;
+                let hasData = false;
+
+                for (let rowNum = 2; rowNum <= sampleSize + 1; rowNum++) {
+                    const cell = worksheet.getCell(rowNum, col.index);
+                    if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
+                        hasData = true;
+                        const value = cell.value;
+                        if (typeof value !== 'number' && (typeof value === 'string' && isNaN(parseFloat(value)))) {
+                            allNumeric = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (hasData && allNumeric) {
+                    col.suggestedType = 'numeric';
+                }
             }
         }
 
@@ -547,12 +664,13 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
             return res.status(400).json({ error: 'asinColumnIndex is required' });
         }
 
-        const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(req.file.buffer);
+        const fileType = detectFileType(req.file.originalname, req.file.mimetype);
 
-        const worksheet = workbook.getWorksheet(1) || workbook.worksheets[0];
-        if (!worksheet) {
-            return res.status(400).json({ error: 'Excel file has no worksheets' });
+        if (fileType === 'numbers') {
+            return res.status(400).json({
+                error: 'Numbers files (.numbers) are not directly supported. Please export your Numbers file to CSV or Excel format first.',
+                suggestion: 'In Numbers: File > Export To > CSV or Excel'
+            });
         }
 
         // Get all current columns
@@ -566,20 +684,62 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
         let updated = 0;
         let skipped = 0;
         const errors = [];
+        let rows = [];
+        let headers = [];
 
-        // Process each row (starting from row 2, skipping header)
-        for (let rowNum = 2; rowNum <= worksheet.rowCount; rowNum++) {
-            try {
+        if (fileType === 'csv') {
+            // Parse CSV
+            const parsed = parseCSV(req.file.buffer);
+            headers = parsed.headers;
+            rows = parsed.rows;
+        } else {
+            // Parse Excel
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(req.file.buffer);
+
+            const worksheet = workbook.getWorksheet(1) || workbook.worksheets[0];
+            if (!worksheet) {
+                return res.status(400).json({ error: 'Excel file has no worksheets' });
+            }
+
+            // Get headers
+            const headerRow = worksheet.getRow(1);
+            headerRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
+                headers[colNum - 1] = cell.text.trim();
+            });
+
+            // Convert Excel rows to array format
+            for (let rowNum = 2; rowNum <= worksheet.rowCount; rowNum++) {
                 const row = worksheet.getRow(rowNum);
+                const rowData = [];
+                row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+                    rowData[colNum - 1] = cell.value;
+                });
+                if (rowData.some(v => v !== null && v !== undefined && v !== '')) {
+                    rows.push(rowData);
+                }
+            }
+        }
 
-                // Get ASIN from specified column
-                const asinCell = row.getCell(parseInt(asinColumnIndex));
-                if (!asinCell || !asinCell.value) {
+        // Process each row
+        for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+            try {
+                const row = rows[rowIndex];
+                const rowNum = rowIndex + 2; // +2 because row 1 is header
+
+                // Get ASIN from specified column (convert to 0-based index)
+                const asinColIndex = parseInt(asinColumnIndex) - 1;
+                if (asinColIndex < 0 || asinColIndex >= row.length) {
                     skipped++;
                     continue;
                 }
 
-                let asin = String(asinCell.value).trim().toUpperCase();
+                let asin = String(row[asinColIndex] || '').trim().toUpperCase();
+
+                if (!asin) {
+                    skipped++;
+                    continue;
+                }
 
                 // Validate ASIN format
                 if (!/^[A-Z0-9]{10}$/.test(asin)) {
@@ -591,20 +751,20 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                 // Build data object from column mappings
                 const data = { asin };
 
-                // Get header row once
-                const headerRow = worksheet.getRow(1);
+                // Create header map (column name to index)
                 const headerMap = {};
-                headerRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
-                    headerMap[cell.text.trim()] = colNum;
+                headers.forEach((header, idx) => {
+                    if (header) {
+                        headerMap[header] = idx;
+                    }
                 });
 
                 for (const [excelColName, dbColName] of Object.entries(columnMappings)) {
                     if (dbColName && dbColName !== 'asin') {
                         const colIndex = headerMap[excelColName];
 
-                        if (colIndex) {
-                            const cell = row.getCell(colIndex);
-                            let value = cell.value;
+                        if (colIndex !== undefined && colIndex < row.length) {
+                            let value = row[colIndex];
 
                             // Handle null/empty
                             if (value === null || value === undefined || value === '') {
