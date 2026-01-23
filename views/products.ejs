@@ -95,6 +95,7 @@
             <div class="flex flex-wrap gap-2 md:gap-4 items-end">
                 <a href="/" class="bg-slate-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-slate-700 active:scale-95 transition-all text-sm md:text-base">← DASHBOARD</a>
                 <button onclick="openAddAsinModal()" class="bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-green-700 active:scale-95 transition-all text-sm md:text-base">+ ADD ASIN</button>
+                <button onclick="openExcelUploadModal()" class="bg-indigo-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-indigo-700 active:scale-95 transition-all text-sm md:text-base">📊 UPLOAD EXCEL</button>
                 <button onclick="bulkDelete()" id="bulk-delete-btn" class="bg-rose-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-rose-700 active:scale-95 transition-all text-sm md:text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>DELETE SELECTED</button>
             </div>
         </header>
@@ -170,7 +171,465 @@
         </div>
     </div>
 
+    <!-- Excel Upload Modal -->
+    <div id="excelUploadModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeExcelUploadModal()">&times;</span>
+            <div class="modal-header">Upload Excel File</div>
+
+            <!-- Step 1: File Selection -->
+            <div id="excelStep1" class="upload-step">
+                <div class="step-indicator">
+                    <div class="step active">
+                        <div class="step-number">1</div>
+                        <div>Select File</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div>Map Columns</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div>Import</div>
+                    </div>
+                </div>
+                <div class="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center">
+                    <input type="file" id="productsExcelFileInput" accept=".xlsx,.xls,.csv,.numbers" class="hidden" onchange="handleProductsFileSelect(event)">
+                    <label for="productsExcelFileInput" class="cursor-pointer">
+                        <div class="text-4xl mb-4">📊</div>
+                        <div class="text-lg font-bold text-slate-700 mb-2">Click to select file</div>
+                        <div class="text-sm text-slate-500">Supports Excel (.xlsx, .xls), CSV (.csv), and Numbers (.numbers - export to CSV/Excel first)</div>
+                    </label>
+                </div>
+                <div id="productsFileInfo" class="hidden mt-4 p-4 bg-slate-100 rounded flex items-center justify-between">
+                    <div class="font-bold">Selected: <span id="productsFileName"></span></div>
+                    <button onclick="removeProductsFile()" class="bg-rose-600 text-white px-4 py-2 rounded-lg font-black hover:bg-rose-700 transition-all text-sm">Remove File</button>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button onclick="previewProductsExcel()" id="productsPreviewBtn" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>Preview & Continue</button>
+                </div>
+            </div>
+
+            <!-- Step 2: Column Mapping -->
+            <div id="excelStep2" class="upload-step hidden">
+                <div class="step-indicator">
+                    <div class="step completed">
+                        <div class="step-number">✓</div>
+                        <div>Select File</div>
+                    </div>
+                    <div class="step active">
+                        <div class="step-number">2</div>
+                        <div>Map Columns</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div>Import</div>
+                    </div>
+                </div>
+                <div id="productsColumnMappingContent">
+                    <div class="mb-4 p-3 bg-slate-100 rounded flex items-center justify-between">
+                        <div>
+                            <span class="font-bold">File: </span>
+                            <span id="productsMappingFileName"></span>
+                        </div>
+                        <button onclick="removeProductsFileAndGoBack()" class="bg-rose-600 text-white px-4 py-2 rounded-lg font-black hover:bg-rose-700 transition-all text-sm">Remove File</button>
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-lg font-black text-slate-900 mb-2">Select ASIN Column</label>
+                        <p class="text-sm text-slate-600 mb-3">Choose which column contains the ASIN values (10-character product identifiers)</p>
+                        <select id="productsAsinColumnSelect" class="w-full px-4 py-3 border-2 border-slate-300 rounded-lg text-base focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-semibold"></select>
+                    </div>
+                    <div id="productsNewColumnsSection" class="hidden">
+                        <div class="mb-6">
+                            <div class="flex justify-between items-center mb-4">
+                                <div>
+                                    <label class="block text-lg font-black text-slate-900 mb-1">New Columns to Add</label>
+                                    <p class="text-sm text-slate-600">Select which new columns to add to your database</p>
+                                </div>
+                                <button onclick="autoAddAllProductsNewColumns()" class="px-5 py-2.5 bg-green-600 text-white text-sm font-black rounded-lg hover:bg-green-700 shadow-md hover:shadow-lg transition-all">Auto-Add All</button>
+                            </div>
+                            <div id="productsNewColumnsList" class="space-y-2"></div>
+                        </div>
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-lg font-black text-slate-900 mb-2">Map Excel Columns to Database</label>
+                        <p class="text-sm text-slate-600 mb-4">Match your Excel columns to existing database columns. New columns are handled separately above.</p>
+                        <div id="productsColumnMappingsList" class="space-y-2"></div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-between">
+                    <button onclick="goToProductsStep(1)" class="bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all">Back</button>
+                    <button onclick="configureAndImportProducts()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all">Configure & Import</button>
+                </div>
+            </div>
+
+            <!-- Step 3: Import Results -->
+            <div id="excelStep3" class="upload-step hidden">
+                <div class="step-indicator">
+                    <div class="step completed">
+                        <div class="step-number">✓</div>
+                        <div>Select File</div>
+                    </div>
+                    <div class="step completed">
+                        <div class="step-number">✓</div>
+                        <div>Map Columns</div>
+                    </div>
+                    <div class="step active">
+                        <div class="step-number">3</div>
+                        <div>Import</div>
+                    </div>
+                </div>
+                <div id="productsImportResults" class="mt-4">
+                    <div class="p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+                        <div class="font-bold mb-2">Import Complete!</div>
+                        <div id="productsImportStats"></div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button onclick="closeExcelUploadModal()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all">Done</button>
+                </div>
+            </div>
+            <div id="productsUploadError" class="hidden mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded"></div>
+        </div>
+    </div>
+
     <script>
+        // Excel Upload Variables
+        let productsExcelFile = null;
+        let productsPreviewData = null;
+
+        // Excel Upload Functions
+        function openExcelUploadModal() {
+            document.getElementById('excelUploadModal').style.display = 'block';
+            goToProductsStep(1);
+        }
+
+        function closeExcelUploadModal() {
+            document.getElementById('excelUploadModal').style.display = 'none';
+            removeProductsFile();
+            productsPreviewData = null;
+            goToProductsStep(1);
+        }
+
+        function goToProductsStep(step) {
+            document.querySelectorAll('.upload-step').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`excelStep${step}`).classList.remove('hidden');
+        }
+
+        function handleProductsFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                productsExcelFile = file;
+                document.getElementById('productsFileName').textContent = file.name;
+                document.getElementById('productsFileInfo').classList.remove('hidden');
+                document.getElementById('productsPreviewBtn').disabled = false;
+                document.getElementById('productsUploadError').classList.add('hidden');
+            }
+        }
+
+        function removeProductsFile() {
+            productsExcelFile = null;
+            productsPreviewData = null;
+            document.getElementById('productsExcelFileInput').value = '';
+            document.getElementById('productsFileName').textContent = '';
+            document.getElementById('productsFileInfo').classList.add('hidden');
+            document.getElementById('productsPreviewBtn').disabled = true;
+            document.getElementById('productsUploadError').classList.add('hidden');
+        }
+
+        function removeProductsFileAndGoBack() {
+            removeProductsFile();
+            goToProductsStep(1);
+        }
+
+        async function previewProductsExcel() {
+            if (!productsExcelFile) return;
+
+            const formData = new FormData();
+            formData.append('file', productsExcelFile);
+
+            try {
+                const response = await fetch('/api/upload-excel/preview', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    let errorMsg = data.error || 'Failed to preview file';
+                    if (data.suggestion) {
+                        errorMsg += '\n\n' + data.suggestion;
+                    }
+                    throw new Error(errorMsg);
+                }
+
+                productsPreviewData = data;
+                if (productsExcelFile) {
+                    document.getElementById('productsMappingFileName').textContent = productsExcelFile.name;
+                }
+                renderProductsColumnMapping();
+                goToProductsStep(2);
+            } catch (err) {
+                const errorDiv = document.getElementById('productsUploadError');
+                errorDiv.innerHTML = 'Error: ' + err.message.replace(/\n/g, '<br>');
+                errorDiv.classList.remove('hidden');
+            }
+        }
+
+        function renderProductsColumnMapping() {
+            if (!productsPreviewData) return;
+
+            // ASIN column select - show ALL columns
+            const asinSelect = document.getElementById('productsAsinColumnSelect');
+            asinSelect.innerHTML = '';
+            productsPreviewData.excelColumns.forEach(col => {
+                const option = document.createElement('option');
+                option.value = col.index;
+                option.textContent = col.name;
+                if (col.isAsin) {
+                    option.selected = true;
+                }
+                asinSelect.appendChild(option);
+            });
+
+            // New columns section
+            if (productsPreviewData.newColumns && productsPreviewData.newColumns.length > 0) {
+                document.getElementById('productsNewColumnsSection').classList.remove('hidden');
+                const newColsList = document.getElementById('productsNewColumnsList');
+                newColsList.innerHTML = '';
+
+                const headerDiv = document.createElement('div');
+                headerDiv.className = 'flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-300';
+                headerDiv.innerHTML = `
+                    <div>
+                        <div class="font-black text-lg text-slate-900">New Columns to Add</div>
+                        <div class="text-sm text-slate-600 mt-1">${productsPreviewData.newColumns.length} column(s) will be added to your database</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="selectAllProductsNewColumns()" class="px-4 py-2 bg-blue-600 text-white text-sm font-black rounded-lg hover:bg-blue-700 shadow-md transition-all">Select All</button>
+                        <button onclick="deselectAllProductsNewColumns()" class="px-4 py-2 bg-slate-400 text-white text-sm font-black rounded-lg hover:bg-slate-500 shadow-md transition-all">Deselect All</button>
+                    </div>
+                `;
+                newColsList.appendChild(headerDiv);
+
+                productsPreviewData.newColumns.forEach(col => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center gap-3 p-4 bg-gradient-to-r from-slate-50 to-blue-50 border-2 border-slate-200 rounded-lg mb-2 hover:border-blue-300 transition-all';
+                    div.innerHTML = `
+                        <input type="checkbox" id="productsNewCol_${col.sanitizedName}" class="products-new-col-checkbox w-5 h-5 cursor-pointer" data-name="${col.name}" data-sanitized="${col.sanitizedName}" data-type="${col.suggestedType}" checked>
+                        <label for="productsNewCol_${col.sanitizedName}" class="flex-1 cursor-pointer">
+                            <div class="font-black text-slate-900 mb-1">${col.name}</div>
+                            <div class="text-sm text-slate-600">
+                                <span class="font-semibold">Database name:</span> <span class="font-mono text-blue-700">${col.sanitizedName}</span>
+                                <span class="mx-2">•</span>
+                                <span class="font-semibold">Type:</span> <span class="text-blue-700">${col.suggestedType}</span>
+                            </div>
+                        </label>
+                    `;
+                    newColsList.appendChild(div);
+                });
+            } else {
+                document.getElementById('productsNewColumnsSection').classList.add('hidden');
+            }
+
+            // Column mappings - only show columns that are NOT new columns
+            const mappingsList = document.getElementById('productsColumnMappingsList');
+            mappingsList.innerHTML = '';
+
+            const newColumnNames = new Set((productsPreviewData.newColumns || []).map(col => col.name.toLowerCase()));
+            const columnsToMap = productsPreviewData.excelColumns.filter(col =>
+                !col.isAsin && !newColumnNames.has(col.name.toLowerCase())
+            );
+
+            const suggestedMappings = productsPreviewData.suggestedMappings || {};
+            let autoMatchedCount = 0;
+            let unmatchedCount = 0;
+
+            columnsToMap.forEach(col => {
+                const hasMatch = suggestedMappings[col.name];
+                if (hasMatch) autoMatchedCount++;
+                else unmatchedCount++;
+            });
+
+            if (columnsToMap.length > 0) {
+                const summaryDiv = document.createElement('div');
+                summaryDiv.className = 'mb-4 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border-2 border-blue-200 rounded-xl flex justify-between items-center shadow-sm';
+                summaryDiv.innerHTML = `
+                    <div class="text-sm">
+                        <div class="font-black text-blue-900 text-base mb-1">Column Mapping Summary</div>
+                        <div class="text-slate-700">
+                            <span class="font-bold text-green-700">${autoMatchedCount} auto-matched</span>
+                            ${unmatchedCount > 0 ? `<span class="text-slate-600"> • ${unmatchedCount} need manual mapping</span>` : '<span class="text-green-600"> • All columns mapped!</span>'}
+                        </div>
+                    </div>
+                    <button onclick="autoMapAllProductsColumns()" class="px-5 py-2.5 bg-blue-600 text-white text-sm font-black rounded-lg hover:bg-blue-700 shadow-md hover:shadow-lg transition-all">Auto-Map All</button>
+                `;
+                mappingsList.appendChild(summaryDiv);
+            }
+
+            if (columnsToMap.length === 0) {
+                const noMappingDiv = document.createElement('div');
+                noMappingDiv.className = 'p-6 bg-slate-50 border-2 border-slate-200 rounded-xl text-center';
+                noMappingDiv.innerHTML = `
+                    <div class="text-4xl mb-3">✅</div>
+                    <div class="font-bold text-slate-700 mb-1">All columns are new!</div>
+                    <div class="text-sm text-slate-500">New columns will be added to the database above.</div>
+                `;
+                mappingsList.appendChild(noMappingDiv);
+            } else {
+                columnsToMap.forEach(col => {
+                    const suggestedMatch = suggestedMappings[col.name];
+                    const isAutoMatched = !!suggestedMatch;
+
+                    const div = document.createElement('div');
+                    div.className = `flex items-center gap-3 p-3 bg-white border-2 rounded-lg mb-2 transition-all ${isAutoMatched ? 'border-green-300 bg-green-50 shadow-sm' : 'border-amber-200 bg-amber-50 shadow-sm'}`;
+                    div.innerHTML = `
+                        <div class="flex-shrink-0">
+                            ${isAutoMatched ? '<span class="text-green-600 text-xl">✓</span>' : '<span class="text-amber-600 text-xl">⚠</span>'}
+                        </div>
+                        <label class="flex-1">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="font-black text-slate-900">${col.name}</span>
+                                ${isAutoMatched ? '<span class="text-xs text-green-700 font-bold bg-green-100 px-2 py-0.5 rounded">Auto-matched</span>' : '<span class="text-xs text-amber-700 font-bold bg-amber-100 px-2 py-0.5 rounded">Needs mapping</span>'}
+                            </div>
+                            <select class="products-column-mapping-select w-full px-3 py-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all" data-excel-col="${col.name}">
+                                <option value="">-- Skip this column --</option>
+                                ${productsPreviewData.existingColumns.map(dbCol => {
+                                    const isSelected = suggestedMatch === dbCol.name;
+                                    return `<option value="${dbCol.name}" ${isSelected ? 'selected' : ''}>${dbCol.name}</option>`;
+                                }).join('')}
+                            </select>
+                        </label>
+                    `;
+                    mappingsList.appendChild(div);
+                });
+            }
+        }
+
+        function selectAllProductsNewColumns() {
+            document.querySelectorAll('.products-new-col-checkbox').forEach(cb => {
+                cb.checked = true;
+            });
+        }
+
+        function deselectAllProductsNewColumns() {
+            document.querySelectorAll('.products-new-col-checkbox').forEach(cb => {
+                cb.checked = false;
+            });
+        }
+
+        function autoMapAllProductsColumns() {
+            if (!productsPreviewData || !productsPreviewData.suggestedMappings) return;
+
+            const suggestedMappings = productsPreviewData.suggestedMappings;
+            document.querySelectorAll('.products-column-mapping-select').forEach(select => {
+                const excelCol = select.dataset.excelCol;
+                const suggestedMatch = suggestedMappings[excelCol];
+                if (suggestedMatch) {
+                    select.value = suggestedMatch;
+                }
+            });
+        }
+
+        function autoAddAllProductsNewColumns() {
+            const newColumns = productsPreviewData?.newColumns || [];
+            if (newColumns.length === 0) {
+                alert('No new columns to add');
+                return;
+            }
+
+            if (confirm(`This will add ${newColumns.length} new column(s) to your database:\n\n${newColumns.map(c => `- ${c.name} (${c.suggestedType})`).join('\n')}\n\nContinue?`)) {
+                selectAllProductsNewColumns();
+            }
+        }
+
+        async function configureAndImportProducts() {
+            const asinColumnIndex = document.getElementById('productsAsinColumnSelect').value;
+            if (!asinColumnIndex) {
+                alert('Please select ASIN column');
+                return;
+            }
+
+            const newColumnsToAdd = [];
+            document.querySelectorAll('.products-new-col-checkbox:checked').forEach(cb => {
+                newColumnsToAdd.push({
+                    name: cb.dataset.name,
+                    type: cb.dataset.type
+                });
+            });
+
+            const mappings = {};
+            document.querySelectorAll('.products-column-mapping-select').forEach(select => {
+                const excelCol = select.dataset.excelCol;
+                const dbCol = select.value;
+                if (dbCol) {
+                    mappings[excelCol] = dbCol;
+                }
+            });
+
+            try {
+                document.getElementById('productsUploadError').classList.add('hidden');
+
+                if (newColumnsToAdd.length > 0) {
+                    const configureResponse = await fetch('/api/upload-excel/configure', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ columnsToAdd: newColumnsToAdd })
+                    });
+
+                    const configureData = await configureResponse.json();
+                    if (!configureResponse.ok) {
+                        throw new Error(configureData.error || 'Failed to configure columns');
+                    }
+
+                    configureData.addedColumns.forEach(col => {
+                        const excelCol = newColumnsToAdd.find(nc => sanitizeProductsColumnName(nc.name) === col.dbName);
+                        if (excelCol) {
+                            mappings[excelCol.name] = col.dbName;
+                        }
+                    });
+                }
+
+                const formData = new FormData();
+                formData.append('file', productsExcelFile);
+                formData.append('asinColumnIndex', asinColumnIndex);
+                formData.append('columnMappings', JSON.stringify(mappings));
+
+                const importResponse = await fetch('/api/upload-excel/import', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const importData = await importResponse.json();
+                if (!importResponse.ok) {
+                    throw new Error(importData.error || 'Failed to import data');
+                }
+
+                document.getElementById('productsImportStats').innerHTML = `
+                    <div>Added: ${importData.stats.added}</div>
+                    <div>Updated: ${importData.stats.updated}</div>
+                    <div>Skipped: ${importData.stats.skipped}</div>
+                    ${importData.errors && importData.errors.length > 0 ?
+                        `<div class="mt-2 text-red-600">Errors: ${importData.errors.length}</div>` : ''}
+                `;
+                goToProductsStep(3);
+
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } catch (err) {
+                document.getElementById('productsUploadError').textContent = 'Error: ' + err.message;
+                document.getElementById('productsUploadError').classList.remove('hidden');
+            }
+        }
+
+        function sanitizeProductsColumnName(name) {
+            return name.toLowerCase()
+                .replace(/[^a-z0-9_]/g, '_')
+                .replace(/_{2,}/g, '_')
+                .replace(/^_|_$/g, '');
+        }
+
         // Product Management Functions
         function filterProducts() {
             const search = document.getElementById('productSearchInput').value.toLowerCase();
@@ -299,7 +758,9 @@
         // Close modals when clicking outside
         window.onclick = function(event) {
             const addModal = document.getElementById('addAsinModal');
+            const excelModal = document.getElementById('excelUploadModal');
             if (event.target === addModal) closeAddAsinModal();
+            if (event.target === excelModal) closeExcelUploadModal();
         }
     </script>
 </body>
