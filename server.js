@@ -3,6 +3,8 @@ const http = require('http');
 const { Server } = require('socket.io');
 const { spawn, exec } = require('child_process');
 const { Pool } = require('pg');
+const multer = require('multer');
+const ExcelJS = require('exceljs');
 
 const app = express();
 const server = http.createServer(app);
@@ -19,6 +21,85 @@ let currentScraperProcess = null;
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 app.use(express.json());
+
+// Configure multer for file uploads (memory storage)
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    fileFilter: (req, file, cb) => {
+        const allowedMimes = [
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+            'application/vnd.ms-excel', // .xls
+            'application/octet-stream' // fallback
+        ];
+        if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls)$/i)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Invalid file type. Only Excel files (.xlsx, .xls) are allowed.'));
+        }
+    }
+});
+
+// Database schema helper functions
+async function getTableColumns() {
+    const result = await pool.query(`
+        SELECT column_name, data_type
+        FROM information_schema.columns
+        WHERE table_name = 'products'
+        ORDER BY ordinal_position
+    `);
+    return result.rows.map(row => ({
+        name: row.column_name,
+        type: row.data_type
+    }));
+}
+
+function sanitizeColumnName(name) {
+    // Convert to lowercase, replace spaces/special chars with underscores, keep only alphanumeric and underscores
+    let sanitized = name.toLowerCase()
+        .replace(/[^a-z0-9_]/g, '_')
+        .replace(/_{2,}/g, '_')
+        .replace(/^_|_$/g, '');
+
+    // Ensure it starts with a letter or underscore
+    if (!/^[a-z_]/.test(sanitized)) {
+        sanitized = 'col_' + sanitized;
+    }
+
+    // PostgreSQL identifier limit is 63 characters
+    if (sanitized.length > 63) {
+        sanitized = sanitized.substring(0, 63);
+    }
+
+    // Ensure it's not empty
+    if (!sanitized) {
+        sanitized = 'column_' + Date.now();
+    }
+
+    return sanitized;
+}
+
+async function addColumnToTable(columnName, dataType) {
+    const sanitized = sanitizeColumnName(columnName);
+
+    // Map data types
+    let pgType = 'TEXT';
+    if (dataType === 'numeric' || dataType === 'number') {
+        pgType = 'NUMERIC';
+    }
+
+    // Check if column already exists
+    const existingColumns = await getTableColumns();
+    if (existingColumns.some(col => col.name === sanitized)) {
+        throw new Error(`Column ${sanitized} already exists`);
+    }
+
+    // Add column using parameterized query (column name must be sanitized, not parameterized)
+    await pool.query(`ALTER TABLE products ADD COLUMN "${sanitized}" ${pgType}`);
+
+    console.log(`Added column ${sanitized} (${pgType}) to products table`);
+    return sanitized;
+}
 
 // Helper function to format time in Montreal timezone
 function formatMontrealTime(date) {
@@ -220,6 +301,23 @@ app.get('/history/:asin', async (req, res) => {
     res.render('history', { reports: rows, asin: req.params.asin });
 });
 
+app.get('/products', async (req, res) => {
+    try {
+        // Get all products with all columns
+        const result = await pool.query(`SELECT * FROM products ORDER BY asin`);
+
+        // Get column information for dynamic rendering
+        const columns = await getTableColumns();
+
+        res.render('products', {
+            products: result.rows,
+            columns: columns.filter(col => col.name !== 'id') // Exclude id column from display
+        });
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
 // API Endpoints
 app.post('/api/asins', async (req, res) => {
     try {
@@ -285,6 +383,304 @@ app.patch('/api/asins/:asin/snooze', async (req, res) => {
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Excel Upload Endpoints
+app.post('/api/upload-excel/preview', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(req.file.buffer);
+
+        const worksheet = workbook.getWorksheet(1) || workbook.worksheets[0];
+        if (!worksheet) {
+            return res.status(400).json({ error: 'Excel file has no worksheets' });
+        }
+
+        // Get headers from first row
+        const headerRow = worksheet.getRow(1);
+        const excelColumns = [];
+        headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+            const headerValue = cell.text.trim();
+            if (headerValue) {
+                excelColumns.push({
+                    name: headerValue,
+                    index: colNumber,
+                    suggestedType: 'text' // Will be determined below
+                });
+            }
+        });
+
+        // Sample first 10 rows to determine data types
+        const sampleSize = Math.min(10, worksheet.rowCount - 1);
+        for (const col of excelColumns) {
+            let allNumeric = true;
+            let hasData = false;
+
+            for (let rowNum = 2; rowNum <= sampleSize + 1; rowNum++) {
+                const cell = worksheet.getCell(rowNum, col.index);
+                if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
+                    hasData = true;
+                    const value = cell.value;
+                    if (typeof value !== 'number' && (typeof value === 'string' && isNaN(parseFloat(value)))) {
+                        allNumeric = false;
+                        break;
+                    }
+                }
+            }
+
+            if (hasData && allNumeric) {
+                col.suggestedType = 'numeric';
+            }
+        }
+
+        // Get current database columns
+        const dbColumns = await getTableColumns();
+        const dbColumnNames = dbColumns.map(col => col.name.toLowerCase());
+
+        // System columns to exclude
+        const systemColumns = ['id', 'asin'];
+
+        // Find new columns (not in DB and not system columns)
+        const newColumns = excelColumns.filter(col => {
+            const colNameLower = col.name.toLowerCase();
+            return !dbColumnNames.includes(colNameLower) &&
+                   !systemColumns.includes(colNameLower) &&
+                   colNameLower !== 'asin'; // Ensure ASIN column is not treated as new
+        });
+
+        // Find ASIN column (case-insensitive)
+        const asinColumn = excelColumns.find(col =>
+            col.name.toLowerCase() === 'asin' ||
+            col.name.toLowerCase().includes('asin')
+        );
+
+        if (!asinColumn && newColumns.length === 0) {
+            return res.status(400).json({ error: 'No ASIN column found in Excel file' });
+        }
+
+        res.json({
+            excelColumns: excelColumns.map(col => ({
+                name: col.name,
+                index: col.index,
+                suggestedType: col.suggestedType,
+                isAsin: col === asinColumn
+            })),
+            newColumns: newColumns.map(col => ({
+                name: col.name,
+                suggestedType: col.suggestedType,
+                sanitizedName: sanitizeColumnName(col.name)
+            })),
+            existingColumns: dbColumns.filter(col => !systemColumns.includes(col.name)),
+            asinColumnIndex: asinColumn ? asinColumn.index : null
+        });
+    } catch (err) {
+        console.error('Excel preview error:', err);
+        res.status(500).json({ error: err.message || 'Failed to parse Excel file' });
+    }
+});
+
+app.post('/api/upload-excel/configure', async (req, res) => {
+    try {
+        const { columnsToAdd } = req.body;
+
+        if (!columnsToAdd || !Array.isArray(columnsToAdd)) {
+            return res.status(400).json({ error: 'columnsToAdd must be an array' });
+        }
+
+        const addedColumns = [];
+
+        for (const col of columnsToAdd) {
+            if (!col.name || !col.type) {
+                continue;
+            }
+
+            try {
+                const sanitizedName = await addColumnToTable(col.name, col.type);
+                addedColumns.push({
+                    originalName: col.name,
+                    dbName: sanitizedName,
+                    type: col.type
+                });
+            } catch (err) {
+                console.error(`Error adding column ${col.name}:`, err);
+                // Continue with other columns
+            }
+        }
+
+        res.json({
+            success: true,
+            addedColumns,
+            message: `Successfully added ${addedColumns.length} column(s) to database`
+        });
+    } catch (err) {
+        console.error('Configure error:', err);
+        res.status(500).json({ error: err.message || 'Failed to configure columns' });
+    }
+});
+
+app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+
+        // Parse columnMappings from FormData (it comes as JSON string)
+        let columnMappings = {};
+        if (req.body.columnMappings) {
+            try {
+                columnMappings = typeof req.body.columnMappings === 'string'
+                    ? JSON.parse(req.body.columnMappings)
+                    : req.body.columnMappings;
+            } catch (e) {
+                return res.status(400).json({ error: 'Invalid columnMappings format' });
+            }
+        }
+
+        const asinColumnIndex = req.body.asinColumnIndex;
+
+        if (!asinColumnIndex) {
+            return res.status(400).json({ error: 'asinColumnIndex is required' });
+        }
+
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(req.file.buffer);
+
+        const worksheet = workbook.getWorksheet(1) || workbook.worksheets[0];
+        if (!worksheet) {
+            return res.status(400).json({ error: 'Excel file has no worksheets' });
+        }
+
+        // Get all current columns
+        const dbColumns = await getTableColumns();
+        const dbColumnMap = {};
+        dbColumns.forEach(col => {
+            dbColumnMap[col.name.toLowerCase()] = col.name;
+        });
+
+        let added = 0;
+        let updated = 0;
+        let skipped = 0;
+        const errors = [];
+
+        // Process each row (starting from row 2, skipping header)
+        for (let rowNum = 2; rowNum <= worksheet.rowCount; rowNum++) {
+            try {
+                const row = worksheet.getRow(rowNum);
+
+                // Get ASIN from specified column
+                const asinCell = row.getCell(parseInt(asinColumnIndex));
+                if (!asinCell || !asinCell.value) {
+                    skipped++;
+                    continue;
+                }
+
+                let asin = String(asinCell.value).trim().toUpperCase();
+
+                // Validate ASIN format
+                if (!/^[A-Z0-9]{10}$/.test(asin)) {
+                    errors.push(`Row ${rowNum}: Invalid ASIN format: ${asin}`);
+                    skipped++;
+                    continue;
+                }
+
+                // Build data object from column mappings
+                const data = { asin };
+
+                // Get header row once
+                const headerRow = worksheet.getRow(1);
+                const headerMap = {};
+                headerRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
+                    headerMap[cell.text.trim()] = colNum;
+                });
+
+                for (const [excelColName, dbColName] of Object.entries(columnMappings)) {
+                    if (dbColName && dbColName !== 'asin') {
+                        const colIndex = headerMap[excelColName];
+
+                        if (colIndex) {
+                            const cell = row.getCell(colIndex);
+                            let value = cell.value;
+
+                            // Handle null/empty
+                            if (value === null || value === undefined || value === '') {
+                                value = null;
+                            } else {
+                                // Convert to string for TEXT columns, or keep number for NUMERIC
+                                const dbCol = dbColumns.find(c => c.name === dbColName);
+                                if (dbCol && (dbCol.type === 'numeric' || dbCol.type === 'double precision')) {
+                                    value = parseFloat(value);
+                                    if (isNaN(value)) value = null;
+                                } else {
+                                    value = String(value).trim() || null;
+                                }
+                            }
+
+                            data[dbColName] = value;
+                        }
+                    }
+                }
+
+                // Check if ASIN exists
+                const existingCheck = await pool.query('SELECT asin FROM products WHERE asin = $1', [asin]);
+
+                if (existingCheck.rows.length > 0) {
+                    // Update existing
+                    const updateFields = [];
+                    const updateValues = [];
+                    let paramIndex = 1;
+
+                    for (const [key, value] of Object.entries(data)) {
+                        if (key !== 'asin') {
+                            updateFields.push(`"${key}" = $${paramIndex}`);
+                            updateValues.push(value);
+                            paramIndex++;
+                        }
+                    }
+
+                    if (updateFields.length > 0) {
+                        updateValues.push(asin);
+                        await pool.query(
+                            `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex}`,
+                            updateValues
+                        );
+                        updated++;
+                    } else {
+                        skipped++;
+                    }
+                } else {
+                    // Insert new
+                    const insertFields = Object.keys(data).map(k => `"${k}"`).join(', ');
+                    const insertValues = Object.keys(data).map((_, i) => `$${i + 1}`).join(', ');
+                    await pool.query(
+                        `INSERT INTO products (${insertFields}) VALUES (${insertValues})`,
+                        Object.values(data)
+                    );
+                    added++;
+                }
+            } catch (err) {
+                errors.push(`Row ${rowNum}: ${err.message}`);
+                skipped++;
+            }
+        }
+
+        res.json({
+            success: true,
+            stats: {
+                added,
+                updated,
+                skipped,
+                total: added + updated + skipped
+            },
+            errors: errors.length > 0 ? errors : undefined
+        });
+    } catch (err) {
+        console.error('Import error:', err);
+        res.status(500).json({ error: err.message || 'Failed to import Excel data' });
     }
 });
 

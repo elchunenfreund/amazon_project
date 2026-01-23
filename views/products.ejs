@@ -1,0 +1,645 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Products Management - Amazon Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; font-size: 16px; }
+        .hidden-row { display: none !important; }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            overflow-y: auto;
+        }
+        .modal-content {
+            background-color: white;
+            margin: 5% auto;
+            padding: 30px;
+            border-radius: 12px;
+            width: 90%;
+            max-width: 800px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            font-size: 20px;
+            font-weight: 900;
+            margin-bottom: 20px;
+            color: #0f172a;
+        }
+        .modal-close {
+            color: #aaa;
+            float: right;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .modal-close:hover {
+            color: #000;
+        }
+        .step-indicator {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #e2e8f0;
+        }
+        .step {
+            flex: 1;
+            text-align: center;
+            padding: 10px;
+            position: relative;
+        }
+        .step.active {
+            color: #3b82f6;
+            font-weight: bold;
+        }
+        .step.completed {
+            color: #10b981;
+        }
+        .step-number {
+            display: inline-block;
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: #e2e8f0;
+            line-height: 30px;
+            margin-bottom: 5px;
+        }
+        .step.active .step-number {
+            background: #3b82f6;
+            color: white;
+        }
+        .step.completed .step-number {
+            background: #10b981;
+            color: white;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 p-4 md:p-8">
+    <div class="max-w-full mx-auto">
+        <header class="sticky top-0 z-[100] bg-slate-100 pt-4 pb-4 -mx-4 md:-mx-8 px-4 md:px-8 flex flex-col lg:flex-row justify-between items-end mb-8 gap-6 shadow-lg">
+            <div>
+                <h1 class="text-4xl font-black text-slate-900 tracking-tight text-emerald-600">Products Management</h1>
+                <p class="text-slate-500 font-bold italic">Manage ASINs and Import from Excel</p>
+            </div>
+            <div class="flex flex-wrap gap-2 md:gap-4 items-end">
+                <a href="/" class="bg-slate-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-slate-700 active:scale-95 transition-all text-sm md:text-base">← DASHBOARD</a>
+                <button onclick="openAddAsinModal()" class="bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-green-700 active:scale-95 transition-all text-sm md:text-base">+ ADD ASIN</button>
+                <button onclick="openExcelUploadModal()" class="bg-blue-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-blue-700 active:scale-95 transition-all text-sm md:text-base">📊 UPLOAD EXCEL</button>
+                <button onclick="bulkDelete()" id="bulk-delete-btn" class="bg-rose-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-rose-700 active:scale-95 transition-all text-sm md:text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>DELETE SELECTED</button>
+            </div>
+        </header>
+
+        <!-- Excel Upload Section -->
+        <div class="bg-white rounded-2xl shadow-xl p-6 mb-6 border border-slate-200">
+            <h2 class="text-2xl font-black text-slate-900 mb-4">Excel Upload</h2>
+            <div class="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center">
+                <input type="file" id="excelFileInput" accept=".xlsx,.xls" class="hidden" onchange="handleFileSelect(event)">
+                <label for="excelFileInput" class="cursor-pointer">
+                    <div class="text-4xl mb-4">📊</div>
+                    <div class="text-lg font-bold text-slate-700 mb-2">Click to upload Excel file</div>
+                    <div class="text-sm text-slate-500">Supports .xlsx and .xls files</div>
+                </label>
+            </div>
+            <div id="uploadProgress" class="hidden mt-4">
+                <div class="bg-blue-100 border border-blue-400 text-blue-700 px-4 py-3 rounded">Processing...</div>
+            </div>
+        </div>
+
+        <!-- Products Table -->
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden border border-slate-200">
+            <div class="p-4 border-b border-slate-200">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div class="flex-1">
+                        <input type="text" id="productSearchInput" onkeyup="filterProducts()" placeholder="Search ASINs..." class="px-4 py-2 rounded-xl border-2 border-slate-200 w-full md:w-64 outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div class="text-sm text-slate-500">
+                        Total: <span id="productCount"><%= products.length %></span> products
+                    </div>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest">
+                            <th class="p-4">
+                                <input type="checkbox" id="selectAllProducts" onchange="toggleSelectAllProducts()" class="w-5 h-5 cursor-pointer">
+                            </th>
+                            <% columns.forEach(col => { %>
+                                <th class="p-4"><%= col.name.toUpperCase() %></th>
+                            <% }); %>
+                            <th class="p-4">ACTIONS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="productsTableBody" class="divide-y divide-slate-100">
+                        <% products.forEach((product, index) => { %>
+                            <tr class="product-row hover:bg-slate-50" data-asin="<%= product.asin %>">
+                                <td class="p-4">
+                                    <input type="checkbox" class="product-checkbox w-5 h-5 cursor-pointer" value="<%= product.asin %>" onchange="updateBulkDeleteButton()">
+                                </td>
+                                <% columns.forEach(col => { %>
+                                    <td class="p-4 text-base">
+                                        <% if (col.name === 'asin') { %>
+                                            <a href="https://www.amazon.ca/dp/<%= product[col.name] %>" target="_blank" class="font-mono text-blue-600 font-bold hover:underline"><%= product[col.name] %></a>
+                                        <% } else { %>
+                                            <%= product[col.name] || '-' %>
+                                        <% } %>
+                                    </td>
+                                <% }); %>
+                                <td class="p-4">
+                                    <div class="flex gap-2">
+                                        <button onclick="editProduct('<%= product.asin %>')" class="px-3 py-1 bg-blue-600 text-white text-xs font-black rounded hover:bg-blue-700">EDIT</button>
+                                        <button onclick="deleteProduct('<%= product.asin %>')" class="px-3 py-1 bg-rose-600 text-white text-xs font-black rounded hover:bg-rose-700">DELETE</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        <% }); %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add ASIN Modal -->
+    <div id="addAsinModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeAddAsinModal()">&times;</span>
+            <div class="modal-header">Add New ASIN</div>
+            <div class="mb-4">
+                <label class="block text-sm font-bold mb-2">ASIN (10 characters)</label>
+                <input type="text" id="newAsinInput" placeholder="B08XYZ1234" maxlength="10" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
+            </div>
+            <div class="flex gap-3">
+                <button id="addAsinButton" onclick="addAsin()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Add ASIN</button>
+                <button onclick="closeAddAsinModal()" class="flex-1 bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all text-base">Cancel</button>
+            </div>
+            <div id="addAsinError" class="mt-3 text-sm font-bold hidden"></div>
+        </div>
+    </div>
+
+    <!-- Excel Upload Modal -->
+    <div id="excelUploadModal" class="modal">
+        <div class="modal-content">
+            <span class="modal-close" onclick="closeExcelUploadModal()">&times;</span>
+            <div class="modal-header">Upload Excel File</div>
+
+            <!-- Step 1: File Selection -->
+            <div id="step1" class="upload-step">
+                <div class="step-indicator">
+                    <div class="step active">
+                        <div class="step-number">1</div>
+                        <div>Select File</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">2</div>
+                        <div>Map Columns</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div>Import</div>
+                    </div>
+                </div>
+                <div class="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center">
+                    <input type="file" id="modalExcelFileInput" accept=".xlsx,.xls" class="hidden" onchange="handleModalFileSelect(event)">
+                    <label for="modalExcelFileInput" class="cursor-pointer">
+                        <div class="text-4xl mb-4">📊</div>
+                        <div class="text-lg font-bold text-slate-700 mb-2">Click to select Excel file</div>
+                        <div class="text-sm text-slate-500">Supports .xlsx and .xls files</div>
+                    </label>
+                </div>
+                <div id="fileInfo" class="hidden mt-4 p-4 bg-slate-100 rounded">
+                    <div class="font-bold">Selected: <span id="fileName"></span></div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button onclick="previewExcel()" id="previewBtn" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed" disabled>Preview & Continue</button>
+                </div>
+            </div>
+
+            <!-- Step 2: Column Mapping -->
+            <div id="step2" class="upload-step hidden">
+                <div class="step-indicator">
+                    <div class="step completed">
+                        <div class="step-number">✓</div>
+                        <div>Select File</div>
+                    </div>
+                    <div class="step active">
+                        <div class="step-number">2</div>
+                        <div>Map Columns</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">3</div>
+                        <div>Import</div>
+                    </div>
+                </div>
+                <div id="columnMappingContent">
+                    <div class="mb-4">
+                        <label class="block text-sm font-bold mb-2">ASIN Column:</label>
+                        <select id="asinColumnSelect" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg"></select>
+                    </div>
+                    <div id="newColumnsSection" class="hidden">
+                        <div class="mb-4">
+                            <label class="block text-sm font-bold mb-2">New Columns to Add:</label>
+                            <div id="newColumnsList" class="space-y-2"></div>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-bold mb-2">Map Excel Columns to Database:</label>
+                        <div id="columnMappingsList" class="space-y-2"></div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-between">
+                    <button onclick="goToStep(1)" class="bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all">Back</button>
+                    <button onclick="configureAndImport()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all">Configure & Import</button>
+                </div>
+            </div>
+
+            <!-- Step 3: Import Results -->
+            <div id="step3" class="upload-step hidden">
+                <div class="step-indicator">
+                    <div class="step completed">
+                        <div class="step-number">✓</div>
+                        <div>Select File</div>
+                    </div>
+                    <div class="step completed">
+                        <div class="step-number">✓</div>
+                        <div>Map Columns</div>
+                    </div>
+                    <div class="step active">
+                        <div class="step-number">3</div>
+                        <div>Import</div>
+                    </div>
+                </div>
+                <div id="importResults" class="mt-4">
+                    <div class="p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+                        <div class="font-bold mb-2">Import Complete!</div>
+                        <div id="importStats"></div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button onclick="closeExcelUploadModal()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all">Done</button>
+                </div>
+            </div>
+            <div id="uploadError" class="hidden mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded"></div>
+        </div>
+    </div>
+
+    <script>
+        let currentExcelFile = null;
+        let previewData = null;
+        let columnMappings = {};
+
+        // Product Management Functions
+        function filterProducts() {
+            const search = document.getElementById('productSearchInput').value.toLowerCase();
+            const rows = document.querySelectorAll('.product-row');
+            let visibleCount = 0;
+
+            rows.forEach(row => {
+                const asin = row.getAttribute('data-asin').toLowerCase();
+                if (asin.includes(search)) {
+                    row.classList.remove('hidden-row');
+                    visibleCount++;
+                } else {
+                    row.classList.add('hidden-row');
+                }
+            });
+
+            document.getElementById('productCount').textContent = visibleCount;
+        }
+
+        function toggleSelectAllProducts() {
+            const selectAll = document.getElementById('selectAllProducts');
+            const checkboxes = document.querySelectorAll('.product-checkbox');
+            checkboxes.forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            updateBulkDeleteButton();
+        }
+
+        function updateBulkDeleteButton() {
+            const checked = document.querySelectorAll('.product-checkbox:checked').length;
+            const btn = document.getElementById('bulk-delete-btn');
+            btn.disabled = checked === 0;
+        }
+
+        async function bulkDelete() {
+            const checked = Array.from(document.querySelectorAll('.product-checkbox:checked')).map(cb => cb.value);
+            if (checked.length === 0) return;
+
+            if (!confirm(`Delete ${checked.length} product(s)?`)) return;
+
+            try {
+                for (const asin of checked) {
+                    await fetch(`/api/asins/${asin}`, { method: 'DELETE' });
+                }
+                window.location.reload();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        function editProduct(asin) {
+            // Simple edit - redirect to main dashboard for now
+            window.location.href = '/';
+        }
+
+        async function deleteProduct(asin) {
+            if (!confirm(`Delete ASIN ${asin}?`)) return;
+
+            try {
+                const response = await fetch(`/api/asins/${asin}`, { method: 'DELETE' });
+                if (response.ok) {
+                    window.location.reload();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.error || 'Failed to delete'));
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        // Add ASIN Modal
+        function openAddAsinModal() {
+            document.getElementById('addAsinModal').style.display = 'block';
+            document.getElementById('newAsinInput').value = '';
+            document.getElementById('addAsinError').classList.add('hidden');
+        }
+
+        function closeAddAsinModal() {
+            document.getElementById('addAsinModal').style.display = 'none';
+        }
+
+        async function addAsin() {
+            const asin = document.getElementById('newAsinInput').value.trim().toUpperCase();
+            const errorDiv = document.getElementById('addAsinError');
+            const addButton = document.getElementById('addAsinButton');
+            const originalText = addButton.textContent;
+
+            if (!asin || asin.length !== 10) {
+                errorDiv.textContent = 'ASIN must be exactly 10 characters';
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+
+            addButton.disabled = true;
+            addButton.textContent = 'Adding...';
+            errorDiv.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/asins', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asin })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    closeAddAsinModal();
+                    window.location.reload();
+                } else {
+                    errorDiv.textContent = data.error || 'Failed to add ASIN';
+                    errorDiv.classList.remove('hidden');
+                    errorDiv.classList.add('text-red-600');
+                    addButton.disabled = false;
+                    addButton.textContent = originalText;
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Error: ' + err.message;
+                errorDiv.classList.remove('hidden');
+                errorDiv.classList.add('text-red-600');
+                addButton.disabled = false;
+                addButton.textContent = originalText;
+            }
+        }
+
+        // Excel Upload Functions
+        function openExcelUploadModal() {
+            document.getElementById('excelUploadModal').style.display = 'block';
+            goToStep(1);
+        }
+
+        function closeExcelUploadModal() {
+            document.getElementById('excelUploadModal').style.display = 'none';
+            currentExcelFile = null;
+            previewData = null;
+            columnMappings = {};
+        }
+
+        function goToStep(step) {
+            document.querySelectorAll('.upload-step').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`step${step}`).classList.remove('hidden');
+        }
+
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (file) {
+                currentExcelFile = file;
+                document.getElementById('fileName').textContent = file.name;
+                document.getElementById('fileInfo').classList.remove('hidden');
+                document.getElementById('previewBtn').disabled = false;
+            }
+        }
+
+        function handleModalFileSelect(event) {
+            handleFileSelect(event);
+        }
+
+        async function previewExcel() {
+            if (!currentExcelFile) return;
+
+            const formData = new FormData();
+            formData.append('file', currentExcelFile);
+
+            try {
+                const response = await fetch('/api/upload-excel/preview', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to preview file');
+                }
+
+                previewData = data;
+                renderColumnMapping();
+                goToStep(2);
+            } catch (err) {
+                document.getElementById('uploadError').textContent = 'Error: ' + err.message;
+                document.getElementById('uploadError').classList.remove('hidden');
+            }
+        }
+
+        function renderColumnMapping() {
+            if (!previewData) return;
+
+            // ASIN column select
+            const asinSelect = document.getElementById('asinColumnSelect');
+            asinSelect.innerHTML = '';
+            previewData.excelColumns.forEach(col => {
+                if (col.isAsin) {
+                    const option = document.createElement('option');
+                    option.value = col.index;
+                    option.textContent = col.name;
+                    option.selected = true;
+                    asinSelect.appendChild(option);
+                }
+            });
+
+            // New columns section
+            if (previewData.newColumns && previewData.newColumns.length > 0) {
+                document.getElementById('newColumnsSection').classList.remove('hidden');
+                const newColsList = document.getElementById('newColumnsList');
+                newColsList.innerHTML = '';
+                previewData.newColumns.forEach(col => {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center gap-2 p-2 bg-slate-50 rounded';
+                    div.innerHTML = `
+                        <input type="checkbox" id="newCol_${col.sanitizedName}" class="new-col-checkbox" data-name="${col.name}" data-sanitized="${col.sanitizedName}" data-type="${col.suggestedType}" checked>
+                        <label for="newCol_${col.sanitizedName}" class="flex-1">
+                            <span class="font-bold">${col.name}</span>
+                            <span class="text-sm text-slate-500"> → ${col.sanitizedName} (${col.suggestedType})</span>
+                        </label>
+                    `;
+                    newColsList.appendChild(div);
+                });
+            } else {
+                document.getElementById('newColumnsSection').classList.add('hidden');
+            }
+
+            // Column mappings
+            const mappingsList = document.getElementById('columnMappingsList');
+            mappingsList.innerHTML = '';
+            previewData.excelColumns.forEach(col => {
+                if (!col.isAsin) {
+                    const div = document.createElement('div');
+                    div.className = 'flex items-center gap-2 p-2 bg-white border border-slate-200 rounded';
+                    div.innerHTML = `
+                        <label class="flex-1">
+                            <span class="font-bold">${col.name}</span>
+                            <select class="column-mapping-select w-full mt-1 px-2 py-1 border border-slate-300 rounded" data-excel-col="${col.name}">
+                                <option value="">-- Skip --</option>
+                                ${previewData.existingColumns.map(dbCol =>
+                                    `<option value="${dbCol.name}">${dbCol.name}</option>`
+                                ).join('')}
+                            </select>
+                        </label>
+                    `;
+                    mappingsList.appendChild(div);
+                }
+            });
+        }
+
+        async function configureAndImport() {
+            const asinColumnIndex = document.getElementById('asinColumnSelect').value;
+            if (!asinColumnIndex) {
+                alert('Please select ASIN column');
+                return;
+            }
+
+            // Collect new columns to add
+            const newColumnsToAdd = [];
+            document.querySelectorAll('.new-col-checkbox:checked').forEach(cb => {
+                newColumnsToAdd.push({
+                    name: cb.dataset.name,
+                    type: cb.dataset.type
+                });
+            });
+
+            // Collect column mappings
+            const mappings = {};
+            document.querySelectorAll('.column-mapping-select').forEach(select => {
+                const excelCol = select.dataset.excelCol;
+                const dbCol = select.value;
+                if (dbCol) {
+                    mappings[excelCol] = dbCol;
+                }
+            });
+
+            try {
+                // Step 1: Add new columns if any
+                if (newColumnsToAdd.length > 0) {
+                    const configureResponse = await fetch('/api/upload-excel/configure', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ columnsToAdd: newColumnsToAdd })
+                    });
+
+                    const configureData = await configureResponse.json();
+                    if (!configureResponse.ok) {
+                        throw new Error(configureData.error || 'Failed to configure columns');
+                    }
+
+                    // Update mappings with newly added columns
+                    configureData.addedColumns.forEach(col => {
+                        const excelCol = newColumnsToAdd.find(nc => sanitizeColumnName(nc.name) === col.dbName);
+                        if (excelCol) {
+                            mappings[excelCol.name] = col.dbName;
+                        }
+                    });
+                }
+
+                // Step 2: Import data
+                const formData = new FormData();
+                formData.append('file', currentExcelFile);
+                formData.append('asinColumnIndex', asinColumnIndex);
+                formData.append('columnMappings', JSON.stringify(mappings));
+
+                const importResponse = await fetch('/api/upload-excel/import', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const importData = await importResponse.json();
+                if (!importResponse.ok) {
+                    throw new Error(importData.error || 'Failed to import data');
+                }
+
+                // Show results
+                document.getElementById('importStats').innerHTML = `
+                    <div>Added: ${importData.stats.added}</div>
+                    <div>Updated: ${importData.stats.updated}</div>
+                    <div>Skipped: ${importData.stats.skipped}</div>
+                    ${importData.errors && importData.errors.length > 0 ?
+                        `<div class="mt-2 text-red-600">Errors: ${importData.errors.length}</div>` : ''}
+                `;
+                goToStep(3);
+
+                // Reload page after 2 seconds to show updated data
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } catch (err) {
+                document.getElementById('uploadError').textContent = 'Error: ' + err.message;
+                document.getElementById('uploadError').classList.remove('hidden');
+            }
+        }
+
+        function sanitizeColumnName(name) {
+            return name.toLowerCase()
+                .replace(/[^a-z0-9_]/g, '_')
+                .replace(/_{2,}/g, '_')
+                .replace(/^_|_$/g, '');
+        }
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const addModal = document.getElementById('addAsinModal');
+            const excelModal = document.getElementById('excelUploadModal');
+            if (event.target === addModal) closeAddAsinModal();
+            if (event.target === excelModal) closeExcelUploadModal();
+        }
+    </script>
+</body>
+</html>
