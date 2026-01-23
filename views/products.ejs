@@ -252,6 +252,10 @@
                     </div>
                     <div class="step">
                         <div class="step-number">3</div>
+                        <div>Duplicates</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">4</div>
                         <div>Import</div>
                     </div>
                 </div>
@@ -267,26 +271,6 @@
                         <label class="block text-lg font-black text-slate-900 mb-2">Select ASIN Column</label>
                         <p class="text-sm text-slate-600 mb-3">Choose which column contains the ASIN values (10-character product identifiers)</p>
                         <select id="productsAsinColumnSelect" class="w-full px-4 py-3 border-2 border-slate-300 rounded-lg text-base focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all font-semibold"></select>
-                    </div>
-                    <div class="mb-6 p-4 bg-blue-50 border-2 border-blue-200 rounded-lg">
-                        <label class="block text-lg font-black text-slate-900 mb-2">Duplicate ASIN Handling</label>
-                        <p class="text-sm text-slate-600 mb-3">What should happen when an ASIN already exists in the database?</p>
-                        <div class="space-y-2">
-                            <label class="flex items-center gap-3 p-3 bg-white border-2 border-blue-300 rounded-lg cursor-pointer hover:bg-blue-50 transition-all">
-                                <input type="radio" name="productsDuplicateHandling" value="update" checked class="w-5 h-5 text-blue-600 focus:ring-blue-500">
-                                <div class="flex-1">
-                                    <div class="font-bold text-slate-900">Update Existing</div>
-                                    <div class="text-sm text-slate-600">Update existing ASINs with new data from the file</div>
-                                </div>
-                            </label>
-                            <label class="flex items-center gap-3 p-3 bg-white border-2 border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-all">
-                                <input type="radio" name="productsDuplicateHandling" value="skip" class="w-5 h-5 text-blue-600 focus:ring-blue-500">
-                                <div class="flex-1">
-                                    <div class="font-bold text-slate-900">Skip Duplicates</div>
-                                    <div class="text-sm text-slate-600">Skip ASINs that already exist in the database</div>
-                                </div>
-                            </label>
-                        </div>
                     </div>
                     <div id="productsNewColumnsSection" class="hidden">
                         <div class="mb-6">
@@ -312,7 +296,7 @@
                 </div>
             </div>
 
-            <!-- Step 3: Import Results -->
+            <!-- Step 3: Duplicate Handling -->
             <div id="excelStep3" class="upload-step hidden">
                 <div class="step-indicator">
                     <div class="step completed">
@@ -325,6 +309,43 @@
                     </div>
                     <div class="step active">
                         <div class="step-number">3</div>
+                        <div>Duplicates</div>
+                    </div>
+                    <div class="step">
+                        <div class="step-number">4</div>
+                        <div>Import</div>
+                    </div>
+                </div>
+                <div id="productsDuplicatesContent">
+                    <div class="mb-4">
+                        <div class="font-black text-lg text-slate-900 mb-2">Duplicate ASINs Found</div>
+                        <p class="text-sm text-slate-600 mb-4">The following ASINs already exist in your database. Choose to replace or skip each one:</p>
+                        <div id="productsDuplicatesList" class="space-y-2 max-h-96 overflow-y-auto"></div>
+                    </div>
+                </div>
+                <div class="mt-6 flex justify-between">
+                    <button onclick="goToProductsStep(2)" class="bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all">Back</button>
+                    <button onclick="proceedWithProductsImport()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all">Continue to Import</button>
+                </div>
+            </div>
+
+            <!-- Step 4: Import Results -->
+            <div id="excelStep4" class="upload-step hidden">
+                <div class="step-indicator">
+                    <div class="step completed">
+                        <div class="step-number">✓</div>
+                        <div>Select File</div>
+                    </div>
+                    <div class="step completed">
+                        <div class="step-number">✓</div>
+                        <div>Map Columns</div>
+                    </div>
+                    <div class="step completed">
+                        <div class="step-number">✓</div>
+                        <div>Duplicates</div>
+                    </div>
+                    <div class="step active">
+                        <div class="step-number">4</div>
                         <div>Import</div>
                     </div>
                 </div>
@@ -592,15 +613,12 @@
             }
         }
 
-        async function configureAndImportProducts() {
+        async function proceedWithProductsImport() {
             const asinColumnIndex = document.getElementById('productsAsinColumnSelect').value;
             if (!asinColumnIndex) {
                 alert('Please select ASIN column');
                 return;
             }
-
-            // Get duplicate handling preference
-            const duplicateHandling = document.querySelector('input[name="productsDuplicateHandling"]:checked')?.value || 'update';
 
             const newColumnsToAdd = [];
             document.querySelectorAll('.products-new-col-checkbox:checked').forEach(cb => {
@@ -646,7 +664,7 @@
                 formData.append('file', productsExcelFile);
                 formData.append('asinColumnIndex', asinColumnIndex);
                 formData.append('columnMappings', JSON.stringify(mappings));
-                formData.append('duplicateHandling', duplicateHandling);
+                formData.append('duplicateDecisions', JSON.stringify(productsDuplicateDecisions));
 
                 const importResponse = await fetch('/api/upload-excel/import', {
                     method: 'POST',
@@ -665,12 +683,10 @@
                             <span class="text-green-700 font-bold">✓ Added:</span>
                             <span class="text-lg font-black">${importData.stats.added}</span>
                         </div>
-                        ${duplicateHandling === 'update' ? `
-                            <div class="flex items-center gap-2">
-                                <span class="text-blue-700 font-bold">↻ Updated:</span>
-                                <span class="text-lg font-black">${importData.stats.updated}</span>
-                            </div>
-                        ` : ''}
+                        <div class="flex items-center gap-2">
+                            <span class="text-blue-700 font-bold">↻ Updated:</span>
+                            <span class="text-lg font-black">${importData.stats.updated}</span>
+                        </div>
                         <div class="flex items-center gap-2">
                             <span class="text-slate-600 font-bold">⊘ Skipped:</span>
                             <span class="text-lg font-black">${importData.stats.skipped}</span>
@@ -685,7 +701,7 @@
                             </div>` : ''}
                     </div>
                 `;
-                goToProductsStep(3);
+                goToProductsStep(4);
 
                 setTimeout(() => {
                     window.location.reload();

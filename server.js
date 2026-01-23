@@ -742,6 +742,91 @@ app.post('/api/upload-excel/configure', async (req, res) => {
     }
 });
 
+// Check for duplicate ASINs in the file
+app.post('/api/upload-excel/check-duplicates', upload.single('file'), async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file uploaded' });
+        }
+
+        const asinColumnIndex = req.body.asinColumnIndex;
+        if (!asinColumnIndex) {
+            return res.status(400).json({ error: 'asinColumnIndex is required' });
+        }
+
+        const fileType = detectFileType(req.file.originalname, req.file.mimetype);
+        if (fileType === 'numbers') {
+            return res.status(400).json({
+                error: 'Numbers files (.numbers) are not directly supported. Please export your Numbers file to CSV or Excel format first.'
+            });
+        }
+
+        let rows = [];
+        let headers = [];
+
+        if (fileType === 'csv') {
+            const parsed = parseCSV(req.file.buffer);
+            headers = parsed.headers;
+            rows = parsed.rows;
+        } else {
+            const workbook = new ExcelJS.Workbook();
+            await workbook.xlsx.load(req.file.buffer);
+            const worksheet = workbook.getWorksheet(1) || workbook.worksheets[0];
+            if (!worksheet) {
+                return res.status(400).json({ error: 'Excel file has no worksheets' });
+            }
+
+            const headerRow = worksheet.getRow(1);
+            headerRow.eachCell({ includeEmpty: false }, (cell, colNum) => {
+                headers[colNum - 1] = cell.text.trim();
+            });
+
+            for (let rowNum = 2; rowNum <= worksheet.rowCount; rowNum++) {
+                const row = worksheet.getRow(rowNum);
+                const rowData = [];
+                row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+                    rowData[colNum - 1] = cell.value;
+                });
+                if (rowData.some(v => v !== null && v !== undefined && v !== '')) {
+                    rows.push(rowData);
+                }
+            }
+        }
+
+        // Extract ASINs from file
+        const asinColIndex = parseInt(asinColumnIndex) - 1;
+        const fileAsins = [];
+        for (let i = 0; i < rows.length; i++) {
+            const asin = String(rows[i][asinColIndex] || '').trim().toUpperCase();
+            if (asin && /^[A-Z0-9]{10}$/.test(asin)) {
+                fileAsins.push({ asin, rowNum: i + 2 });
+            }
+        }
+
+        // Check which ASINs exist in database
+        if (fileAsins.length === 0) {
+            return res.json({ duplicates: [] });
+        }
+
+        const asinList = fileAsins.map(f => f.asin);
+        const placeholders = asinList.map((_, i) => `$${i + 1}`).join(',');
+        const existingResult = await pool.query(
+            `SELECT asin FROM products WHERE asin IN (${placeholders})`,
+            asinList
+        );
+
+        const existingAsins = new Set(existingResult.rows.map(r => r.asin));
+        const duplicates = fileAsins
+            .filter(f => existingAsins.has(f.asin))
+            .map(f => ({ asin: f.asin, rowNum: f.rowNum }));
+
+        res.json({ duplicates });
+    } catch (err) {
+        console.error('Check duplicates error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => {
     try {
         if (!req.file) {
