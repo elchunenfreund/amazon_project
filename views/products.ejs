@@ -648,9 +648,6 @@
                 formData.append('columnMappings', JSON.stringify(productsColumnMappings));
                 formData.append('duplicateDecisions', JSON.stringify(productsDuplicateDecisions));
 
-                // Debug: log duplicate decisions
-                console.log('Sending duplicateDecisions:', productsDuplicateDecisions);
-
                 const importResponse = await fetch('/api/upload-excel/import', {
                     method: 'POST',
                     body: formData
@@ -796,8 +793,8 @@
                             <div class="text-sm text-slate-600">Row ${dup.rowNum} in file</div>
                         </div>
                         <div class="flex gap-2">
-                            <button data-asin="${asinUpper}" data-decision="replace" class="duplicate-decision-btn px-4 py-2 bg-green-600 text-white text-sm font-black rounded-lg hover:bg-green-700 transition-all duplicate-btn-${asinUpper}" data-decision="replace">Replace</button>
-                            <button data-asin="${asinUpper}" data-decision="skip" class="duplicate-decision-btn px-4 py-2 bg-slate-400 text-white text-sm font-black rounded-lg hover:bg-slate-500 transition-all duplicate-btn-${asinUpper}" data-decision="skip">Skip</button>
+                            <button data-asin="${asinUpper}" data-decision="replace" class="duplicate-decision-btn px-4 py-2 bg-green-600 text-white text-sm font-black rounded-lg hover:bg-green-700 transition-all duplicate-btn-${asinUpper}">Replace</button>
+                            <button data-asin="${asinUpper}" data-decision="skip" class="duplicate-decision-btn px-4 py-2 bg-slate-400 text-white text-sm font-black rounded-lg hover:bg-slate-500 transition-all duplicate-btn-${asinUpper}">Skip</button>
                         </div>
                     `;
                     duplicatesList.appendChild(div);
@@ -826,7 +823,6 @@
             // Store in uppercase to match import processing
             const asinUpper = typeof asin === 'string' ? asin.toUpperCase() : asin;
             productsDuplicateDecisions[asinUpper] = decision;
-            console.log('Set duplicate decision:', asinUpper, '=', decision, 'Current decisions:', productsDuplicateDecisions);
             updateDuplicateButtonState(asinUpper, decision);
         }
 

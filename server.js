@@ -1050,13 +1050,10 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                         duplicateDecisions = typeof req.body.duplicateDecisions === 'string'
                             ? JSON.parse(req.body.duplicateDecisions)
                             : req.body.duplicateDecisions;
-                        console.log('Parsed duplicateDecisions:', duplicateDecisions);
                     } catch (e) {
-                        console.error('Error parsing duplicateDecisions:', e, req.body.duplicateDecisions);
+                        console.error('Error parsing duplicateDecisions:', e);
                         duplicateDecisions = {};
                     }
-                } else {
-                    console.log('No duplicateDecisions in request body');
                 }
 
                 // Check if ASIN exists
@@ -1064,9 +1061,7 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
 
                 if (existingCheck.rows.length > 0) {
                     // ASIN already exists - check user's decision
-                    // Try both uppercase and original case for matching
                     const decision = duplicateDecisions[asin] || duplicateDecisions[asin.toUpperCase()] || duplicateDecisions[asin.toLowerCase()];
-                    console.log(`ASIN ${asin}: decision = ${decision}, duplicateDecisions:`, duplicateDecisions);
 
                     if (decision === 'replace') {
                         // Update existing
@@ -1089,11 +1084,8 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                                 updateValues
                             );
                             updated++;
-                            console.log(`Updated ASIN ${asin} with ${updateFields.length} fields`);
                         } else {
-                            console.log(`ASIN ${asin}: No fields to update (data only has ASIN or no mappings)`);
-                            // Even if no fields to update, if user chose replace, we should count it as updated
-                            // (the ASIN already exists, so nothing to change)
+                            // Even if no fields to update, if user chose replace, count it as updated
                             if (decision === 'replace') {
                                 updated++;
                             } else {
