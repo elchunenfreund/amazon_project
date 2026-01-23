@@ -388,6 +388,53 @@ app.get('/api/products/columns', async (req, res) => {
     }
 });
 
+// Find duplicate ASINs
+app.get('/api/products/duplicates', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT asin, COUNT(*) as count, array_agg(id ORDER BY id) as ids
+            FROM products
+            GROUP BY asin
+            HAVING COUNT(*) > 1
+            ORDER BY asin
+        `);
+
+        const duplicates = [];
+        for (const row of result.rows) {
+            // Get all entries for this ASIN
+            const entriesResult = await pool.query(
+                'SELECT * FROM products WHERE asin = $1 ORDER BY id',
+                [row.asin]
+            );
+
+            duplicates.push({
+                asin: row.asin,
+                count: row.count,
+                entries: entriesResult.rows
+            });
+        }
+
+        res.json({ duplicates });
+    } catch (err) {
+        console.error('Find duplicates error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete product by ID (for duplicate cleanup)
+app.delete('/api/products/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const result = await pool.query('DELETE FROM products WHERE id = $1', [id]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API Endpoints
 app.post('/api/asins', async (req, res) => {
     try {
@@ -972,19 +1019,29 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                     }
                 }
 
-                // Get duplicate handling preference (default to 'update')
-                const duplicateHandling = req.body.duplicateHandling || 'update';
+                // Parse duplicate decisions (which ASINs to replace vs skip)
+                let duplicateDecisions = {};
+                if (req.body.duplicateDecisions) {
+                    try {
+                        duplicateDecisions = typeof req.body.duplicateDecisions === 'string'
+                            ? JSON.parse(req.body.duplicateDecisions)
+                            : req.body.duplicateDecisions;
+                    } catch (e) {
+                        console.error('Error parsing duplicateDecisions:', e);
+                        duplicateDecisions = {};
+                    }
+                }
 
                 // Check if ASIN exists
                 const existingCheck = await pool.query('SELECT asin FROM products WHERE asin = $1', [asin]);
 
                 if (existingCheck.rows.length > 0) {
-                    // ASIN already exists
-                    if (duplicateHandling === 'skip') {
-                        // Skip this row
-                        skipped++;
-                    } else {
-                        // Update existing (default behavior)
+                    // ASIN already exists - check user's decision
+                    const decision = duplicateDecisions[asin]; // 'replace' or 'skip'
+                    console.log(`ASIN ${asin}: decision = ${decision}, duplicateDecisions keys:`, Object.keys(duplicateDecisions));
+
+                    if (decision === 'replace') {
+                        // Update existing
                         const updateFields = [];
                         const updateValues = [];
                         let paramIndex = 1;
@@ -1007,6 +1064,9 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                         } else {
                             skipped++;
                         }
+                    } else {
+                        // Skip this row (default if no decision provided or decision is 'skip')
+                        skipped++;
                     }
                 } else {
                     // Insert new

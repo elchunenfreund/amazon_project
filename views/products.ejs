@@ -96,6 +96,7 @@
                 <a href="/" class="bg-slate-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-slate-700 active:scale-95 transition-all text-sm md:text-base">← DASHBOARD</a>
                 <button onclick="openAddAsinModal()" class="bg-green-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-green-700 active:scale-95 transition-all text-sm md:text-base">+ ADD ASIN</button>
                 <button onclick="openExcelUploadModal()" class="bg-indigo-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-indigo-700 active:scale-95 transition-all text-sm md:text-base">📊 UPLOAD EXCEL</button>
+                <button onclick="findDuplicates()" class="bg-amber-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-amber-700 active:scale-95 transition-all text-sm md:text-base">🔍 FIND DUPLICATES</button>
                 <button onclick="bulkDelete()" id="bulk-delete-btn" class="bg-rose-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-rose-700 active:scale-95 transition-all text-sm md:text-base disabled:opacity-50 disabled:cursor-not-allowed" disabled>DELETE SELECTED</button>
             </div>
         </header>
@@ -350,16 +351,34 @@
                     </div>
                 </div>
                 <div id="productsImportResults" class="mt-4">
-                    <div class="p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+                    <div class="p-4 bg-green-100 border border-green-400 text-green-700 rounded relative">
+                        <button onclick="closeExcelUploadModal()" class="absolute top-2 right-2 text-green-700 hover:text-green-900 font-bold text-xl">&times;</button>
                         <div class="font-bold mb-2">Import Complete!</div>
                         <div id="productsImportStats"></div>
                     </div>
                 </div>
                 <div class="mt-6 flex justify-end">
-                    <button onclick="closeExcelUploadModal()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all">Done</button>
+                    <button onclick="closeExcelUploadModal()" class="bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all">Close</button>
                 </div>
             </div>
             <div id="productsUploadError" class="hidden mt-4 p-4 bg-red-100 border border-red-400 text-red-700 rounded"></div>
+        </div>
+    </div>
+
+    <!-- Duplicate Cleanup Modal -->
+    <div id="duplicateCleanupModal" class="modal">
+        <div class="modal-content" style="max-width: 900px;">
+            <span class="modal-close" onclick="closeDuplicateCleanupModal()">&times;</span>
+            <div class="modal-header">Clean Up Duplicate Products</div>
+            <div class="mb-4">
+                <p class="text-sm text-slate-600 mb-4">The following ASINs appear multiple times. Select which entry to keep for each duplicate:</p>
+                <div id="duplicateCleanupList" class="space-y-4 max-h-96 overflow-y-auto"></div>
+            </div>
+            <div class="flex gap-3">
+                <button onclick="applyDuplicateCleanup()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Remove Selected Duplicates</button>
+                <button onclick="closeDuplicateCleanupModal()" class="flex-1 bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all text-base">Cancel</button>
+            </div>
+            <div id="duplicateCleanupError" class="mt-3 text-sm font-bold hidden"></div>
         </div>
     </div>
 
@@ -629,6 +648,9 @@
                 formData.append('columnMappings', JSON.stringify(productsColumnMappings));
                 formData.append('duplicateDecisions', JSON.stringify(productsDuplicateDecisions));
 
+                // Debug: log duplicate decisions
+                console.log('Sending duplicateDecisions:', productsDuplicateDecisions);
+
                 const importResponse = await fetch('/api/upload-excel/import', {
                     method: 'POST',
                     body: formData
@@ -665,10 +687,6 @@
                     </div>
                 `;
                 goToProductsStep(4);
-
-                setTimeout(() => {
-                    window.location.reload();
-                }, 2000);
             } catch (err) {
                 document.getElementById('productsUploadError').textContent = 'Error: ' + err.message;
                 document.getElementById('productsUploadError').classList.remove('hidden');
@@ -782,8 +800,8 @@
                         </div>
                     `;
                     duplicatesList.appendChild(div);
-                    // Default to skip
-                    productsDuplicateDecisions[dup.asin] = 'skip';
+                    // Default to skip - use uppercase ASIN to match import
+                    productsDuplicateDecisions[dup.asin.toUpperCase()] = 'skip';
                     updateDuplicateButtonState(dup.asin, 'skip');
                 });
 
@@ -795,7 +813,8 @@
         }
 
         function setDuplicateDecision(asin, decision) {
-            productsDuplicateDecisions[asin] = decision;
+            // Store in uppercase to match import processing
+            productsDuplicateDecisions[asin.toUpperCase()] = decision;
             updateDuplicateButtonState(asin, decision);
         }
 
@@ -1125,14 +1144,118 @@
             }
         }
 
+        // Duplicate Cleanup Functions
+        async function findDuplicates() {
+            try {
+                const response = await fetch('/api/products/duplicates');
+                const data = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Failed to find duplicates');
+                }
+
+                if (data.duplicates.length === 0) {
+                    alert('No duplicate ASINs found!');
+                    return;
+                }
+
+                // Show duplicate cleanup modal
+                const cleanupList = document.getElementById('duplicateCleanupList');
+                cleanupList.innerHTML = '';
+
+                data.duplicates.forEach((group, groupIndex) => {
+                    const groupDiv = document.createElement('div');
+                    groupDiv.className = 'p-4 bg-amber-50 border-2 border-amber-200 rounded-lg mb-4';
+                    groupDiv.innerHTML = `
+                        <div class="font-black text-lg text-slate-900 mb-3">ASIN: <span class="font-mono text-blue-600">${group.asin}</span> (${group.count} entries)</div>
+                        <div class="space-y-2">
+                            ${group.entries.map((entry, entryIndex) => `
+                                <label class="flex items-center gap-3 p-3 bg-white border-2 rounded-lg cursor-pointer hover:bg-blue-50 transition-all">
+                                    <input type="radio" name="duplicate-group-${groupIndex}" value="${entry.id}" ${entryIndex === 0 ? 'checked' : ''} class="w-5 h-5 text-blue-600 focus:ring-blue-500">
+                                    <div class="flex-1">
+                                        <div class="font-bold text-slate-900">ID: ${entry.id}</div>
+                                        <div class="text-sm text-slate-600 mt-1">
+                                            ${Object.entries(entry).filter(([key, val]) => key !== 'id' && key !== 'asin' && val !== null && val !== '').slice(0, 5).map(([key, val]) => `<span class="mr-3"><strong>${key}:</strong> ${String(val).substring(0, 30)}</span>`).join('')}
+                                        </div>
+                                    </div>
+                                </label>
+                            `).join('')}
+                        </div>
+                    `;
+                    cleanupList.appendChild(groupDiv);
+                });
+
+                document.getElementById('duplicateCleanupModal').style.display = 'block';
+            } catch (err) {
+                alert('Error finding duplicates: ' + err.message);
+            }
+        }
+
+        function closeDuplicateCleanupModal() {
+            document.getElementById('duplicateCleanupModal').style.display = 'none';
+            document.getElementById('duplicateCleanupError').classList.add('hidden');
+        }
+
+        async function applyDuplicateCleanup() {
+            try {
+                const errorDiv = document.getElementById('duplicateCleanupError');
+                errorDiv.classList.add('hidden');
+
+                // Collect which entries to delete
+                const entriesToDelete = [];
+
+                document.querySelectorAll('#duplicateCleanupList > div').forEach((groupDiv, groupIndex) => {
+                    const selectedRadio = groupDiv.querySelector(`input[name="duplicate-group-${groupIndex}"]:checked`);
+                    if (selectedRadio) {
+                        const keepId = parseInt(selectedRadio.value);
+
+                        // Get all IDs in this group
+                        const allRadios = groupDiv.querySelectorAll(`input[name="duplicate-group-${groupIndex}"]`);
+                        allRadios.forEach(radio => {
+                            const id = parseInt(radio.value);
+                            if (id !== keepId) {
+                                entriesToDelete.push(id);
+                            }
+                        });
+                    }
+                });
+
+                if (entriesToDelete.length === 0) {
+                    errorDiv.textContent = 'No duplicates selected for removal';
+                    errorDiv.classList.remove('hidden');
+                    return;
+                }
+
+                if (!confirm(`This will delete ${entriesToDelete.length} duplicate entr${entriesToDelete.length === 1 ? 'y' : 'ies'}. Continue?`)) {
+                    return;
+                }
+
+                // Delete duplicates
+                for (const id of entriesToDelete) {
+                    const response = await fetch(`/api/products/${id}`, { method: 'DELETE' });
+                    if (!response.ok) {
+                        throw new Error(`Failed to delete product ID ${id}`);
+                    }
+                }
+
+                closeDuplicateCleanupModal();
+                window.location.reload();
+            } catch (err) {
+                document.getElementById('duplicateCleanupError').textContent = 'Error: ' + err.message;
+                document.getElementById('duplicateCleanupError').classList.remove('hidden');
+            }
+        }
+
         // Close modals when clicking outside
         window.onclick = function(event) {
             const addModal = document.getElementById('addAsinModal');
             const excelModal = document.getElementById('excelUploadModal');
             const editModal = document.getElementById('editProductModal');
+            const duplicateModal = document.getElementById('duplicateCleanupModal');
             if (event.target === addModal) closeAddAsinModal();
             if (event.target === excelModal) closeExcelUploadModal();
             if (event.target === editModal) closeEditProductModal();
+            if (event.target === duplicateModal) closeDuplicateCleanupModal();
         }
     </script>
 </body>
