@@ -364,10 +364,34 @@ app.get('/products', async (req, res) => {
     }
 });
 
+// Get single product by ASIN
+app.get('/api/products/:asin', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const result = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get product table columns
+app.get('/api/products/columns', async (req, res) => {
+    try {
+        const columns = await getTableColumns();
+        res.json(columns);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API Endpoints
 app.post('/api/asins', async (req, res) => {
     try {
-        const { asin } = req.body;
+        const { asin, replace } = req.body;
         if (!asin || typeof asin !== 'string' || asin.trim().length === 0) {
             return res.status(400).json({ error: 'ASIN is required' });
         }
@@ -378,8 +402,28 @@ app.post('/api/asins', async (req, res) => {
             return res.status(400).json({ error: 'Invalid ASIN format. ASIN must be 10 alphanumeric characters.' });
         }
 
-        await pool.query('INSERT INTO products (asin) VALUES ($1) ON CONFLICT (asin) DO NOTHING', [cleanAsin]);
-        res.json({ success: true, asin: cleanAsin });
+        // Check if ASIN already exists
+        const existingCheck = await pool.query('SELECT asin FROM products WHERE asin = $1', [cleanAsin]);
+        const exists = existingCheck.rows.length > 0;
+
+        if (exists && !replace) {
+            // Return info that it exists, but don't add it
+            return res.json({
+                success: false,
+                exists: true,
+                asin: cleanAsin,
+                message: 'ASIN already exists in database'
+            });
+        }
+
+        if (exists && replace) {
+            // ASIN already exists, but user wants to replace - just return success (no-op since ASIN is the key)
+            return res.json({ success: true, asin: cleanAsin, replaced: false, message: 'ASIN already exists (ASIN cannot be changed)' });
+        }
+
+        // Insert new ASIN
+        await pool.query('INSERT INTO products (asin) VALUES ($1)', [cleanAsin]);
+        res.json({ success: true, asin: cleanAsin, added: true });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

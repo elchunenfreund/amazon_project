@@ -163,11 +163,40 @@
                 <label class="block text-sm font-bold mb-2">ASIN (10 characters)</label>
                 <input type="text" id="newAsinInput" placeholder="B08XYZ1234" maxlength="10" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500 uppercase">
             </div>
+            <div id="duplicateAsinWarning" class="hidden mb-4 p-4 bg-amber-50 border-2 border-amber-300 rounded-lg">
+                <div class="font-bold text-amber-900 mb-2">⚠️ ASIN Already Exists</div>
+                <div class="text-sm text-amber-800 mb-3">This ASIN is already in your database. What would you like to do?</div>
+                <div class="flex gap-2">
+                    <button onclick="skipDuplicateAsin()" class="flex-1 bg-slate-400 text-white px-4 py-2 rounded-lg font-black hover:bg-slate-500 transition-all text-sm">Skip</button>
+                    <button onclick="replaceDuplicateAsin()" class="flex-1 bg-amber-600 text-white px-4 py-2 rounded-lg font-black hover:bg-amber-700 transition-all text-sm">Keep Existing</button>
+                </div>
+            </div>
             <div class="flex gap-3">
                 <button id="addAsinButton" onclick="addAsin()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Add ASIN</button>
                 <button onclick="closeAddAsinModal()" class="flex-1 bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all text-base">Cancel</button>
             </div>
             <div id="addAsinError" class="mt-3 text-sm font-bold hidden"></div>
+        </div>
+    </div>
+
+    <!-- Edit Product Modal -->
+    <div id="editProductModal" class="modal">
+        <div class="modal-content" style="max-width: 700px;">
+            <span class="modal-close" onclick="closeEditProductModal()">&times;</span>
+            <div class="modal-header">Edit Product</div>
+            <div class="mb-4">
+                <label class="block text-sm font-bold mb-2">ASIN:</label>
+                <div id="editAsinDisplay" class="px-4 py-2 bg-slate-100 border-2 border-slate-300 rounded-lg text-base font-mono text-blue-600 font-bold"></div>
+                <p class="text-xs text-slate-500 mt-1">ASIN cannot be changed</p>
+            </div>
+            <div id="editProductFields" class="space-y-4 mb-6">
+                <!-- Fields will be dynamically generated here -->
+            </div>
+            <div class="flex gap-3">
+                <button id="saveProductButton" onclick="saveProduct()" class="flex-1 bg-blue-600 text-white px-6 py-3 rounded-lg font-black hover:bg-blue-700 transition-all text-base">Save Changes</button>
+                <button onclick="closeEditProductModal()" class="flex-1 bg-slate-300 text-slate-800 px-6 py-3 rounded-lg font-black hover:bg-slate-400 transition-all text-base">Cancel</button>
+            </div>
+            <div id="editProductError" class="mt-3 text-sm font-bold hidden"></div>
         </div>
     </div>
 
@@ -680,9 +709,137 @@
             }
         }
 
-        function editProduct(asin) {
-            // Simple edit - redirect to main dashboard for now
-            window.location.href = '/';
+        let currentEditAsin = null;
+        let dbColumnsForEdit = [];
+
+        async function editProduct(asin) {
+            currentEditAsin = asin;
+
+            try {
+                // Fetch current product data
+                const response = await fetch(`/api/products/${asin}`);
+                if (!response.ok) {
+                    throw new Error('Failed to fetch product data');
+                }
+                const product = await response.json();
+
+                // Get database columns (excluding ASIN and ID)
+                if (dbColumnsForEdit.length === 0) {
+                    const colsResponse = await fetch('/api/products/columns');
+                    if (colsResponse.ok) {
+                        const cols = await colsResponse.json();
+                        dbColumnsForEdit = cols.filter(col => col.name !== 'asin' && col.name !== 'id');
+                    }
+                }
+
+                // Display ASIN
+                document.getElementById('editAsinDisplay').textContent = asin;
+
+                // Generate form fields
+                const fieldsContainer = document.getElementById('editProductFields');
+                fieldsContainer.innerHTML = '';
+
+                dbColumnsForEdit.forEach(col => {
+                    const value = product[col.name] || '';
+                    let inputHtml = '';
+
+                    if (col.type === 'timestamp without time zone' || col.type === 'timestamp with time zone') {
+                        // DateTime input
+                        const dateValue = value ? new Date(value).toISOString().slice(0, 16) : '';
+                        inputHtml = `<input type="datetime-local" id="edit_${col.name}" value="${dateValue}" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500">`;
+                    } else if (col.type === 'boolean') {
+                        // Checkbox
+                        inputHtml = `<input type="checkbox" id="edit_${col.name}" ${value ? 'checked' : ''} class="w-5 h-5">`;
+                    } else if (col.type === 'numeric' || col.type === 'double precision') {
+                        // Number input
+                        inputHtml = `<input type="number" step="any" id="edit_${col.name}" value="${value}" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500">`;
+                    } else {
+                        // Text input or textarea for longer text
+                        const isLongText = col.name.toLowerCase().includes('comment') || col.name.toLowerCase().includes('note') || col.name.toLowerCase().includes('description');
+                        if (isLongText) {
+                            inputHtml = `<textarea id="edit_${col.name}" rows="4" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500">${value}</textarea>`;
+                        } else {
+                            inputHtml = `<input type="text" id="edit_${col.name}" value="${value}" class="w-full px-4 py-2 border-2 border-slate-300 rounded-lg text-base focus:outline-none focus:ring-2 focus:ring-blue-500">`;
+                        }
+                    }
+
+                    const fieldDiv = document.createElement('div');
+                    fieldDiv.innerHTML = `
+                        <label class="block text-sm font-bold mb-2">${col.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</label>
+                        ${inputHtml}
+                    `;
+                    fieldsContainer.appendChild(fieldDiv);
+                });
+
+                // Show modal
+                document.getElementById('editProductModal').style.display = 'block';
+                document.getElementById('editProductError').classList.add('hidden');
+            } catch (err) {
+                alert('Error loading product: ' + err.message);
+            }
+        }
+
+        function closeEditProductModal() {
+            document.getElementById('editProductModal').style.display = 'none';
+            currentEditAsin = null;
+        }
+
+        async function saveProduct() {
+            if (!currentEditAsin) return;
+
+            const saveButton = document.getElementById('saveProductButton');
+            const errorDiv = document.getElementById('editProductError');
+            const originalText = saveButton.textContent;
+
+            saveButton.disabled = true;
+            saveButton.textContent = 'Saving...';
+            errorDiv.classList.add('hidden');
+
+            try {
+                const updateData = {};
+
+                dbColumnsForEdit.forEach(col => {
+                    const input = document.getElementById(`edit_${col.name}`);
+                    if (!input) return;
+
+                    let value;
+                    if (col.type === 'boolean') {
+                        value = input.checked;
+                    } else if (col.type === 'timestamp without time zone' || col.type === 'timestamp with time zone') {
+                        value = input.value ? new Date(input.value).toISOString() : null;
+                    } else if (col.type === 'numeric' || col.type === 'double precision') {
+                        value = input.value === '' ? null : parseFloat(input.value);
+                    } else {
+                        value = input.value.trim() || null;
+                    }
+
+                    updateData[col.name] = value;
+                });
+
+                const response = await fetch(`/api/asins/${currentEditAsin}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(updateData)
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    closeEditProductModal();
+                    window.location.reload();
+                } else {
+                    errorDiv.textContent = data.error || 'Failed to update product';
+                    errorDiv.classList.remove('hidden');
+                    errorDiv.classList.add('text-red-600');
+                    saveButton.disabled = false;
+                    saveButton.textContent = originalText;
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Error: ' + err.message;
+                errorDiv.classList.remove('hidden');
+                errorDiv.classList.add('text-red-600');
+                saveButton.disabled = false;
+                saveButton.textContent = originalText;
+            }
         }
 
         async function deleteProduct(asin) {
@@ -710,23 +867,32 @@
 
         function closeAddAsinModal() {
             document.getElementById('addAsinModal').style.display = 'none';
+            document.getElementById('newAsinInput').value = '';
+            document.getElementById('addAsinError').classList.add('hidden');
+            document.getElementById('duplicateAsinWarning').classList.add('hidden');
+            pendingDuplicateAsin = null;
         }
+
+        let pendingDuplicateAsin = null;
 
         async function addAsin() {
             const asin = document.getElementById('newAsinInput').value.trim().toUpperCase();
             const errorDiv = document.getElementById('addAsinError');
+            const duplicateWarning = document.getElementById('duplicateAsinWarning');
             const addButton = document.getElementById('addAsinButton');
             const originalText = addButton.textContent;
 
             if (!asin || asin.length !== 10) {
                 errorDiv.textContent = 'ASIN must be exactly 10 characters';
                 errorDiv.classList.remove('hidden');
+                duplicateWarning.classList.add('hidden');
                 return;
             }
 
             addButton.disabled = true;
-            addButton.textContent = 'Adding...';
+            addButton.textContent = 'Checking...';
             errorDiv.classList.add('hidden');
+            duplicateWarning.classList.add('hidden');
 
             try {
                 const response = await fetch('/api/asins', {
@@ -736,7 +902,13 @@
                 });
 
                 const data = await response.json();
-                if (response.ok) {
+                if (data.exists) {
+                    // ASIN already exists - show duplicate warning
+                    pendingDuplicateAsin = asin;
+                    duplicateWarning.classList.remove('hidden');
+                    addButton.disabled = false;
+                    addButton.textContent = originalText;
+                } else if (response.ok && data.success) {
                     closeAddAsinModal();
                     window.location.reload();
                 } else {
@@ -755,12 +927,58 @@
             }
         }
 
+        function skipDuplicateAsin() {
+            document.getElementById('duplicateAsinWarning').classList.add('hidden');
+            document.getElementById('newAsinInput').value = '';
+            pendingDuplicateAsin = null;
+        }
+
+        async function replaceDuplicateAsin() {
+            if (!pendingDuplicateAsin) return;
+
+            const errorDiv = document.getElementById('addAsinError');
+            const duplicateWarning = document.getElementById('duplicateAsinWarning');
+            const addButton = document.getElementById('addAsinButton');
+
+            addButton.disabled = true;
+            addButton.textContent = 'Processing...';
+
+            try {
+                const response = await fetch('/api/asins', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ asin: pendingDuplicateAsin, replace: true })
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    duplicateWarning.classList.add('hidden');
+                    closeAddAsinModal();
+                    window.location.reload();
+                } else {
+                    errorDiv.textContent = data.error || 'Failed to process ASIN';
+                    errorDiv.classList.remove('hidden');
+                    errorDiv.classList.add('text-red-600');
+                    addButton.disabled = false;
+                    addButton.textContent = 'Add ASIN';
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Error: ' + err.message;
+                errorDiv.classList.remove('hidden');
+                errorDiv.classList.add('text-red-600');
+                addButton.disabled = false;
+                addButton.textContent = 'Add ASIN';
+            }
+        }
+
         // Close modals when clicking outside
         window.onclick = function(event) {
             const addModal = document.getElementById('addAsinModal');
             const excelModal = document.getElementById('excelUploadModal');
+            const editModal = document.getElementById('editProductModal');
             if (event.target === addModal) closeAddAsinModal();
             if (event.target === excelModal) closeExcelUploadModal();
+            if (event.target === editModal) closeEditProductModal();
         }
     </script>
 </body>
