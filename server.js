@@ -887,32 +887,41 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                     }
                 }
 
+                // Get duplicate handling preference (default to 'update')
+                const duplicateHandling = req.body.duplicateHandling || 'update';
+
                 // Check if ASIN exists
                 const existingCheck = await pool.query('SELECT asin FROM products WHERE asin = $1', [asin]);
 
                 if (existingCheck.rows.length > 0) {
-                    // Update existing
-                    const updateFields = [];
-                    const updateValues = [];
-                    let paramIndex = 1;
-
-                    for (const [key, value] of Object.entries(data)) {
-                        if (key !== 'asin') {
-                            updateFields.push(`"${key}" = $${paramIndex}`);
-                            updateValues.push(value);
-                            paramIndex++;
-                        }
-                    }
-
-                    if (updateFields.length > 0) {
-                        updateValues.push(asin);
-                        await pool.query(
-                            `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex}`,
-                            updateValues
-                        );
-                        updated++;
-                    } else {
+                    // ASIN already exists
+                    if (duplicateHandling === 'skip') {
+                        // Skip this row
                         skipped++;
+                    } else {
+                        // Update existing (default behavior)
+                        const updateFields = [];
+                        const updateValues = [];
+                        let paramIndex = 1;
+
+                        for (const [key, value] of Object.entries(data)) {
+                            if (key !== 'asin') {
+                                updateFields.push(`"${key}" = $${paramIndex}`);
+                                updateValues.push(value);
+                                paramIndex++;
+                            }
+                        }
+
+                        if (updateFields.length > 0) {
+                            updateValues.push(asin);
+                            await pool.query(
+                                `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex}`,
+                                updateValues
+                            );
+                            updated++;
+                        } else {
+                            skipped++;
+                        }
                     }
                 } else {
                     // Insert new
