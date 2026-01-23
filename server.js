@@ -692,7 +692,15 @@ app.post('/api/upload-excel/preview', upload.single('file'), async (req, res) =>
 
         // Get current database columns
         const dbColumns = await getTableColumns();
-        const dbColumnNames = dbColumns.map(col => col.name.toLowerCase());
+        // Create a set of all possible column name variations for matching
+        // DB columns are already sanitized when stored, so we compare sanitized versions
+        const dbColumnMatches = new Set();
+        dbColumns.forEach(col => {
+            // Add exact name (case-insensitive)
+            dbColumnMatches.add(col.name.toLowerCase());
+            // Add sanitized version (in case DB column was created with sanitized name)
+            dbColumnMatches.add(sanitizeColumnName(col.name));
+        });
 
         // System columns to exclude
         const systemColumns = ['id', 'asin'];
@@ -700,7 +708,23 @@ app.post('/api/upload-excel/preview', upload.single('file'), async (req, res) =>
         // Find new columns (not in DB and not system columns)
         const newColumns = excelColumns.filter(col => {
             const colNameLower = col.name.toLowerCase();
-            return !dbColumnNames.includes(colNameLower) &&
+            const colSanitized = sanitizeColumnName(col.name);
+
+            // Check if column exists in DB by comparing:
+            // 1. Exact name match (case-insensitive): "Product Name" vs "Product Name"
+            // 2. Sanitized name match: "Product Name" (sanitized to "product_name") vs "product_name" in DB
+            const exactMatch = dbColumnMatches.has(colNameLower);
+            const sanitizedMatch = dbColumnMatches.has(colSanitized);
+
+            // Also check reverse: if DB column name (when sanitized) matches Excel column (when sanitized)
+            const reverseMatch = dbColumns.some(dbCol => {
+                const dbColSanitized = sanitizeColumnName(dbCol.name);
+                return dbColSanitized === colSanitized || dbCol.name.toLowerCase() === colNameLower;
+            });
+
+            return !exactMatch &&
+                   !sanitizedMatch &&
+                   !reverseMatch &&
                    !systemColumns.includes(colNameLower) &&
                    colNameLower !== 'asin'; // Ensure ASIN column is not treated as new
         });
