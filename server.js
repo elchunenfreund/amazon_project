@@ -172,31 +172,38 @@ app.get('/', async (req, res) => {
 
         // Get product metadata (comment, snooze_until, updated_fields, updated_at) for each ASIN
         let productMeta;
+        let hasUpdatedFieldsColumn = false;
         try {
             // #region agent log
+            console.error('[DEBUG] Attempting SELECT with updated_fields');
             fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:173',message:'Attempting SELECT with updated_fields',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
             // #endregion
             productMeta = await pool.query(`SELECT asin, comment, snooze_until, updated_fields, updated_at FROM products`);
+            hasUpdatedFieldsColumn = true;
             // #region agent log
+            console.error('[DEBUG] SELECT with updated_fields succeeded', { rowCount: productMeta.rows.length });
             fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:175',message:'SELECT with updated_fields succeeded',data:{rowCount:productMeta.rows.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
             // #endregion
         } catch (e) {
             // #region agent log
+            console.error('[DEBUG] SELECT with updated_fields failed, falling back', { errorMessage: e.message, errorName: e.name, errorStack: e.stack?.substring(0, 200) });
             fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:177',message:'SELECT with updated_fields failed, falling back',data:{errorMessage:e.message,errorName:e.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
             // #endregion
             // If columns don't exist yet, query without them
             productMeta = await pool.query(`SELECT asin, comment, snooze_until FROM products`);
+            hasUpdatedFieldsColumn = false;
         }
         const metaMap = {};
         productMeta.rows.forEach(row => {
             // #region agent log
+            console.error('[DEBUG] Processing row for metaMap', { asin: row.asin, hasUpdatedFields: row.hasOwnProperty('updated_fields'), hasUpdatedAt: row.hasOwnProperty('updated_at') });
             fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:183',message:'Processing row for metaMap',data:{asin:row.asin,hasUpdatedFields:row.hasOwnProperty('updated_fields'),hasUpdatedAt:row.hasOwnProperty('updated_at'),updatedFieldsType:typeof row.updated_fields,updatedFieldsValue:row.updated_fields?.toString()?.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
             // #endregion
             metaMap[row.asin] = {
                 comment: row.comment,
                 snooze_until: row.snooze_until,
-                updated_fields: row.updated_fields || null,
-                updated_at: row.updated_at || null
+                updated_fields: hasUpdatedFieldsColumn ? (row.updated_fields || null) : null,
+                updated_at: hasUpdatedFieldsColumn ? (row.updated_at || null) : null
             };
         });
 
@@ -232,12 +239,23 @@ app.get('/', async (req, res) => {
             latest.hasReports = true;
             // Add updated fields info for highlighting
             // #region agent log
+            console.error('[DEBUG] Before parsing updated_fields', { asin, updatedFieldsType: typeof meta.updated_fields, updatedFieldsValue: meta.updated_fields, isNull: meta.updated_fields === null, isUndefined: meta.updated_fields === undefined });
             fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:219',message:'Before parsing updated_fields',data:{asin,updatedFieldsType:typeof meta.updated_fields,updatedFieldsValue:meta.updated_fields?.toString()?.substring(0,100),isNull:meta.updated_fields===null,isUndefined:meta.updated_fields===undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
             // #endregion
             try {
-                latest.updated_fields = meta.updated_fields ? (typeof meta.updated_fields === 'string' ? JSON.parse(meta.updated_fields) : meta.updated_fields) : [];
+                if (meta.updated_fields === null || meta.updated_fields === undefined) {
+                    latest.updated_fields = [];
+                } else if (typeof meta.updated_fields === 'string') {
+                    latest.updated_fields = JSON.parse(meta.updated_fields);
+                } else if (Array.isArray(meta.updated_fields)) {
+                    latest.updated_fields = meta.updated_fields;
+                } else {
+                    // JSONB might return an object, try to convert
+                    latest.updated_fields = Array.isArray(meta.updated_fields) ? meta.updated_fields : [];
+                }
             } catch (parseErr) {
                 // #region agent log
+                console.error('[DEBUG] JSON.parse error on updated_fields', { asin, errorMessage: parseErr.message, updatedFieldsValue: meta.updated_fields });
                 fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:222',message:'JSON.parse error on updated_fields',data:{asin,errorMessage:parseErr.message,updatedFieldsValue:meta.updated_fields?.toString()?.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
                 // #endregion
                 latest.updated_fields = [];
@@ -285,8 +303,17 @@ app.get('/', async (req, res) => {
                     history: [],
                     updated_fields: (() => {
                         try {
-                            return meta.updated_fields ? (typeof meta.updated_fields === 'string' ? JSON.parse(meta.updated_fields) : meta.updated_fields) : [];
+                            if (meta.updated_fields === null || meta.updated_fields === undefined) {
+                                return [];
+                            } else if (typeof meta.updated_fields === 'string') {
+                                return JSON.parse(meta.updated_fields);
+                            } else if (Array.isArray(meta.updated_fields)) {
+                                return meta.updated_fields;
+                            } else {
+                                return Array.isArray(meta.updated_fields) ? meta.updated_fields : [];
+                            }
                         } catch (e) {
+                            console.error('[DEBUG] Error parsing updated_fields in placeholder', { asin: product.asin, error: e.message, value: meta.updated_fields });
                             return [];
                         }
                     })(),
@@ -308,6 +335,7 @@ app.get('/', async (req, res) => {
         res.render('index', { reports: dashboardData, lastSyncTime: lastSync });
     } catch (err) {
         // #region agent log
+        console.error('[DEBUG] Main route error:', { errorMessage: err.message, errorStack: err.stack, errorName: err.name });
         fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:275',message:'Main route error',data:{errorMessage:err.message,errorStack:err.stack?.substring(0,500),errorName:err.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
         // #endregion
         res.status(500).send(err.message);

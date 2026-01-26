@@ -365,6 +365,19 @@
                 </thead>
                 <tbody class="divide-y divide-slate-100" id="tableBody">
                     <% reports.forEach((item, index) => { %>
+                        <%
+                        // Helper to check if a field was updated
+                        const updatedFields = item.updated_fields || [];
+                        const isFieldUpdated = (fieldName) => {
+                            return updatedFields.some(f => f.toLowerCase() === fieldName.toLowerCase());
+                        };
+                        // Map database column names to display fields
+                        const isHeaderUpdated = isFieldUpdated('header') || isFieldUpdated('product_name') || isFieldUpdated('title');
+                        const isStockUpdated = isFieldUpdated('availability') || isFieldUpdated('stock_level');
+                        const isSellerUpdated = isFieldUpdated('seller');
+                        const isPriceUpdated = isFieldUpdated('price');
+                        const isCommentUpdated = isFieldUpdated('comment');
+                        %>
                         <tr class="inventory-row transition-all <%= item.hasChanged ? 'bg-orange-200 border-l-8 border-orange-500' : 'hover:bg-slate-50' %> <%= item.isSnoozed ? 'opacity-60' : '' %> <%= item.availability === 'Doggy' ? 'border-l-4 border-purple-500' : '' %>"
                             data-asin="<%= item.asin %>"
                             data-price="<%= (item.price || 'N/A').replace(/"/g, '&quot;') %>">
@@ -380,7 +393,7 @@
                                 <% } %>
                             </td>
                             <td class="p-6 asin-cell font-mono text-blue-600 font-bold text-base"><a href="https://www.amazon.ca/dp/<%= item.asin %>" target="_blank" class="hover:underline"><%= item.asin %></a></td>
-                            <td class="p-6 title-cell text-slate-700 font-semibold text-base">
+                            <td class="p-6 title-cell text-slate-700 font-semibold text-base <%= isHeaderUpdated ? 'field-updated' : '' %>">
                                 <div class="title-clamp <%= !item.hasReports ? 'text-slate-400 italic' : '' %>"><%= item.header %></div>
                                 <% if(!item.hasReports) { %>
                                     <div class="mt-1 text-xs text-amber-600 font-bold bg-amber-100 border border-amber-300 rounded px-2 py-1 inline-block">
@@ -389,7 +402,7 @@
                                 <% } %>
                             </td>
 
-                            <td class="p-6 text-center stock-cell font-black text-base"
+                            <td class="p-6 text-center stock-cell font-black text-base <%= isStockUpdated ? 'field-updated' : '' %>"
                                 data-availability-val="<%= (item.availability || '').toUpperCase() %>"
                                 data-stocklevel-val="<%= (item.stock_level || '').toUpperCase() %>">
 
