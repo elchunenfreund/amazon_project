@@ -1452,8 +1452,8 @@ async function signSpApiRequest(url, method, accessToken, body = null) {
     // Create canonical request
     const canonicalUri = urlObj.pathname;
     const canonicalQueryString = urlObj.search.slice(1); // Remove leading '?'
-    
-    const bodyHash = body ? crypto.createHash('sha256').update(body).digest('hex') : 
+
+    const bodyHash = body ? crypto.createHash('sha256').update(body).digest('hex') :
                       crypto.createHash('sha256').update('').digest('hex');
 
     const headers = {
@@ -1469,7 +1469,7 @@ async function signSpApiRequest(url, method, accessToken, body = null) {
 
     // Sort headers for canonical headers
     const sortedHeaderKeys = Object.keys(headers).sort();
-    const canonicalHeaders = sortedHeaderKeys.map(key => 
+    const canonicalHeaders = sortedHeaderKeys.map(key =>
         `${key.toLowerCase()}:${headers[key].trim()}\n`
     ).join('');
     const signedHeaders = sortedHeaderKeys.map(key => key.toLowerCase()).join(';');
@@ -1732,7 +1732,7 @@ app.get('/api/sp-api/test', async (req, res) => {
         });
 
         // If it fails with 403 and we have AWS credentials, try with signing
-        if (!spApiResponse.ok && spApiResponse.status === 403 && 
+        if (!spApiResponse.ok && spApiResponse.status === 403 &&
             process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
             console.log('Request failed without signing, trying with AWS signing...');
             try {
@@ -1756,7 +1756,7 @@ app.get('/api/sp-api/test', async (req, res) => {
                 details: errorText,
                 tried_without_signing: true,
                 tried_with_signing: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
-                note: spApiResponse.status === 403 
+                note: spApiResponse.status === 403
                     ? 'Endpoint requires AWS signing. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in Heroku config.'
                     : 'Check your access token and app permissions.'
             });
