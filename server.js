@@ -1754,15 +1754,24 @@ app.get('/api/sp-api/test', async (req, res) => {
 
         if (!spApiResponse.ok) {
             const errorText = await spApiResponse.text();
+            let errorDetails = errorText;
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorDetails = errorJson;
+            } catch (e) {
+                // Keep as text if not JSON
+            }
+            
             return res.status(spApiResponse.status).json({
                 success: false,
                 error: 'SP-API call failed',
                 status: spApiResponse.status,
-                details: errorText,
+                details: errorDetails,
                 tried_without_signing: true,
                 tried_with_signing: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
-                note: spApiResponse.status === 403
-                    ? 'This endpoint requires AWS signing. Check your Developer Console app for IAM ARN or AWS credentials. For self-authorization, AWS credentials may be provided through your app registration.'
+                iam_arn: process.env.IAM_ARN || 'Not set',
+                app_status_note: spApiResponse.status === 403
+                    ? '403 Unauthorized. Possible causes: 1) App is in Draft status (may need to be published/activated), 2) Missing IAM ARN link (but no field found in SPP), 3) Missing required roles/permissions, 4) Access token not authorized for this endpoint. Check your app status and roles in Solutions Provider Portal.'
                     : 'Check your access token and app permissions.'
             });
         }
