@@ -31,6 +31,12 @@ const client = new Client({
                 IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='products' AND column_name='snooze_until') THEN
                     ALTER TABLE products ADD COLUMN snooze_until TIMESTAMP;
                 END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='products' AND column_name='updated_fields') THEN
+                    ALTER TABLE products ADD COLUMN updated_fields JSONB;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='products' AND column_name='updated_at') THEN
+                    ALTER TABLE products ADD COLUMN updated_at TIMESTAMP;
+                END IF;
             END $$;
         `);
         console.log("✅ Table 'products' columns verified.");

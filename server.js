@@ -167,11 +167,22 @@ app.get('/', async (req, res) => {
             grouped[row.asin].push(row);
         });
 
-        // Get product metadata (comment, snooze_until) for each ASIN
-        const productMeta = await pool.query(`SELECT asin, comment, snooze_until FROM products`);
+        // Get product metadata (comment, snooze_until, updated_fields, updated_at) for each ASIN
+        let productMeta;
+        try {
+            productMeta = await pool.query(`SELECT asin, comment, snooze_until, updated_fields, updated_at FROM products`);
+        } catch (e) {
+            // If columns don't exist yet, query without them
+            productMeta = await pool.query(`SELECT asin, comment, snooze_until FROM products`);
+        }
         const metaMap = {};
         productMeta.rows.forEach(row => {
-            metaMap[row.asin] = { comment: row.comment, snooze_until: row.snooze_until };
+            metaMap[row.asin] = {
+                comment: row.comment,
+                snooze_until: row.snooze_until,
+                updated_fields: row.updated_fields || null,
+                updated_at: row.updated_at || null
+            };
         });
 
         // Create Set of valid ASINs (only those in products table)
@@ -204,6 +215,9 @@ app.get('/', async (req, res) => {
             latest.snooze_until = meta.snooze_until;
             latest.isSnoozed = meta.snooze_until && new Date(meta.snooze_until) > new Date();
             latest.hasReports = true;
+            // Add updated fields info for highlighting
+            latest.updated_fields = meta.updated_fields ? (typeof meta.updated_fields === 'string' ? JSON.parse(meta.updated_fields) : meta.updated_fields) : [];
+            latest.updated_at = meta.updated_at;
             latest.history = history.map(row => ({
                 ...row,
                 check_date_formatted: formatMontrealDateTime(row.check_date),
@@ -228,6 +242,7 @@ app.get('/', async (req, res) => {
         for (const product of productMeta.rows) {
             if (!grouped[product.asin]) {
                 // Create placeholder entry for ASINs without reports
+                const meta = metaMap[product.asin] || {};
                 const placeholder = {
                     asin: product.asin,
                     header: 'No data yet - Run report to fetch product info',
@@ -238,11 +253,13 @@ app.get('/', async (req, res) => {
                     ranking: 'N/A',
                     check_date: null,
                     hasChanged: false,
-                    comment: product.comment || '',
-                    snooze_until: product.snooze_until,
-                    isSnoozed: product.snooze_until && new Date(product.snooze_until) > new Date(),
+                    comment: meta.comment || '',
+                    snooze_until: meta.snooze_until,
+                    isSnoozed: meta.snooze_until && new Date(meta.snooze_until) > new Date(),
                     hasReports: false,
-                    history: []
+                    history: [],
+                    updated_fields: meta.updated_fields ? (typeof meta.updated_fields === 'string' ? JSON.parse(meta.updated_fields) : meta.updated_fields) : [],
+                    updated_at: meta.updated_at
                 };
                 dashboardData.push(placeholder);
             }
@@ -518,6 +535,103 @@ app.patch('/api/asins/:asin/snooze', async (req, res) => {
             return res.status(404).json({ error: 'ASIN not found' });
         }
         res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT endpoint for updating product fields (from products page edit modal)
+app.put('/api/asins/:asin', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const updateData = req.body;
+
+        // Get current product data to compare
+        const currentResult = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
+        if (currentResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+
+        const currentData = currentResult.rows[0];
+        const changedFields = [];
+
+        // Build update query and track changed fields
+        const updateFields = [];
+        const updateValues = [];
+        let paramIndex = 1;
+
+        for (const [key, value] of Object.entries(updateData)) {
+            if (key === 'asin' || key === 'id') continue; // Skip ASIN and ID
+
+            // Compare current value with new value
+            let currentValue = currentData[key];
+            let newValue = value;
+
+            // Normalize values for comparison
+            if (currentValue !== null && currentValue !== undefined) {
+                if (currentValue instanceof Date) {
+                    currentValue = currentValue.toISOString();
+                } else {
+                    currentValue = String(currentValue).trim();
+                }
+            } else {
+                currentValue = null;
+            }
+
+            if (newValue !== null && newValue !== undefined) {
+                if (newValue instanceof Date) {
+                    newValue = newValue.toISOString();
+                } else {
+                    newValue = String(newValue).trim();
+                }
+            } else {
+                newValue = null;
+            }
+
+            // Check if value actually changed
+            if (currentValue !== newValue) {
+                changedFields.push(key);
+                updateFields.push(`"${key}" = $${paramIndex}`);
+                updateValues.push(value);
+                paramIndex++;
+            }
+        }
+
+        if (updateFields.length === 0) {
+            return res.json({ success: true, message: 'No changes detected', changedFields: [] });
+        }
+
+        // Check if updated_fields and updated_at columns exist
+        const columnCheck = await pool.query(`
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = 'products'
+            AND column_name IN ('updated_fields', 'updated_at')
+        `);
+        const existingColumns = columnCheck.rows.map(r => r.column_name);
+        const hasUpdatedFields = existingColumns.includes('updated_fields');
+        const hasUpdatedAt = existingColumns.includes('updated_at');
+
+        // Add updated_fields JSON column to track changes if it exists
+        if (hasUpdatedFields && changedFields.length > 0) {
+            updateFields.push(`updated_fields = $${paramIndex}`);
+            updateValues.push(JSON.stringify(changedFields));
+            paramIndex++;
+        }
+
+        // Add updated_at timestamp if column exists
+        if (hasUpdatedAt) {
+            updateFields.push(`updated_at = $${paramIndex}`);
+            updateValues.push(new Date().toISOString());
+        }
+
+        updateValues.push(asin);
+        await pool.query(
+            `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex + 1}`,
+            updateValues
+        );
+
+        res.json({ success: true, changedFields });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -1064,6 +1178,11 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                     const decision = duplicateDecisions[asin] || duplicateDecisions[asin.toUpperCase()] || duplicateDecisions[asin.toLowerCase()];
 
                     if (decision === 'replace') {
+                        // Get current data to track changes
+                        const currentResult = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
+                        const currentData = currentResult.rows[0] || {};
+                        const changedFields = [];
+
                         // Update existing
                         const updateFields = [];
                         const updateValues = [];
@@ -1071,6 +1190,15 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
 
                         for (const [key, value] of Object.entries(data)) {
                             if (key !== 'asin') {
+                                // Track changed fields
+                                const currentValue = currentData[key];
+                                let normalizedCurrent = currentValue !== null && currentValue !== undefined ? String(currentValue).trim() : null;
+                                let normalizedNew = value !== null && value !== undefined ? String(value).trim() : null;
+
+                                if (normalizedCurrent !== normalizedNew) {
+                                    changedFields.push(key);
+                                }
+
                                 updateFields.push(`"${key}" = $${paramIndex}`);
                                 updateValues.push(value);
                                 paramIndex++;
@@ -1078,9 +1206,31 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                         }
 
                         if (updateFields.length > 0) {
+                            // Check if updated_fields and updated_at columns exist
+                            const columnCheck = await pool.query(`
+                                SELECT column_name
+                                FROM information_schema.columns
+                                WHERE table_name = 'products'
+                                AND column_name IN ('updated_fields', 'updated_at')
+                            `);
+                            const existingColumns = columnCheck.rows.map(r => r.column_name);
+                            const hasUpdatedFields = existingColumns.includes('updated_fields');
+                            const hasUpdatedAt = existingColumns.includes('updated_at');
+
+                            // Add updated_fields and updated_at if columns exist
+                            if (hasUpdatedFields && changedFields.length > 0) {
+                                updateFields.push(`updated_fields = $${paramIndex}`);
+                                updateValues.push(JSON.stringify(changedFields));
+                                paramIndex++;
+                            }
+                            if (hasUpdatedAt) {
+                                updateFields.push(`updated_at = $${paramIndex}`);
+                                updateValues.push(new Date().toISOString());
+                            }
+
                             updateValues.push(asin);
                             await pool.query(
-                                `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex}`,
+                                `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex + 1}`,
                                 updateValues
                             );
                             updated++;

@@ -11,6 +11,16 @@
         .terminal-scrollbar::-webkit-scrollbar { width: 4px; }
         .terminal-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
         .title-clamp { display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .field-updated {
+            border: 3px solid #f59e0b !important;
+            border-radius: 6px;
+            background-color: #fef3c7 !important;
+            animation: highlightPulse 2s ease-in-out;
+        }
+        @keyframes highlightPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
+            50% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+        }
         select.filter-select {
             background-color: #1e293b;
             color: white;
@@ -407,12 +417,12 @@
                                 <% } %>
                             </td>
 
-                            <td class="p-6 text-base font-black seller-cell <%= (item.seller && item.seller.includes('Amazon')) ? 'text-blue-600' : 'text-slate-500' %>" data-seller-val="<%= item.seller %>">
+                            <td class="p-6 text-base font-black seller-cell <%= (item.seller && item.seller.includes('Amazon')) ? 'text-blue-600' : 'text-slate-500' %> <%= isSellerUpdated ? 'field-updated' : '' %>" data-seller-val="<%= item.seller %>">
                                 <%= item.seller %>
                             </td>
 
-                            <td class="p-6 text-xl font-black text-slate-900 price-cell text-base"><%= item.price %></td>
-                            <td class="p-6 text-base">
+                            <td class="p-6 text-xl font-black text-slate-900 price-cell text-base <%= isPriceUpdated ? 'field-updated' : '' %>"><%= item.price %></td>
+                            <td class="p-6 text-base <%= isCommentUpdated ? 'field-updated' : '' %>">
                                 <div class="flex items-center gap-2">
                                     <span class="comment-text"><%= item.comment || '' %></span>
                                     <button data-asin="<%= item.asin %>" onclick="openCommentModalFromButton(this)" class="text-blue-600 hover:text-blue-800 text-sm font-bold">✏️</button>
