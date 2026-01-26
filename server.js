@@ -1434,6 +1434,78 @@ app.get('/auth/amazon/callback', async (req, res) => {
     }
 });
 
+// Helper function to sign SP-API requests with AWS Signature V4
+async function signSpApiRequest(url, method, accessToken, body = null) {
+    if (!process.env.AWS_ACCESS_KEY_ID || !process.env.AWS_SECRET_ACCESS_KEY) {
+        throw new Error('AWS credentials not configured. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment variables.');
+    }
+
+    const urlObj = new URL(url);
+    const region = urlObj.hostname.includes('sellingpartnerapi-na') ? 'us-east-1' :
+                   urlObj.hostname.includes('sellingpartnerapi-eu') ? 'eu-west-1' :
+                   urlObj.hostname.includes('sellingpartnerapi-fe') ? 'us-west-2' : 'us-east-1';
+
+    const now = new Date();
+    const amzDate = now.toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0, -1) + 'Z';
+    const dateStamp = amzDate.slice(0, 8);
+
+    // Create canonical request
+    const canonicalUri = urlObj.pathname;
+    const canonicalQueryString = urlObj.search.slice(1); // Remove leading '?'
+    
+    const bodyHash = body ? crypto.createHash('sha256').update(body).digest('hex') : 
+                      crypto.createHash('sha256').update('').digest('hex');
+
+    const headers = {
+        'host': urlObj.hostname,
+        'x-amz-access-token': accessToken,
+        'x-amz-date': amzDate
+    };
+
+    if (body) {
+        headers['content-type'] = 'application/json';
+        headers['content-length'] = Buffer.byteLength(body).toString();
+    }
+
+    // Sort headers for canonical headers
+    const sortedHeaderKeys = Object.keys(headers).sort();
+    const canonicalHeaders = sortedHeaderKeys.map(key => 
+        `${key.toLowerCase()}:${headers[key].trim()}\n`
+    ).join('');
+    const signedHeaders = sortedHeaderKeys.map(key => key.toLowerCase()).join(';');
+
+    const canonicalRequest = [
+        method,
+        canonicalUri,
+        canonicalQueryString,
+        canonicalHeaders,
+        signedHeaders,
+        bodyHash
+    ].join('\n');
+
+    // Create string to sign
+    const algorithm = 'AWS4-HMAC-SHA256';
+    const credentialScope = `${dateStamp}/${region}/execute-api/aws4_request`;
+    const stringToSign = [
+        algorithm,
+        amzDate,
+        credentialScope,
+        crypto.createHash('sha256').update(canonicalRequest).digest('hex')
+    ].join('\n');
+
+    // Calculate signature
+    const kDate = crypto.createHmac('sha256', `AWS4${process.env.AWS_SECRET_ACCESS_KEY}`).update(dateStamp).digest();
+    const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
+    const kService = crypto.createHmac('sha256', kRegion).update('execute-api').digest();
+    const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
+    const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');
+
+    // Add authorization header
+    headers['authorization'] = `${algorithm} Credential=${process.env.AWS_ACCESS_KEY_ID}/${credentialScope}, SignedHeaders=${signedHeaders}, Signature=${signature}`;
+
+    return headers;
+}
+
 // Helper function to get a valid access token (refreshes if expired)
 async function getValidAccessToken() {
     try {
@@ -1592,9 +1664,9 @@ app.post('/api/sp-api/store-tokens', async (req, res) => {
         }
 
         // Calculate expiration time
-        const expiresAt = expires_in 
+        const expiresAt = expires_in
             ? new Date(Date.now() + expires_in * 1000)
-            : access_token 
+            : access_token
                 ? new Date(Date.now() + 3600 * 1000) // Default 1 hour for access token
                 : null;
 
@@ -1606,9 +1678,9 @@ app.post('/api/sp-api/store-tokens', async (req, res) => {
         if (existing.rows.length > 0) {
             // Update existing token
             await pool.query(
-                `UPDATE oauth_tokens 
-                 SET refresh_token = $1, 
-                     access_token = $2, 
+                `UPDATE oauth_tokens
+                 SET refresh_token = $1,
+                     access_token = $2,
                      expires_at = $3,
                      selling_partner_id = $4,
                      updated_at = CURRENT_TIMESTAMP
@@ -1648,16 +1720,15 @@ app.get('/api/sp-api/test', async (req, res) => {
         );
         const sellingPartnerId = spIdResult.rows[0]?.selling_partner_id;
 
-        // Try to get marketplace participations (simple endpoint that doesn't require AWS signing)
-        // Note: This endpoint may still require AWS signing depending on your app configuration
+        // Get marketplace participations with AWS request signing
         const spApiUrl = `https://sellingpartnerapi-na.amazon.com/sellers/v1/marketplaceParticipations`;
+
+        // Sign the request with AWS Signature V4
+        const signedHeaders = await signSpApiRequest(spApiUrl, 'GET', accessToken);
 
         const spApiResponse = await fetch(spApiUrl, {
             method: 'GET',
-            headers: {
-                'x-amz-access-token': accessToken,
-                'Content-Type': 'application/json'
-            }
+            headers: signedHeaders
         });
 
         if (!spApiResponse.ok) {
@@ -1667,7 +1738,7 @@ app.get('/api/sp-api/test', async (req, res) => {
                 error: 'SP-API call failed',
                 status: spApiResponse.status,
                 details: errorText,
-                note: 'This endpoint may require AWS request signing. Check Amazon SP-API documentation for your specific endpoint requirements.'
+                note: 'Make sure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set in Heroku config.'
             });
         }
 
