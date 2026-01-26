@@ -159,6 +159,9 @@ function formatMontrealDateTime(date) {
 }
 
 app.get('/', async (req, res) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:161',message:'Main route called',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+    // #endregion
     try {
         const result = await pool.query(`SELECT * FROM daily_reports ORDER BY asin, check_date DESC`);
         const grouped = {};
@@ -170,13 +173,25 @@ app.get('/', async (req, res) => {
         // Get product metadata (comment, snooze_until, updated_fields, updated_at) for each ASIN
         let productMeta;
         try {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:173',message:'Attempting SELECT with updated_fields',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+            // #endregion
             productMeta = await pool.query(`SELECT asin, comment, snooze_until, updated_fields, updated_at FROM products`);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:175',message:'SELECT with updated_fields succeeded',data:{rowCount:productMeta.rows.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+            // #endregion
         } catch (e) {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:177',message:'SELECT with updated_fields failed, falling back',data:{errorMessage:e.message,errorName:e.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+            // #endregion
             // If columns don't exist yet, query without them
             productMeta = await pool.query(`SELECT asin, comment, snooze_until FROM products`);
         }
         const metaMap = {};
         productMeta.rows.forEach(row => {
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:183',message:'Processing row for metaMap',data:{asin:row.asin,hasUpdatedFields:row.hasOwnProperty('updated_fields'),hasUpdatedAt:row.hasOwnProperty('updated_at'),updatedFieldsType:typeof row.updated_fields,updatedFieldsValue:row.updated_fields?.toString()?.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+            // #endregion
             metaMap[row.asin] = {
                 comment: row.comment,
                 snooze_until: row.snooze_until,
@@ -216,7 +231,17 @@ app.get('/', async (req, res) => {
             latest.isSnoozed = meta.snooze_until && new Date(meta.snooze_until) > new Date();
             latest.hasReports = true;
             // Add updated fields info for highlighting
-            latest.updated_fields = meta.updated_fields ? (typeof meta.updated_fields === 'string' ? JSON.parse(meta.updated_fields) : meta.updated_fields) : [];
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:219',message:'Before parsing updated_fields',data:{asin,updatedFieldsType:typeof meta.updated_fields,updatedFieldsValue:meta.updated_fields?.toString()?.substring(0,100),isNull:meta.updated_fields===null,isUndefined:meta.updated_fields===undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+            // #endregion
+            try {
+                latest.updated_fields = meta.updated_fields ? (typeof meta.updated_fields === 'string' ? JSON.parse(meta.updated_fields) : meta.updated_fields) : [];
+            } catch (parseErr) {
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:222',message:'JSON.parse error on updated_fields',data:{asin,errorMessage:parseErr.message,updatedFieldsValue:meta.updated_fields?.toString()?.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
+                // #endregion
+                latest.updated_fields = [];
+            }
             latest.updated_at = meta.updated_at;
             latest.history = history.map(row => ({
                 ...row,
@@ -258,7 +283,13 @@ app.get('/', async (req, res) => {
                     isSnoozed: meta.snooze_until && new Date(meta.snooze_until) > new Date(),
                     hasReports: false,
                     history: [],
-                    updated_fields: meta.updated_fields ? (typeof meta.updated_fields === 'string' ? JSON.parse(meta.updated_fields) : meta.updated_fields) : [],
+                    updated_fields: (() => {
+                        try {
+                            return meta.updated_fields ? (typeof meta.updated_fields === 'string' ? JSON.parse(meta.updated_fields) : meta.updated_fields) : [];
+                        } catch (e) {
+                            return [];
+                        }
+                    })(),
                     updated_at: meta.updated_at
                 };
                 dashboardData.push(placeholder);
@@ -275,7 +306,12 @@ app.get('/', async (req, res) => {
         });
 
         res.render('index', { reports: dashboardData, lastSyncTime: lastSync });
-    } catch (err) { res.status(500).send(err.message); }
+    } catch (err) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:275',message:'Main route error',data:{errorMessage:err.message,errorStack:err.stack?.substring(0,500),errorName:err.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
+        // #endregion
+        res.status(500).send(err.message);
+    }
 });
 
 app.post('/run-report', (req, res) => {
