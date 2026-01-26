@@ -5,6 +5,8 @@ const { spawn, exec } = require('child_process');
 const { Pool } = require('pg');
 const multer = require('multer');
 const ExcelJS = require('exceljs');
+const session = require('express-session');
+const crypto = require('crypto');
 
 const app = express();
 const server = http.createServer(app);
@@ -21,6 +23,18 @@ let currentScraperProcess = null;
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
 app.use(express.json());
+
+// Session configuration for OAuth state management
+app.use(session({
+    secret: process.env.OAUTH_STATE_SECRET || crypto.randomBytes(32).toString('hex'),
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: process.env.NODE_ENV === 'production', // HTTPS only in production
+        httpOnly: true,
+        maxAge: 600000 // 10 minutes
+    }
+}));
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({
@@ -1216,6 +1230,207 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
     } catch (err) {
         console.error('Import error:', err);
         res.status(500).json({ error: err.message || 'Failed to import Excel data' });
+    }
+});
+
+// Amazon SP-API OAuth Routes
+
+// OAuth Login Route - Initiates the OAuth flow
+app.get('/auth/amazon/login', (req, res) => {
+    try {
+        // Validate required environment variables
+        if (!process.env.LWA_CLIENT_ID) {
+            return res.status(500).json({ error: 'LWA_CLIENT_ID not configured' });
+        }
+
+        // Generate cryptographically secure state token for CSRF protection
+        const stateToken = crypto.randomBytes(32).toString('hex');
+
+        // Store state token in session for validation in callback
+        req.session.oauthState = stateToken;
+        req.session.oauthTimestamp = Date.now();
+
+        // Build Amazon authorization URL
+        const redirectUri = process.env.OAUTH_REDIRECT_URI ||
+            `${req.protocol}://${req.get('host')}/auth/amazon/callback`;
+
+        const scope = process.env.OAUTH_SCOPE || 'sellingpartnerapi::migration';
+
+        const authUrl = new URL('https://sellercentral.amazon.com/apps/authorize/consent');
+        authUrl.searchParams.set('application_id', process.env.LWA_CLIENT_ID);
+        authUrl.searchParams.set('state', stateToken);
+        authUrl.searchParams.set('redirect_uri', redirectUri);
+        authUrl.searchParams.set('version', 'beta');
+
+        // Redirect to Amazon authorization page
+        res.redirect(authUrl.toString());
+    } catch (err) {
+        console.error('OAuth login error:', err);
+        res.status(500).json({ error: 'Failed to initiate OAuth flow', details: err.message });
+    }
+});
+
+// OAuth Callback Route - Handles the callback from Amazon
+app.get('/auth/amazon/callback', async (req, res) => {
+    try {
+        const { code, state, selling_partner_id, spapi_oauth_code } = req.query;
+        const error = req.query.error;
+
+        // Handle OAuth errors from Amazon
+        if (error) {
+            console.error('OAuth error from Amazon:', error, req.query.error_description);
+            return res.status(400).json({
+                error: 'OAuth authorization failed',
+                details: req.query.error_description || error
+            });
+        }
+
+        // Validate state token (CSRF protection)
+        if (!state || !req.session.oauthState) {
+            return res.status(400).json({ error: 'Invalid or missing state parameter' });
+        }
+
+        if (state !== req.session.oauthState) {
+            return res.status(400).json({ error: 'State token mismatch - possible CSRF attack' });
+        }
+
+        // Check if state token is expired (10 minutes)
+        const stateAge = Date.now() - (req.session.oauthTimestamp || 0);
+        if (stateAge > 600000) {
+            return res.status(400).json({ error: 'State token expired. Please try again.' });
+        }
+
+        // Validate required environment variables
+        if (!process.env.LWA_CLIENT_ID || !process.env.LWA_CLIENT_SECRET) {
+            return res.status(500).json({ error: 'OAuth credentials not configured' });
+        }
+
+        // Use spapi_oauth_code if available (newer flow), otherwise use code
+        const authorizationCode = spapi_oauth_code || code;
+
+        if (!authorizationCode) {
+            return res.status(400).json({ error: 'Authorization code not provided' });
+        }
+
+        // Build redirect URI (must match exactly with registered callback URL)
+        const redirectUri = process.env.OAUTH_REDIRECT_URI ||
+            `${req.protocol}://${req.get('host')}/auth/amazon/callback`;
+
+        // Exchange authorization code for tokens
+        const tokenUrl = 'https://api.amazon.com/auth/o2/token';
+        const tokenParams = new URLSearchParams({
+            grant_type: 'authorization_code',
+            code: authorizationCode,
+            client_id: process.env.LWA_CLIENT_ID,
+            client_secret: process.env.LWA_CLIENT_SECRET,
+            redirect_uri: redirectUri
+        });
+
+        const tokenResponse = await fetch(tokenUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: tokenParams.toString()
+        });
+
+        if (!tokenResponse.ok) {
+            const errorText = await tokenResponse.text();
+            console.error('Token exchange failed:', tokenResponse.status, errorText);
+            return res.status(tokenResponse.status).json({
+                error: 'Failed to exchange authorization code for tokens',
+                details: errorText
+            });
+        }
+
+        const tokenData = await tokenResponse.json();
+
+        // Validate token response
+        if (!tokenData.refresh_token) {
+            return res.status(500).json({ error: 'No refresh token received from Amazon' });
+        }
+
+        // Store tokens securely
+        // For testing: Store in database
+        // For production: Use encrypted storage or AWS Secrets Manager
+        try {
+            await pool.query(`
+                CREATE TABLE IF NOT EXISTS oauth_tokens (
+                    id SERIAL PRIMARY KEY,
+                    refresh_token TEXT NOT NULL,
+                    access_token TEXT,
+                    expires_at TIMESTAMP,
+                    selling_partner_id TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            `);
+
+            // Check if tokens already exist
+            const existing = await pool.query(
+                'SELECT id FROM oauth_tokens ORDER BY created_at DESC LIMIT 1'
+            );
+
+            if (existing.rows.length > 0) {
+                // Update existing token
+                await pool.query(
+                    `UPDATE oauth_tokens
+                     SET refresh_token = $1,
+                         access_token = $2,
+                         expires_at = $3,
+                         selling_partner_id = $4,
+                         updated_at = CURRENT_TIMESTAMP
+                     WHERE id = $5`,
+                    [
+                        tokenData.refresh_token,
+                        tokenData.access_token || null,
+                        tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
+                        selling_partner_id || null,
+                        existing.rows[0].id
+                    ]
+                );
+            } else {
+                // Insert new token
+                await pool.query(
+                    `INSERT INTO oauth_tokens (refresh_token, access_token, expires_at, selling_partner_id)
+                     VALUES ($1, $2, $3, $4)`,
+                    [
+                        tokenData.refresh_token,
+                        tokenData.access_token || null,
+                        tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
+                        selling_partner_id || null
+                    ]
+                );
+            }
+        } catch (dbError) {
+            console.error('Database error storing tokens:', dbError);
+            // Continue even if database storage fails - tokens are in response
+        }
+
+        // Clear OAuth state from session
+        delete req.session.oauthState;
+        delete req.session.oauthTimestamp;
+
+        // Return success response with tokens (for API) or redirect (for web)
+        if (req.headers.accept && req.headers.accept.includes('application/json')) {
+            res.json({
+                success: true,
+                message: 'OAuth authorization successful',
+                hasRefreshToken: !!tokenData.refresh_token,
+                hasAccessToken: !!tokenData.access_token,
+                expiresIn: tokenData.expires_in,
+                sellingPartnerId: selling_partner_id || null
+            });
+        } else {
+            // Redirect to success page or dashboard
+            res.redirect('/?oauth=success');
+        }
+    } catch (err) {
+        console.error('OAuth callback error:', err);
+        res.status(500).json({
+            error: 'OAuth callback processing failed',
+            details: err.message
+        });
     }
 });
 
