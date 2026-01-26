@@ -1720,16 +1720,32 @@ app.get('/api/sp-api/test', async (req, res) => {
         );
         const sellingPartnerId = spIdResult.rows[0]?.selling_partner_id;
 
-        // Get marketplace participations with AWS request signing
         const spApiUrl = `https://sellingpartnerapi-na.amazon.com/sellers/v1/marketplaceParticipations`;
 
-        // Sign the request with AWS Signature V4
-        const signedHeaders = await signSpApiRequest(spApiUrl, 'GET', accessToken);
-
-        const spApiResponse = await fetch(spApiUrl, {
+        // First, try without AWS signing (simple request with just access token)
+        let spApiResponse = await fetch(spApiUrl, {
             method: 'GET',
-            headers: signedHeaders
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
         });
+
+        // If it fails with 403 and we have AWS credentials, try with signing
+        if (!spApiResponse.ok && spApiResponse.status === 403 && 
+            process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+            console.log('Request failed without signing, trying with AWS signing...');
+            try {
+                const signedHeaders = await signSpApiRequest(spApiUrl, 'GET', accessToken);
+                spApiResponse = await fetch(spApiUrl, {
+                    method: 'GET',
+                    headers: signedHeaders
+                });
+            } catch (signError) {
+                console.error('AWS signing error:', signError);
+                // Continue with original response
+            }
+        }
 
         if (!spApiResponse.ok) {
             const errorText = await spApiResponse.text();
@@ -1738,7 +1754,11 @@ app.get('/api/sp-api/test', async (req, res) => {
                 error: 'SP-API call failed',
                 status: spApiResponse.status,
                 details: errorText,
-                note: 'Make sure AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are set in Heroku config.'
+                tried_without_signing: true,
+                tried_with_signing: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
+                note: spApiResponse.status === 403 
+                    ? 'Endpoint requires AWS signing. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in Heroku config.'
+                    : 'Check your access token and app permissions.'
             });
         }
 
@@ -1747,6 +1767,7 @@ app.get('/api/sp-api/test', async (req, res) => {
             success: true,
             message: 'SP-API connection verified successfully',
             selling_partner_id: sellingPartnerId,
+            used_aws_signing: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY && spApiResponse.status !== 403),
             data
         });
     } catch (err) {
