@@ -170,40 +170,13 @@ app.get('/', async (req, res) => {
             grouped[row.asin].push(row);
         });
 
-        // Get product metadata (comment, snooze_until, updated_fields, updated_at) for each ASIN
-        let productMeta;
-        let hasUpdatedFieldsColumn = false;
-        try {
-            // #region agent log
-            console.error('[DEBUG] Attempting SELECT with updated_fields');
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:173',message:'Attempting SELECT with updated_fields',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-            // #endregion
-            productMeta = await pool.query(`SELECT asin, comment, snooze_until, updated_fields, updated_at FROM products`);
-            hasUpdatedFieldsColumn = true;
-            // #region agent log
-            console.error('[DEBUG] SELECT with updated_fields succeeded', { rowCount: productMeta.rows.length });
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:175',message:'SELECT with updated_fields succeeded',data:{rowCount:productMeta.rows.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-            // #endregion
-        } catch (e) {
-            // #region agent log
-            console.error('[DEBUG] SELECT with updated_fields failed, falling back', { errorMessage: e.message, errorName: e.name, errorStack: e.stack?.substring(0, 200) });
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:177',message:'SELECT with updated_fields failed, falling back',data:{errorMessage:e.message,errorName:e.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-            // #endregion
-            // If columns don't exist yet, query without them
-            productMeta = await pool.query(`SELECT asin, comment, snooze_until FROM products`);
-            hasUpdatedFieldsColumn = false;
-        }
+        // Get product metadata (comment, snooze_until) for each ASIN
+        const productMeta = await pool.query(`SELECT asin, comment, snooze_until FROM products`);
         const metaMap = {};
         productMeta.rows.forEach(row => {
-            // #region agent log
-            console.error('[DEBUG] Processing row for metaMap', { asin: row.asin, hasUpdatedFields: row.hasOwnProperty('updated_fields'), hasUpdatedAt: row.hasOwnProperty('updated_at') });
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:183',message:'Processing row for metaMap',data:{asin:row.asin,hasUpdatedFields:row.hasOwnProperty('updated_fields'),hasUpdatedAt:row.hasOwnProperty('updated_at'),updatedFieldsType:typeof row.updated_fields,updatedFieldsValue:row.updated_fields?.toString()?.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-            // #endregion
             metaMap[row.asin] = {
                 comment: row.comment,
-                snooze_until: row.snooze_until,
-                updated_fields: hasUpdatedFieldsColumn ? (row.updated_fields || null) : null,
-                updated_at: hasUpdatedFieldsColumn ? (row.updated_at || null) : null
+                snooze_until: row.snooze_until
             };
         });
 
@@ -237,43 +210,6 @@ app.get('/', async (req, res) => {
             latest.snooze_until = meta.snooze_until;
             latest.isSnoozed = meta.snooze_until && new Date(meta.snooze_until) > new Date();
             latest.hasReports = true;
-            // Add updated fields info for highlighting
-            // #region agent log
-            console.error('[DEBUG] Before parsing updated_fields', { asin, updatedFieldsType: typeof meta.updated_fields, updatedFieldsValue: meta.updated_fields, isNull: meta.updated_fields === null, isUndefined: meta.updated_fields === undefined });
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:219',message:'Before parsing updated_fields',data:{asin,updatedFieldsType:typeof meta.updated_fields,updatedFieldsValue:meta.updated_fields?.toString()?.substring(0,100),isNull:meta.updated_fields===null,isUndefined:meta.updated_fields===undefined},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-            // #endregion
-            try {
-                if (meta.updated_fields === null || meta.updated_fields === undefined) {
-                    latest.updated_fields = [];
-                } else if (Array.isArray(meta.updated_fields)) {
-                    // Already an array (JSONB can return arrays directly)
-                    latest.updated_fields = meta.updated_fields;
-                } else if (typeof meta.updated_fields === 'string') {
-                    // String needs parsing
-                    latest.updated_fields = JSON.parse(meta.updated_fields);
-                } else if (typeof meta.updated_fields === 'object') {
-                    // JSONB might return an object - convert to array
-                    // If it's an object with numeric keys (like {0: 'field1', 1: 'field2'}), convert to array
-                    if (Object.keys(meta.updated_fields).every(k => !isNaN(parseInt(k)))) {
-                        latest.updated_fields = Object.values(meta.updated_fields);
-                    } else {
-                        // Otherwise, it might be a single object, try to extract values
-                        latest.updated_fields = Object.values(meta.updated_fields).filter(v => typeof v === 'string');
-                    }
-                } else {
-                    latest.updated_fields = [];
-                }
-                // #region agent log
-                console.error('[DEBUG] Parsed updated_fields for', asin, ':', { original: meta.updated_fields, parsed: latest.updated_fields, type: typeof meta.updated_fields, isArray: Array.isArray(meta.updated_fields) });
-                // #endregion
-            } catch (parseErr) {
-                // #region agent log
-                console.error('[DEBUG] JSON.parse error on updated_fields', { asin, errorMessage: parseErr.message, updatedFieldsValue: meta.updated_fields });
-                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:222',message:'JSON.parse error on updated_fields',data:{asin,errorMessage:parseErr.message,updatedFieldsValue:meta.updated_fields?.toString()?.substring(0,100)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'F'})}).catch(()=>{});
-                // #endregion
-                latest.updated_fields = [];
-            }
-            latest.updated_at = meta.updated_at;
             latest.history = history.map(row => ({
                 ...row,
                 check_date_formatted: formatMontrealDateTime(row.check_date),
@@ -314,30 +250,6 @@ app.get('/', async (req, res) => {
                     isSnoozed: meta.snooze_until && new Date(meta.snooze_until) > new Date(),
                     hasReports: false,
                     history: [],
-                    updated_fields: (() => {
-                        try {
-                            if (meta.updated_fields === null || meta.updated_fields === undefined) {
-                                return [];
-                            } else if (Array.isArray(meta.updated_fields)) {
-                                return meta.updated_fields;
-                            } else if (typeof meta.updated_fields === 'string') {
-                                return JSON.parse(meta.updated_fields);
-                            } else if (typeof meta.updated_fields === 'object') {
-                                // JSONB might return an object - convert to array
-                                if (Object.keys(meta.updated_fields).every(k => !isNaN(parseInt(k)))) {
-                                    return Object.values(meta.updated_fields);
-                                } else {
-                                    return Object.values(meta.updated_fields).filter(v => typeof v === 'string');
-                                }
-                            } else {
-                                return [];
-                            }
-                        } catch (e) {
-                            console.error('[DEBUG] Error parsing updated_fields in placeholder', { asin: product.asin, error: e.message, value: meta.updated_fields });
-                            return [];
-                        }
-                    })(),
-                    updated_at: meta.updated_at
                 };
                 dashboardData.push(placeholder);
             }
@@ -354,10 +266,6 @@ app.get('/', async (req, res) => {
 
         res.render('index', { reports: dashboardData, lastSyncTime: lastSync });
     } catch (err) {
-        // #region agent log
-        console.error('[DEBUG] Main route error:', { errorMessage: err.message, errorStack: err.stack, errorName: err.name });
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:275',message:'Main route error',data:{errorMessage:err.message,errorStack:err.stack?.substring(0,500),errorName:err.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
-        // #endregion
         res.status(500).send(err.message);
     }
 });
@@ -626,30 +534,17 @@ app.patch('/api/asins/:asin/snooze', async (req, res) => {
 
 // PUT endpoint for updating product fields (from products page edit modal)
 app.put('/api/asins/:asin', async (req, res) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:544',message:'PUT endpoint called',data:{asin:req.params.asin,updateDataKeys:Object.keys(req.body||{}),updateDataSize:JSON.stringify(req.body||{}).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
     try {
         const { asin } = req.params;
         const updateData = req.body;
 
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:550',message:'Before SELECT query',data:{asin,updateDataKeys:Object.keys(updateData||{})},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
-
         // Get current product data to compare
         const currentResult = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:553',message:'After SELECT query',data:{rowCount:currentResult.rows.length,currentDataKeys:currentResult.rows[0]?Object.keys(currentResult.rows[0]):[]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
-        // #endregion
         if (currentResult.rows.length === 0) {
             return res.status(404).json({ error: 'Product not found' });
         }
 
         const currentData = currentResult.rows[0];
-        const changedFields = [];
-
-        // Build update query and track changed fields
         const updateFields = [];
         const updateValues = [];
         let paramIndex = 1;
@@ -657,15 +552,10 @@ app.put('/api/asins/:asin', async (req, res) => {
         for (const [key, value] of Object.entries(updateData)) {
             if (key === 'asin' || key === 'id') continue; // Skip ASIN and ID
 
-            // Compare current value with new value
+            // Normalize values for comparison
             let currentValue = currentData[key];
             let newValue = value;
 
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:567',message:'Processing field',data:{key,currentValueType:typeof currentValue,newValueType:typeof newValue,currentValue:currentValue?.toString()?.substring(0,50),newValue:newValue?.toString()?.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
-
-            // Normalize values for comparison
             if (currentValue !== null && currentValue !== undefined) {
                 if (currentValue instanceof Date) {
                     currentValue = currentValue.toISOString();
@@ -686,78 +576,26 @@ app.put('/api/asins/:asin', async (req, res) => {
                 newValue = null;
             }
 
-            // Check if value actually changed
+            // Only update if value actually changed
             if (currentValue !== newValue) {
-                changedFields.push(key);
                 updateFields.push(`"${key}" = $${paramIndex}`);
                 updateValues.push(value);
-                // #region agent log
-                console.error('[DEBUG] Field changed in PUT endpoint:', { key, currentValue, newValue, changedFields });
-                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:593',message:'Field changed',data:{key,paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length,changedFields},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-                // #endregion
                 paramIndex++;
             }
         }
 
         if (updateFields.length === 0) {
-            return res.json({ success: true, message: 'No changes detected', changedFields: [] });
-        }
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:603',message:'Before column check',data:{paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length,changedFields},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-
-        // Check if updated_fields and updated_at columns exist
-        const columnCheck = await pool.query(`
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = 'products'
-            AND column_name IN ('updated_fields', 'updated_at')
-        `);
-        const existingColumns = columnCheck.rows.map(r => r.column_name);
-        const hasUpdatedFields = existingColumns.includes('updated_fields');
-        const hasUpdatedAt = existingColumns.includes('updated_at');
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:614',message:'After column check',data:{hasUpdatedFields,hasUpdatedAt,existingColumns,paramIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-        // #endregion
-
-        // Add updated_fields JSON column to track changes if it exists
-        if (hasUpdatedFields && changedFields.length > 0) {
-            updateFields.push(`updated_fields = $${paramIndex}`);
-            updateValues.push(JSON.stringify(changedFields));
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:618',message:'Added updated_fields',data:{paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length,changedFieldsJson:JSON.stringify(changedFields)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-            // #endregion
-            paramIndex++;
-        }
-
-        // Add updated_at timestamp if column exists
-        if (hasUpdatedAt) {
-            updateFields.push(`updated_at = $${paramIndex}`);
-            updateValues.push(new Date().toISOString());
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:625',message:'Added updated_at',data:{paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-            // #endregion
+            return res.json({ success: true, message: 'No changes detected' });
         }
 
         updateValues.push(asin);
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:629',message:'Before UPDATE query',data:{paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length,updateQuery:`UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex + 1}`,updateFields,updateValuesTypes:updateValues.map(v=>typeof v)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
         await pool.query(
-            `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex + 1}`,
+            `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex}`,
             updateValues
         );
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:633',message:'After UPDATE query success',data:{changedFields},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-        // #endregion
 
-        res.json({ success: true, changedFields });
+        res.json({ success: true });
     } catch (err) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:636',message:'Error caught',data:{errorMessage:err.message,errorStack:err.stack?.substring(0,500),errorName:err.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
-        // #endregion
         res.status(500).json({ error: err.message });
     }
 });
@@ -1331,31 +1169,9 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                         }
 
                         if (updateFields.length > 0) {
-                            // Check if updated_fields and updated_at columns exist
-                            const columnCheck = await pool.query(`
-                                SELECT column_name
-                                FROM information_schema.columns
-                                WHERE table_name = 'products'
-                                AND column_name IN ('updated_fields', 'updated_at')
-                            `);
-                            const existingColumns = columnCheck.rows.map(r => r.column_name);
-                            const hasUpdatedFields = existingColumns.includes('updated_fields');
-                            const hasUpdatedAt = existingColumns.includes('updated_at');
-
-                            // Add updated_fields and updated_at if columns exist
-                            if (hasUpdatedFields && changedFields.length > 0) {
-                                updateFields.push(`updated_fields = $${paramIndex}`);
-                                updateValues.push(JSON.stringify(changedFields));
-                                paramIndex++;
-                            }
-                            if (hasUpdatedAt) {
-                                updateFields.push(`updated_at = $${paramIndex}`);
-                                updateValues.push(new Date().toISOString());
-                            }
-
                             updateValues.push(asin);
                             await pool.query(
-                                `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex + 1}`,
+                                `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex}`,
                                 updateValues
                             );
                             updated++;
