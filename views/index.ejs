@@ -16,6 +16,13 @@
             border-radius: 6px;
             background-color: #fef3c7 !important;
             animation: highlightPulse 2s ease-in-out;
+            padding: 2px !important;
+            margin: -2px !important;
+            position: relative;
+            z-index: 1;
+        }
+        td.field-updated {
+            box-shadow: 0 0 0 2px #f59e0b !important;
         }
         @keyframes highlightPulse {
             0%, 100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); }
@@ -367,16 +374,59 @@
                     <% reports.forEach((item, index) => { %>
                         <%
                         // Helper to check if a field was updated
-                        const updatedFields = item.updated_fields || [];
+                        // Ensure updatedFields is always an array
+                        let updatedFields = item.updated_fields;
+                        if (!updatedFields) {
+                            updatedFields = [];
+                        } else if (!Array.isArray(updatedFields)) {
+                            // Convert object to array if needed (JSONB might return object)
+                            if (typeof updatedFields === 'object') {
+                                updatedFields = Object.values(updatedFields).filter(v => typeof v === 'string');
+                            } else if (typeof updatedFields === 'string') {
+                                try {
+                                    updatedFields = JSON.parse(updatedFields);
+                                    if (!Array.isArray(updatedFields)) {
+                                        updatedFields = [];
+                                    }
+                                } catch (e) {
+                                    updatedFields = [];
+                                }
+                            } else {
+                                updatedFields = [];
+                            }
+                        }
+
+                        // Debug: log first few items to see what we're getting
+                        if (index < 5 && updatedFields.length > 0) {
+                            console.error('[DEBUG EJS] Item', index, 'ASIN:', item.asin, 'updated_fields:', JSON.stringify(updatedFields), 'type:', typeof item.updated_fields, 'isArray:', Array.isArray(updatedFields), 'updated_at:', item.updated_at);
+                        }
+
                         const isFieldUpdated = (fieldName) => {
-                            return updatedFields.some(f => f.toLowerCase() === fieldName.toLowerCase());
+                            if (!Array.isArray(updatedFields) || updatedFields.length === 0) return false;
+                            const result = updatedFields.some(f => {
+                                if (typeof f !== 'string') return false;
+                                return f.toLowerCase().trim() === fieldName.toLowerCase().trim();
+                            });
+                            if (index < 5 && result) {
+                                console.error('[DEBUG EJS] Field match found:', fieldName, 'in updatedFields:', JSON.stringify(updatedFields));
+                            }
+                            return result;
                         };
+
                         // Map database column names to display fields
-                        const isHeaderUpdated = isFieldUpdated('header') || isFieldUpdated('product_name') || isFieldUpdated('title');
-                        const isStockUpdated = isFieldUpdated('availability') || isFieldUpdated('stock_level');
-                        const isSellerUpdated = isFieldUpdated('seller');
-                        const isPriceUpdated = isFieldUpdated('price');
-                        const isCommentUpdated = isFieldUpdated('comment');
+                        // Note: Most fields on main page come from daily_reports, not products table
+                        // Only 'comment' is from products table and displayed on main page
+                        // Other fields (header, seller, price, availability, stock_level) are from daily_reports
+                        // But if user updates custom columns via Excel, we should check those too
+                        const isHeaderUpdated = isFieldUpdated('header') || isFieldUpdated('product_name') || isFieldUpdated('title') || isFieldUpdated('product_title');
+                        const isStockUpdated = isFieldUpdated('availability') || isFieldUpdated('stock_level') || isFieldUpdated('stock_status');
+                        const isSellerUpdated = isFieldUpdated('seller') || isFieldUpdated('sold_by');
+                        const isPriceUpdated = isFieldUpdated('price') || isFieldUpdated('current_price');
+                        const isCommentUpdated = isFieldUpdated('comment') || isFieldUpdated('comments') || isFieldUpdated('notes');
+
+                        if (index < 5 && updatedFields.length > 0) {
+                            console.error('[DEBUG EJS] Update flags for', item.asin, ':', { isHeaderUpdated, isStockUpdated, isSellerUpdated, isPriceUpdated, isCommentUpdated, updatedFieldsCount: updatedFields.length, updatedFields });
+                        }
                         %>
                         <tr class="inventory-row transition-all <%= item.hasChanged ? 'bg-orange-200 border-l-8 border-orange-500' : 'hover:bg-slate-50' %> <%= item.isSnoozed ? 'opacity-60' : '' %> <%= item.availability === 'Doggy' ? 'border-l-4 border-purple-500' : '' %>"
                             data-asin="<%= item.asin %>"

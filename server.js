@@ -245,14 +245,27 @@ app.get('/', async (req, res) => {
             try {
                 if (meta.updated_fields === null || meta.updated_fields === undefined) {
                     latest.updated_fields = [];
-                } else if (typeof meta.updated_fields === 'string') {
-                    latest.updated_fields = JSON.parse(meta.updated_fields);
                 } else if (Array.isArray(meta.updated_fields)) {
+                    // Already an array (JSONB can return arrays directly)
                     latest.updated_fields = meta.updated_fields;
+                } else if (typeof meta.updated_fields === 'string') {
+                    // String needs parsing
+                    latest.updated_fields = JSON.parse(meta.updated_fields);
+                } else if (typeof meta.updated_fields === 'object') {
+                    // JSONB might return an object - convert to array
+                    // If it's an object with numeric keys (like {0: 'field1', 1: 'field2'}), convert to array
+                    if (Object.keys(meta.updated_fields).every(k => !isNaN(parseInt(k)))) {
+                        latest.updated_fields = Object.values(meta.updated_fields);
+                    } else {
+                        // Otherwise, it might be a single object, try to extract values
+                        latest.updated_fields = Object.values(meta.updated_fields).filter(v => typeof v === 'string');
+                    }
                 } else {
-                    // JSONB might return an object, try to convert
-                    latest.updated_fields = Array.isArray(meta.updated_fields) ? meta.updated_fields : [];
+                    latest.updated_fields = [];
                 }
+                // #region agent log
+                console.error('[DEBUG] Parsed updated_fields for', asin, ':', { original: meta.updated_fields, parsed: latest.updated_fields, type: typeof meta.updated_fields, isArray: Array.isArray(meta.updated_fields) });
+                // #endregion
             } catch (parseErr) {
                 // #region agent log
                 console.error('[DEBUG] JSON.parse error on updated_fields', { asin, errorMessage: parseErr.message, updatedFieldsValue: meta.updated_fields });
@@ -305,12 +318,19 @@ app.get('/', async (req, res) => {
                         try {
                             if (meta.updated_fields === null || meta.updated_fields === undefined) {
                                 return [];
-                            } else if (typeof meta.updated_fields === 'string') {
-                                return JSON.parse(meta.updated_fields);
                             } else if (Array.isArray(meta.updated_fields)) {
                                 return meta.updated_fields;
+                            } else if (typeof meta.updated_fields === 'string') {
+                                return JSON.parse(meta.updated_fields);
+                            } else if (typeof meta.updated_fields === 'object') {
+                                // JSONB might return an object - convert to array
+                                if (Object.keys(meta.updated_fields).every(k => !isNaN(parseInt(k)))) {
+                                    return Object.values(meta.updated_fields);
+                                } else {
+                                    return Object.values(meta.updated_fields).filter(v => typeof v === 'string');
+                                }
                             } else {
-                                return Array.isArray(meta.updated_fields) ? meta.updated_fields : [];
+                                return [];
                             }
                         } catch (e) {
                             console.error('[DEBUG] Error parsing updated_fields in placeholder', { asin: product.asin, error: e.message, value: meta.updated_fields });
@@ -672,7 +692,8 @@ app.put('/api/asins/:asin', async (req, res) => {
                 updateFields.push(`"${key}" = $${paramIndex}`);
                 updateValues.push(value);
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:593',message:'Field changed',data:{key,paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                console.error('[DEBUG] Field changed in PUT endpoint:', { key, currentValue, newValue, changedFields });
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:593',message:'Field changed',data:{key,paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length,changedFields},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
                 // #endregion
                 paramIndex++;
             }
