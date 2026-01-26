@@ -1434,6 +1434,204 @@ app.get('/auth/amazon/callback', async (req, res) => {
     }
 });
 
+// Helper function to get a valid access token (refreshes if expired)
+async function getValidAccessToken() {
+    try {
+        // Get the latest token from database
+        const tokenResult = await pool.query(
+            'SELECT refresh_token, access_token, expires_at FROM oauth_tokens ORDER BY created_at DESC LIMIT 1'
+        );
+
+        if (tokenResult.rows.length === 0) {
+            throw new Error('No OAuth tokens found. Please complete OAuth authorization first.');
+        }
+
+        const token = tokenResult.rows[0];
+        const now = new Date();
+
+        // Check if access token exists and is still valid (with 5 minute buffer)
+        if (token.access_token && token.expires_at && new Date(token.expires_at) > new Date(now.getTime() + 5 * 60 * 1000)) {
+            return token.access_token;
+        }
+
+        // Access token expired or doesn't exist, refresh it
+        console.log('Access token expired or missing, refreshing...');
+        return await refreshAccessToken(token.refresh_token);
+    } catch (err) {
+        console.error('Error getting access token:', err);
+        throw err;
+    }
+}
+
+// Function to refresh access token using refresh token
+async function refreshAccessToken(refreshToken) {
+    try {
+        if (!process.env.LWA_CLIENT_ID || !process.env.LWA_CLIENT_SECRET) {
+            throw new Error('LWA credentials not configured');
+        }
+
+        const tokenUrl = 'https://api.amazon.com/auth/o2/token';
+        const tokenParams = new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: refreshToken,
+            client_id: process.env.LWA_CLIENT_ID,
+            client_secret: process.env.LWA_CLIENT_SECRET
+        });
+
+        const tokenResponse = await fetch(tokenUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: tokenParams.toString()
+        });
+
+        if (!tokenResponse.ok) {
+            const errorText = await tokenResponse.text();
+            throw new Error(`Token refresh failed: ${tokenResponse.status} - ${errorText}`);
+        }
+
+        const tokenData = await tokenResponse.json();
+
+        if (!tokenData.access_token) {
+            throw new Error('No access token received from refresh');
+        }
+
+        // Update database with new access token
+        const expiresAt = tokenData.expires_in 
+            ? new Date(Date.now() + tokenData.expires_in * 1000)
+            : new Date(Date.now() + 3600 * 1000); // Default 1 hour
+
+        await pool.query(
+            `UPDATE oauth_tokens 
+             SET access_token = $1, 
+                 expires_at = $2, 
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE refresh_token = $3`,
+            [tokenData.access_token, expiresAt, refreshToken]
+        );
+
+        console.log('Access token refreshed successfully');
+        return tokenData.access_token;
+    } catch (err) {
+        console.error('Error refreshing access token:', err);
+        throw err;
+    }
+}
+
+// Test endpoint: Verify OAuth connection and get token status
+app.get('/api/sp-api/connection-status', async (req, res) => {
+    try {
+        // Check if tokens exist in database
+        const tokenResult = await pool.query(
+            `SELECT id, created_at, expires_at, selling_partner_id, 
+                    CASE WHEN access_token IS NOT NULL THEN true ELSE false END as has_access_token,
+                    CASE WHEN refresh_token IS NOT NULL THEN true ELSE false END as has_refresh_token
+             FROM oauth_tokens ORDER BY created_at DESC LIMIT 1`
+        );
+
+        if (tokenResult.rows.length === 0) {
+            return res.json({
+                connected: false,
+                message: 'No OAuth tokens found. Please complete OAuth authorization first.',
+                action: 'Visit /auth/amazon/login to authorize'
+            });
+        }
+
+        const token = tokenResult.rows[0];
+        const now = new Date();
+        const expiresAt = token.expires_at ? new Date(token.expires_at) : null;
+        const isExpired = expiresAt ? expiresAt <= now : true;
+        const expiresInMinutes = expiresAt ? Math.floor((expiresAt - now) / 1000 / 60) : null;
+
+        // Try to get a valid access token (will refresh if needed)
+        let accessTokenValid = false;
+        let accessTokenError = null;
+        try {
+            const accessToken = await getValidAccessToken();
+            accessTokenValid = !!accessToken;
+        } catch (err) {
+            accessTokenError = err.message;
+        }
+
+        res.json({
+            connected: true,
+            tokenInfo: {
+                id: token.id,
+                created_at: token.created_at,
+                expires_at: token.expires_at,
+                is_expired: isExpired,
+                expires_in_minutes: expiresInMinutes,
+                has_access_token: token.has_access_token,
+                has_refresh_token: token.has_refresh_token,
+                selling_partner_id: token.selling_partner_id,
+                access_token_valid: accessTokenValid,
+                access_token_error: accessTokenError
+            },
+            message: accessTokenValid 
+                ? 'OAuth connection is active and access token is valid' 
+                : 'OAuth tokens found but access token needs refresh'
+        });
+    } catch (err) {
+        console.error('Connection status error:', err);
+        res.status(500).json({
+            connected: false,
+            error: err.message
+        });
+    }
+});
+
+// Test endpoint: Make a simple SP-API call to verify connection
+app.get('/api/sp-api/test', async (req, res) => {
+    try {
+        // Get valid access token (automatically refreshes if needed)
+        const accessToken = await getValidAccessToken();
+
+        // Get selling partner ID from database
+        const spIdResult = await pool.query(
+            'SELECT selling_partner_id FROM oauth_tokens ORDER BY created_at DESC LIMIT 1'
+        );
+        const sellingPartnerId = spIdResult.rows[0]?.selling_partner_id;
+
+        // Try to get marketplace participations (simple endpoint that doesn't require AWS signing)
+        // Note: This endpoint may still require AWS signing depending on your app configuration
+        const spApiUrl = `https://sellingpartnerapi-na.amazon.com/sellers/v1/marketplaceParticipations`;
+        
+        const spApiResponse = await fetch(spApiUrl, {
+            method: 'GET',
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!spApiResponse.ok) {
+            const errorText = await spApiResponse.text();
+            return res.status(spApiResponse.status).json({ 
+                success: false,
+                error: 'SP-API call failed', 
+                status: spApiResponse.status,
+                details: errorText,
+                note: 'This endpoint may require AWS request signing. Check Amazon SP-API documentation for your specific endpoint requirements.'
+            });
+        }
+
+        const data = await spApiResponse.json();
+        res.json({ 
+            success: true, 
+            message: 'SP-API connection verified successfully',
+            selling_partner_id: sellingPartnerId,
+            data 
+        });
+    } catch (err) {
+        console.error('SP-API test error:', err);
+        res.status(500).json({ 
+            success: false,
+            error: err.message 
+        });
+    }
+});
+
 // Check if scraper is currently running
 app.get('/api/scraper-status', (req, res) => {
     // #region agent log
