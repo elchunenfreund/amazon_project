@@ -1498,14 +1498,14 @@ async function refreshAccessToken(refreshToken) {
         }
 
         // Update database with new access token
-        const expiresAt = tokenData.expires_in 
+        const expiresAt = tokenData.expires_in
             ? new Date(Date.now() + tokenData.expires_in * 1000)
             : new Date(Date.now() + 3600 * 1000); // Default 1 hour
 
         await pool.query(
-            `UPDATE oauth_tokens 
-             SET access_token = $1, 
-                 expires_at = $2, 
+            `UPDATE oauth_tokens
+             SET access_token = $1,
+                 expires_at = $2,
                  updated_at = CURRENT_TIMESTAMP
              WHERE refresh_token = $3`,
             [tokenData.access_token, expiresAt, refreshToken]
@@ -1524,7 +1524,7 @@ app.get('/api/sp-api/connection-status', async (req, res) => {
     try {
         // Check if tokens exist in database
         const tokenResult = await pool.query(
-            `SELECT id, created_at, expires_at, selling_partner_id, 
+            `SELECT id, created_at, expires_at, selling_partner_id,
                     CASE WHEN access_token IS NOT NULL THEN true ELSE false END as has_access_token,
                     CASE WHEN refresh_token IS NOT NULL THEN true ELSE false END as has_refresh_token
              FROM oauth_tokens ORDER BY created_at DESC LIMIT 1`
@@ -1568,8 +1568,8 @@ app.get('/api/sp-api/connection-status', async (req, res) => {
                 access_token_valid: accessTokenValid,
                 access_token_error: accessTokenError
             },
-            message: accessTokenValid 
-                ? 'OAuth connection is active and access token is valid' 
+            message: accessTokenValid
+                ? 'OAuth connection is active and access token is valid'
                 : 'OAuth tokens found but access token needs refresh'
         });
     } catch (err) {
@@ -1578,6 +1578,61 @@ app.get('/api/sp-api/connection-status', async (req, res) => {
             connected: false,
             error: err.message
         });
+    }
+});
+
+// Helper endpoint: Manually store OAuth tokens (for testing/setup purposes)
+// Note: In production, tokens should only be stored via OAuth callback
+app.post('/api/sp-api/store-tokens', async (req, res) => {
+    try {
+        const { access_token, refresh_token, expires_in, selling_partner_id } = req.body;
+
+        if (!refresh_token) {
+            return res.status(400).json({ error: 'refresh_token is required' });
+        }
+
+        // Calculate expiration time
+        const expiresAt = expires_in 
+            ? new Date(Date.now() + expires_in * 1000)
+            : access_token 
+                ? new Date(Date.now() + 3600 * 1000) // Default 1 hour for access token
+                : null;
+
+        // Check if tokens already exist
+        const existing = await pool.query(
+            'SELECT id FROM oauth_tokens ORDER BY created_at DESC LIMIT 1'
+        );
+
+        if (existing.rows.length > 0) {
+            // Update existing token
+            await pool.query(
+                `UPDATE oauth_tokens 
+                 SET refresh_token = $1, 
+                     access_token = $2, 
+                     expires_at = $3,
+                     selling_partner_id = $4,
+                     updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $5`,
+                [refresh_token, access_token || null, expiresAt, selling_partner_id || null, existing.rows[0].id]
+            );
+        } else {
+            // Insert new token
+            await pool.query(
+                `INSERT INTO oauth_tokens (refresh_token, access_token, expires_at, selling_partner_id)
+                 VALUES ($1, $2, $3, $4)`,
+                [refresh_token, access_token || null, expiresAt, selling_partner_id || null]
+            );
+        }
+
+        res.json({
+            success: true,
+            message: 'Tokens stored successfully',
+            has_access_token: !!access_token,
+            has_refresh_token: !!refresh_token
+        });
+    } catch (err) {
+        console.error('Error storing tokens:', err);
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -1596,7 +1651,7 @@ app.get('/api/sp-api/test', async (req, res) => {
         // Try to get marketplace participations (simple endpoint that doesn't require AWS signing)
         // Note: This endpoint may still require AWS signing depending on your app configuration
         const spApiUrl = `https://sellingpartnerapi-na.amazon.com/sellers/v1/marketplaceParticipations`;
-        
+
         const spApiResponse = await fetch(spApiUrl, {
             method: 'GET',
             headers: {
@@ -1607,9 +1662,9 @@ app.get('/api/sp-api/test', async (req, res) => {
 
         if (!spApiResponse.ok) {
             const errorText = await spApiResponse.text();
-            return res.status(spApiResponse.status).json({ 
+            return res.status(spApiResponse.status).json({
                 success: false,
-                error: 'SP-API call failed', 
+                error: 'SP-API call failed',
                 status: spApiResponse.status,
                 details: errorText,
                 note: 'This endpoint may require AWS request signing. Check Amazon SP-API documentation for your specific endpoint requirements.'
@@ -1617,17 +1672,17 @@ app.get('/api/sp-api/test', async (req, res) => {
         }
 
         const data = await spApiResponse.json();
-        res.json({ 
-            success: true, 
+        res.json({
+            success: true,
             message: 'SP-API connection verified successfully',
             selling_partner_id: sellingPartnerId,
-            data 
+            data
         });
     } catch (err) {
         console.error('SP-API test error:', err);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
-            error: err.message 
+            error: err.message
         });
     }
 });
