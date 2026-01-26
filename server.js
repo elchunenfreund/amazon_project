@@ -542,12 +542,22 @@ app.patch('/api/asins/:asin/snooze', async (req, res) => {
 
 // PUT endpoint for updating product fields (from products page edit modal)
 app.put('/api/asins/:asin', async (req, res) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:544',message:'PUT endpoint called',data:{asin:req.params.asin,updateDataKeys:Object.keys(req.body||{}),updateDataSize:JSON.stringify(req.body||{}).length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     try {
         const { asin } = req.params;
         const updateData = req.body;
 
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:550',message:'Before SELECT query',data:{asin,updateDataKeys:Object.keys(updateData||{})},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
+
         // Get current product data to compare
         const currentResult = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:553',message:'After SELECT query',data:{rowCount:currentResult.rows.length,currentDataKeys:currentResult.rows[0]?Object.keys(currentResult.rows[0]):[]},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+        // #endregion
         if (currentResult.rows.length === 0) {
             return res.status(404).json({ error: 'Product not found' });
         }
@@ -566,6 +576,10 @@ app.put('/api/asins/:asin', async (req, res) => {
             // Compare current value with new value
             let currentValue = currentData[key];
             let newValue = value;
+
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:567',message:'Processing field',data:{key,currentValueType:typeof currentValue,newValueType:typeof newValue,currentValue:currentValue?.toString()?.substring(0,50),newValue:newValue?.toString()?.substring(0,50)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
 
             // Normalize values for comparison
             if (currentValue !== null && currentValue !== undefined) {
@@ -593,6 +607,9 @@ app.put('/api/asins/:asin', async (req, res) => {
                 changedFields.push(key);
                 updateFields.push(`"${key}" = $${paramIndex}`);
                 updateValues.push(value);
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:593',message:'Field changed',data:{key,paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+                // #endregion
                 paramIndex++;
             }
         }
@@ -600,6 +617,10 @@ app.put('/api/asins/:asin', async (req, res) => {
         if (updateFields.length === 0) {
             return res.json({ success: true, message: 'No changes detected', changedFields: [] });
         }
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:603',message:'Before column check',data:{paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length,changedFields},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
 
         // Check if updated_fields and updated_at columns exist
         const columnCheck = await pool.query(`
@@ -612,10 +633,17 @@ app.put('/api/asins/:asin', async (req, res) => {
         const hasUpdatedFields = existingColumns.includes('updated_fields');
         const hasUpdatedAt = existingColumns.includes('updated_at');
 
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:614',message:'After column check',data:{hasUpdatedFields,hasUpdatedAt,existingColumns,paramIndex},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+
         // Add updated_fields JSON column to track changes if it exists
         if (hasUpdatedFields && changedFields.length > 0) {
             updateFields.push(`updated_fields = $${paramIndex}`);
             updateValues.push(JSON.stringify(changedFields));
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:618',message:'Added updated_fields',data:{paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length,changedFieldsJson:JSON.stringify(changedFields)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
             paramIndex++;
         }
 
@@ -623,16 +651,28 @@ app.put('/api/asins/:asin', async (req, res) => {
         if (hasUpdatedAt) {
             updateFields.push(`updated_at = $${paramIndex}`);
             updateValues.push(new Date().toISOString());
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:625',message:'Added updated_at',data:{paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
         }
 
         updateValues.push(asin);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:629',message:'Before UPDATE query',data:{paramIndex,updateFieldsCount:updateFields.length,updateValuesCount:updateValues.length,updateQuery:`UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex + 1}`,updateFields,updateValuesTypes:updateValues.map(v=>typeof v)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
         await pool.query(
             `UPDATE products SET ${updateFields.join(', ')} WHERE asin = $${paramIndex + 1}`,
             updateValues
         );
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:633',message:'After UPDATE query success',data:{changedFields},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
 
         res.json({ success: true, changedFields });
     } catch (err) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/fda94e7d-8ef6-44ca-a90c-9c591fc930f3',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'server.js:636',message:'Error caught',data:{errorMessage:err.message,errorStack:err.stack?.substring(0,500),errorName:err.name},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'ALL'})}).catch(()=>{});
+        // #endregion
         res.status(500).json({ error: err.message });
     }
 });
