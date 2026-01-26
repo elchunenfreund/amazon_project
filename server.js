@@ -1720,12 +1720,9 @@ app.get('/api/sp-api/test', async (req, res) => {
         );
         const sellingPartnerId = spIdResult.rows[0]?.selling_partner_id;
 
-        // Try different endpoints - some may work without IAM ARN
-        // First try: Get catalog items (simpler endpoint)
-        let spApiUrl = `https://sellingpartnerapi-na.amazon.com/catalog/v0/items?MarketplaceId=A2EUQ1WTGCTBG2&ASIN=B08N5WRWNW`;
-        
-        // If that fails, try marketplace participations
-        // const spApiUrl = `https://sellingpartnerapi-na.amazon.com/sellers/v1/marketplaceParticipations`;
+        // Try marketplace participations endpoint (standard test endpoint)
+        // Note: For Draft apps, some endpoints may not work
+        const spApiUrl = `https://sellingpartnerapi-na.amazon.com/sellers/v1/marketplaceParticipations`;
 
         // First, try without AWS signing (simple request with just access token)
         let spApiResponse = await fetch(spApiUrl, {
