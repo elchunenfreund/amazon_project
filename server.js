@@ -1720,6 +1720,7 @@ app.get('/api/sp-api/test', async (req, res) => {
         );
         const sellingPartnerId = spIdResult.rows[0]?.selling_partner_id;
 
+        // Try marketplace participations endpoint
         const spApiUrl = `https://sellingpartnerapi-na.amazon.com/sellers/v1/marketplaceParticipations`;
 
         // First, try without AWS signing (simple request with just access token)
@@ -1757,7 +1758,7 @@ app.get('/api/sp-api/test', async (req, res) => {
                 tried_without_signing: true,
                 tried_with_signing: !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY),
                 note: spApiResponse.status === 403
-                    ? 'Endpoint requires AWS signing. Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in Heroku config.'
+                    ? 'This endpoint requires AWS signing. Check your Developer Console app for IAM ARN or AWS credentials. For self-authorization, AWS credentials may be provided through your app registration.'
                     : 'Check your access token and app permissions.'
             });
         }
