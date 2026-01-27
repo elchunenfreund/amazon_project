@@ -1878,19 +1878,19 @@ const availableApis = [
     {
         id: 'reports-list',
         name: 'List Reports',
-        description: 'Get a list of available reports',
+        description: 'Get a list of generated reports by type',
         icon: '📊',
         color: 'cyan',
         method: 'GET',
         endpoint: '/reports/2021-06-30/reports',
-        vendorOnly: false,
+        vendorOnly: true,
         params: [
-            { key: 'reportTypes', name: 'Report Types', required: false, default: '', placeholder: 'e.g., GET_VENDOR_INVENTORY_REPORT', description: 'Comma-separated report types' },
+            { key: 'reportTypes', name: 'Report Type', required: true, default: 'GET_VENDOR_INVENTORY_REPORT', placeholder: 'GET_VENDOR_INVENTORY_REPORT', description: 'Report type (GET_VENDOR_INVENTORY_REPORT, GET_VENDOR_SALES_REPORT, etc.)' },
             { key: 'pageSize', name: 'Page Size', required: false, default: '10', description: 'Number of reports to return' }
         ],
         buildUrl: (params) => {
             let url = `https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports?pageSize=${params.pageSize || 10}`;
-            if (params.reportTypes) url += `&reportTypes=${encodeURIComponent(params.reportTypes)}`;
+            url += `&reportTypes=${encodeURIComponent(params.reportTypes)}`;
             return url;
         }
     },
