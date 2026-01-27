@@ -1889,7 +1889,13 @@ const availableApis = [
             { key: 'marketplaceId', name: 'Marketplace ID', required: true, default: 'A2EUQ1WTGCTBG2', description: 'Canada: A2EUQ1WTGCTBG2' }
         ],
         buildUrl: (params) => {
-            const asins = params.asins.split(',').map(a => a.trim()).slice(0, 20);
+            if (!params.asins) {
+                throw new Error('ASINs parameter is required');
+            }
+            const asins = params.asins.split(',').map(a => a.trim()).filter(a => a).slice(0, 20);
+            if (asins.length === 0) {
+                throw new Error('At least one valid ASIN is required');
+            }
             const asinParams = asins.map(a => `Asins=${a}`).join('&');
             return `https://sellingpartnerapi-na.amazon.com/products/pricing/v0/price?MarketplaceId=${params.marketplaceId}&ItemType=Asin&${asinParams}`;
         }
@@ -1969,6 +1975,20 @@ app.post('/api/sp-api/explorer/test', async (req, res) => {
         const api = availableApis.find(a => a.id === apiId);
         if (!api) {
             return res.status(400).json({ success: false, error: 'Unknown API endpoint' });
+        }
+
+        // Validate required parameters
+        if (api.params) {
+            const missingParams = api.params
+                .filter(p => p.required && !params?.[p.key])
+                .map(p => p.name);
+
+            if (missingParams.length > 0) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Missing required parameter(s): ${missingParams.join(', ')}`
+                });
+            }
         }
 
         // Get access token
