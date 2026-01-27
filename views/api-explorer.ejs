@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>API Explorer - Amazon Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .json-key { color: #7c3aed; }
+        .json-string { color: #059669; }
+        .json-number { color: #dc2626; }
+        .json-boolean { color: #2563eb; }
+        .json-null { color: #6b7280; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+        .endpoint-card:hover { transform: translateY(-2px); }
+        .endpoint-card { transition: all 0.2s ease; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+    <div class="max-w-7xl mx-auto px-4 md:px-8 py-8">
+        <!-- Header -->
+        <header class="mb-8">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 class="text-4xl font-black text-slate-900 tracking-tight">API Explorer</h1>
+                    <p class="text-slate-500 font-medium">Test your Amazon SP-API endpoints</p>
+                </div>
+                <div class="flex gap-3">
+                    <a href="/" class="bg-slate-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-slate-700 active:scale-95 transition-all">← Back to Dashboard</a>
+                </div>
+            </div>
+        </header>
+
+        <!-- Connection Status -->
+        <div id="connectionStatus" class="mb-8 bg-white rounded-2xl shadow-lg p-6 border border-slate-200">
+            <div class="flex items-center gap-4">
+                <div id="statusIndicator" class="w-4 h-4 rounded-full bg-gray-400 animate-pulse"></div>
+                <div>
+                    <h3 class="font-bold text-slate-800">Connection Status</h3>
+                    <p id="statusText" class="text-slate-500 text-sm">Checking connection...</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- API Endpoints Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+            <% apis.forEach((api, index) => { %>
+            <div class="endpoint-card bg-white rounded-2xl shadow-lg p-6 border border-slate-200 cursor-pointer hover:shadow-xl hover:border-<%= api.color %>-300"
+                 onclick="selectEndpoint(<%= index %>)"
+                 id="endpoint-<%= index %>">
+                <div class="flex items-start justify-between mb-3">
+                    <span class="text-3xl"><%= api.icon %></span>
+                    <span class="px-3 py-1 rounded-full text-xs font-bold bg-<%= api.color %>-100 text-<%= api.color %>-700"><%= api.method %></span>
+                </div>
+                <h3 class="font-bold text-lg text-slate-800 mb-2"><%= api.name %></h3>
+                <p class="text-slate-500 text-sm mb-4"><%= api.description %></p>
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-mono text-slate-400 truncate max-w-[200px]"><%= api.endpoint %></span>
+                    <% if (api.vendorOnly) { %>
+                    <span class="px-2 py-1 rounded text-xs font-bold bg-purple-100 text-purple-700">Vendor</span>
+                    <% } %>
+                </div>
+            </div>
+            <% }); %>
+        </div>
+
+        <!-- Test Panel -->
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <!-- Panel Header -->
+            <div class="bg-slate-900 text-white p-6">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h2 class="text-xl font-bold" id="selectedApiName">Select an API to test</h2>
+                        <p class="text-slate-400 text-sm font-mono" id="selectedApiEndpoint">-</p>
+                    </div>
+                    <button onclick="runTest()" id="runTestBtn" disabled
+                            class="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-emerald-700 active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                        Run Test
+                    </button>
+                </div>
+            </div>
+
+            <!-- Parameters Section -->
+            <div id="paramsSection" class="p-6 border-b border-slate-200 hidden">
+                <h3 class="font-bold text-slate-800 mb-4">Parameters</h3>
+                <div id="paramsContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <!-- Dynamic params will be inserted here -->
+                </div>
+            </div>
+
+            <!-- Results Section -->
+            <div class="p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="font-bold text-slate-800">Response</h3>
+                    <div id="responseStats" class="text-sm text-slate-500 hidden">
+                        <span id="responseStatus" class="px-3 py-1 rounded-full font-bold mr-2"></span>
+                        <span id="responseTime"></span>
+                    </div>
+                </div>
+
+                <div id="responseContainer" class="bg-slate-900 rounded-xl p-6 min-h-[300px] max-h-[600px] overflow-auto">
+                    <div id="responsePlaceholder" class="text-slate-500 text-center py-12">
+                        <p class="text-4xl mb-4">🔌</p>
+                        <p>Select an API endpoint and click "Run Test" to see results</p>
+                    </div>
+                    <div id="responseLoading" class="text-slate-400 text-center py-12 hidden">
+                        <div class="inline-block animate-spin rounded-full h-8 w-8 border-4 border-slate-600 border-t-emerald-500 mb-4"></div>
+                        <p>Fetching data from Amazon SP-API...</p>
+                    </div>
+                    <pre id="responseData" class="text-sm text-slate-300 hidden"></pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const apis = <%- JSON.stringify(apis) %>;
+        let selectedApi = null;
+        let currentParams = {};
+
+        // Check connection status on load
+        async function checkConnection() {
+            try {
+                const resp = await fetch('/api/sp-api/connection-status');
+                const data = await resp.json();
+
+                const indicator = document.getElementById('statusIndicator');
+                const statusText = document.getElementById('statusText');
+
+                if (data.connected && data.tokenInfo?.access_token_valid) {
+                    indicator.className = 'w-4 h-4 rounded-full bg-emerald-500';
+                    statusText.textContent = 'Connected - Access token valid';
+                    statusText.className = 'text-emerald-600 text-sm font-medium';
+                } else if (data.connected) {
+                    indicator.className = 'w-4 h-4 rounded-full bg-amber-500';
+                    statusText.textContent = 'Connected - Token may need refresh';
+                    statusText.className = 'text-amber-600 text-sm font-medium';
+                } else {
+                    indicator.className = 'w-4 h-4 rounded-full bg-red-500';
+                    statusText.textContent = 'Not connected - ' + (data.message || 'Authorization required');
+                    statusText.className = 'text-red-600 text-sm font-medium';
+                }
+            } catch (err) {
+                document.getElementById('statusIndicator').className = 'w-4 h-4 rounded-full bg-red-500';
+                document.getElementById('statusText').textContent = 'Error checking connection';
+            }
+        }
+
+        function selectEndpoint(index) {
+            // Remove previous selection
+            document.querySelectorAll('.endpoint-card').forEach(card => {
+                card.classList.remove('ring-2', 'ring-emerald-500', 'bg-emerald-50');
+            });
+
+            // Select new
+            const card = document.getElementById('endpoint-' + index);
+            card.classList.add('ring-2', 'ring-emerald-500', 'bg-emerald-50');
+
+            selectedApi = apis[index];
+
+            // Update panel
+            document.getElementById('selectedApiName').textContent = selectedApi.name;
+            document.getElementById('selectedApiEndpoint').textContent = selectedApi.method + ' ' + selectedApi.endpoint;
+            document.getElementById('runTestBtn').disabled = false;
+
+            // Show/hide params section
+            const paramsSection = document.getElementById('paramsSection');
+            const paramsContainer = document.getElementById('paramsContainer');
+
+            if (selectedApi.params && selectedApi.params.length > 0) {
+                paramsSection.classList.remove('hidden');
+                paramsContainer.innerHTML = selectedApi.params.map(param => `
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">
+                            ${param.name}
+                            ${param.required ? '<span class="text-red-500">*</span>' : '<span class="text-slate-400">(optional)</span>'}
+                        </label>
+                        <input type="text"
+                               id="param-${param.key}"
+                               value="${param.default || ''}"
+                               placeholder="${param.placeholder || ''}"
+                               class="w-full px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none">
+                        <p class="text-xs text-slate-500 mt-1">${param.description || ''}</p>
+                    </div>
+                `).join('');
+            } else {
+                paramsSection.classList.add('hidden');
+            }
+
+            // Reset response
+            document.getElementById('responsePlaceholder').classList.remove('hidden');
+            document.getElementById('responseData').classList.add('hidden');
+            document.getElementById('responseStats').classList.add('hidden');
+        }
+
+        async function runTest() {
+            if (!selectedApi) return;
+
+            // Gather params
+            const params = {};
+            if (selectedApi.params) {
+                selectedApi.params.forEach(param => {
+                    const input = document.getElementById('param-' + param.key);
+                    if (input && input.value) {
+                        params[param.key] = input.value;
+                    }
+                });
+            }
+
+            // Show loading
+            document.getElementById('responsePlaceholder').classList.add('hidden');
+            document.getElementById('responseData').classList.add('hidden');
+            document.getElementById('responseLoading').classList.remove('hidden');
+            document.getElementById('responseStats').classList.add('hidden');
+
+            const startTime = Date.now();
+
+            try {
+                const resp = await fetch('/api/sp-api/explorer/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        apiId: selectedApi.id,
+                        params: params
+                    })
+                });
+
+                const data = await resp.json();
+                const elapsed = Date.now() - startTime;
+
+                // Show results
+                document.getElementById('responseLoading').classList.add('hidden');
+                document.getElementById('responseData').classList.remove('hidden');
+                document.getElementById('responseStats').classList.remove('hidden');
+
+                // Update status badge
+                const statusBadge = document.getElementById('responseStatus');
+                if (data.success) {
+                    statusBadge.textContent = data.status + ' OK';
+                    statusBadge.className = 'px-3 py-1 rounded-full font-bold bg-emerald-100 text-emerald-700';
+                } else {
+                    statusBadge.textContent = data.status + ' Error';
+                    statusBadge.className = 'px-3 py-1 rounded-full font-bold bg-red-100 text-red-700';
+                }
+
+                document.getElementById('responseTime').textContent = elapsed + 'ms';
+
+                // Format and display JSON
+                document.getElementById('responseData').innerHTML = formatJSON(data.data || data);
+
+            } catch (err) {
+                document.getElementById('responseLoading').classList.add('hidden');
+                document.getElementById('responseData').classList.remove('hidden');
+                document.getElementById('responseData').innerHTML = '<span class="text-red-400">Error: ' + err.message + '</span>';
+            }
+        }
+
+        function formatJSON(obj, indent = 0) {
+            if (obj === null) return '<span class="json-null">null</span>';
+            if (typeof obj === 'undefined') return '<span class="json-null">undefined</span>';
+            if (typeof obj === 'boolean') return '<span class="json-boolean">' + obj + '</span>';
+            if (typeof obj === 'number') return '<span class="json-number">' + obj + '</span>';
+            if (typeof obj === 'string') return '<span class="json-string">"' + escapeHtml(obj) + '"</span>';
+
+            const spaces = '  '.repeat(indent);
+            const nextSpaces = '  '.repeat(indent + 1);
+
+            if (Array.isArray(obj)) {
+                if (obj.length === 0) return '[]';
+                const items = obj.map(item => nextSpaces + formatJSON(item, indent + 1));
+                return '[\n' + items.join(',\n') + '\n' + spaces + ']';
+            }
+
+            if (typeof obj === 'object') {
+                const keys = Object.keys(obj);
+                if (keys.length === 0) return '{}';
+                const items = keys.map(key =>
+                    nextSpaces + '<span class="json-key">"' + escapeHtml(key) + '"</span>: ' + formatJSON(obj[key], indent + 1)
+                );
+                return '{\n' + items.join(',\n') + '\n' + spaces + '}';
+            }
+
+            return String(obj);
+        }
+
+        function escapeHtml(str) {
+            return str.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/"/g, '&quot;');
+        }
+
+        // Initialize
+        checkConnection();
+    </script>
+</body>
+</html>

@@ -1790,6 +1790,491 @@ app.get('/api/sp-api/test', async (req, res) => {
     }
 });
 
+// API Explorer - List of available SP-API endpoints for testing
+const availableApis = [
+    {
+        id: 'catalog-search',
+        name: 'Catalog Search',
+        description: 'Search for products in the Amazon catalog by keywords',
+        icon: '🔍',
+        color: 'blue',
+        method: 'GET',
+        endpoint: '/catalog/2022-04-01/items',
+        vendorOnly: false,
+        params: [
+            { key: 'keywords', name: 'Keywords', required: true, default: '', placeholder: 'e.g., wireless headphones', description: 'Search terms' },
+            { key: 'marketplaceIds', name: 'Marketplace ID', required: true, default: 'A2EUQ1WTGCTBG2', description: 'Canada: A2EUQ1WTGCTBG2, US: ATVPDKIKX0DER' },
+            { key: 'pageSize', name: 'Page Size', required: false, default: '10', description: 'Number of results (1-20)' }
+        ],
+        buildUrl: (params) => `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?marketplaceIds=${params.marketplaceIds}&keywords=${encodeURIComponent(params.keywords)}&pageSize=${params.pageSize || 10}`
+    },
+    {
+        id: 'catalog-item',
+        name: 'Get Catalog Item',
+        description: 'Get detailed information about a specific product by ASIN',
+        icon: '📦',
+        color: 'indigo',
+        method: 'GET',
+        endpoint: '/catalog/2022-04-01/items/{asin}',
+        vendorOnly: false,
+        params: [
+            { key: 'asin', name: 'ASIN', required: true, default: '', placeholder: 'e.g., B08N5WRWNW', description: '10-character Amazon product ID' },
+            { key: 'marketplaceIds', name: 'Marketplace ID', required: true, default: 'A2EUQ1WTGCTBG2', description: 'Canada: A2EUQ1WTGCTBG2' },
+            { key: 'includedData', name: 'Include Data', required: false, default: 'summaries,images,productTypes', description: 'Comma-separated: summaries,attributes,dimensions,identifiers,images,productTypes,relationships,salesRanks' }
+        ],
+        buildUrl: (params) => `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items/${params.asin}?marketplaceIds=${params.marketplaceIds}&includedData=${params.includedData || 'summaries'}`
+    },
+    {
+        id: 'vendor-orders',
+        name: 'Vendor Purchase Orders',
+        description: 'Get purchase orders from Amazon for your vendor account',
+        icon: '📋',
+        color: 'purple',
+        method: 'GET',
+        endpoint: '/vendor/orders/v1/purchaseOrders',
+        vendorOnly: true,
+        params: [
+            { key: 'limit', name: 'Limit', required: false, default: '10', description: 'Number of orders to return (1-100)' },
+            { key: 'createdAfter', name: 'Created After', required: false, default: '', placeholder: 'e.g., 2026-01-01T00:00:00Z', description: 'ISO 8601 date-time' },
+            { key: 'createdBefore', name: 'Created Before', required: false, default: '', placeholder: 'e.g., 2026-01-31T23:59:59Z', description: 'ISO 8601 date-time' }
+        ],
+        buildUrl: (params) => {
+            let url = `https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrders?limit=${params.limit || 10}`;
+            if (params.createdAfter) url += `&createdAfter=${encodeURIComponent(params.createdAfter)}`;
+            if (params.createdBefore) url += `&createdBefore=${encodeURIComponent(params.createdBefore)}`;
+            return url;
+        }
+    },
+    {
+        id: 'vendor-order-details',
+        name: 'Vendor Order Details',
+        description: 'Get details of a specific purchase order',
+        icon: '📄',
+        color: 'violet',
+        method: 'GET',
+        endpoint: '/vendor/orders/v1/purchaseOrders/{poNumber}',
+        vendorOnly: true,
+        params: [
+            { key: 'purchaseOrderNumber', name: 'PO Number', required: true, default: '', placeholder: 'e.g., 15K7Y24W', description: 'Purchase order number from Amazon' }
+        ],
+        buildUrl: (params) => `https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrders/${params.purchaseOrderNumber}`
+    },
+    {
+        id: 'vendor-shipments',
+        name: 'Vendor Shipments',
+        description: 'Get shipment details for your vendor orders',
+        icon: '🚚',
+        color: 'green',
+        method: 'GET',
+        endpoint: '/vendor/shipping/v1/shipments',
+        vendorOnly: true,
+        params: [
+            { key: 'limit', name: 'Limit', required: false, default: '10', description: 'Number of shipments to return' },
+            { key: 'createdAfter', name: 'Created After', required: false, default: '', placeholder: 'e.g., 2026-01-01T00:00:00Z', description: 'ISO 8601 date-time' }
+        ],
+        buildUrl: (params) => {
+            let url = `https://sellingpartnerapi-na.amazon.com/vendor/shipping/v1/shipments?limit=${params.limit || 10}`;
+            if (params.createdAfter) url += `&createdAfter=${encodeURIComponent(params.createdAfter)}`;
+            return url;
+        }
+    },
+    {
+        id: 'product-pricing',
+        name: 'Product Pricing',
+        description: 'Get pricing information for products',
+        icon: '💰',
+        color: 'amber',
+        method: 'GET',
+        endpoint: '/products/pricing/v0/price',
+        vendorOnly: false,
+        params: [
+            { key: 'asins', name: 'ASINs', required: true, default: '', placeholder: 'e.g., B08N5WRWNW,B07XJ8C8F5', description: 'Comma-separated list of ASINs (max 20)' },
+            { key: 'marketplaceId', name: 'Marketplace ID', required: true, default: 'A2EUQ1WTGCTBG2', description: 'Canada: A2EUQ1WTGCTBG2' }
+        ],
+        buildUrl: (params) => {
+            const asins = params.asins.split(',').map(a => a.trim()).slice(0, 20);
+            const asinParams = asins.map(a => `Asins=${a}`).join('&');
+            return `https://sellingpartnerapi-na.amazon.com/products/pricing/v0/price?MarketplaceId=${params.marketplaceId}&ItemType=Asin&${asinParams}`;
+        }
+    },
+    {
+        id: 'product-fees',
+        name: 'Product Fees Estimate',
+        description: 'Get estimated fees for selling a product',
+        icon: '🧾',
+        color: 'rose',
+        method: 'GET',
+        endpoint: '/products/fees/v0/items/{asin}/feesEstimate',
+        vendorOnly: false,
+        params: [
+            { key: 'asin', name: 'ASIN', required: true, default: '', placeholder: 'e.g., B08N5WRWNW', description: 'Product ASIN' },
+            { key: 'marketplaceId', name: 'Marketplace ID', required: true, default: 'A2EUQ1WTGCTBG2', description: 'Canada: A2EUQ1WTGCTBG2' },
+            { key: 'price', name: 'Price', required: true, default: '29.99', description: 'Listing price for fee calculation' }
+        ],
+        buildUrl: (params) => `https://sellingpartnerapi-na.amazon.com/products/fees/v0/items/${params.asin}/feesEstimate`,
+        method: 'POST',
+        buildBody: (params) => ({
+            FeesEstimateRequest: {
+                MarketplaceId: params.marketplaceId,
+                IsAmazonFulfilled: true,
+                PriceToEstimateFees: {
+                    ListingPrice: { CurrencyCode: 'CAD', Amount: parseFloat(params.price) }
+                },
+                Identifier: params.asin
+            }
+        })
+    },
+    {
+        id: 'reports-list',
+        name: 'List Reports',
+        description: 'Get a list of available reports',
+        icon: '📊',
+        color: 'cyan',
+        method: 'GET',
+        endpoint: '/reports/2021-06-30/reports',
+        vendorOnly: false,
+        params: [
+            { key: 'reportTypes', name: 'Report Types', required: false, default: '', placeholder: 'e.g., GET_VENDOR_INVENTORY_REPORT', description: 'Comma-separated report types' },
+            { key: 'pageSize', name: 'Page Size', required: false, default: '10', description: 'Number of reports to return' }
+        ],
+        buildUrl: (params) => {
+            let url = `https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports?pageSize=${params.pageSize || 10}`;
+            if (params.reportTypes) url += `&reportTypes=${encodeURIComponent(params.reportTypes)}`;
+            return url;
+        }
+    },
+    {
+        id: 'token-info',
+        name: 'Token Info',
+        description: 'Validate your access token and see app details',
+        icon: '🔑',
+        color: 'slate',
+        method: 'GET',
+        endpoint: '/auth/o2/tokeninfo',
+        vendorOnly: false,
+        params: [],
+        isTokenInfo: true,
+        buildUrl: () => 'https://api.amazon.com/auth/o2/tokeninfo'
+    }
+];
+
+// API Explorer page route
+app.get('/api-explorer', (req, res) => {
+    res.render('api-explorer', { apis: availableApis });
+});
+
+// API Explorer test endpoint
+app.post('/api/sp-api/explorer/test', async (req, res) => {
+    try {
+        const { apiId, params } = req.body;
+
+        // Find the API definition
+        const api = availableApis.find(a => a.id === apiId);
+        if (!api) {
+            return res.status(400).json({ success: false, error: 'Unknown API endpoint' });
+        }
+
+        // Get access token
+        const accessToken = await getValidAccessToken();
+
+        // Build URL
+        const url = api.buildUrl(params || {});
+
+        let response;
+
+        if (api.isTokenInfo) {
+            // Token info uses different auth
+            response = await fetch(`${url}?access_token=${accessToken}`);
+        } else if (api.method === 'POST' && api.buildBody) {
+            // POST request with body
+            const body = JSON.stringify(api.buildBody(params || {}));
+            response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'x-amz-access-token': accessToken,
+                    'Content-Type': 'application/json'
+                },
+                body: body
+            });
+        } else {
+            // GET request
+            response = await fetch(url, {
+                method: api.method || 'GET',
+                headers: {
+                    'x-amz-access-token': accessToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+        }
+
+        const data = await response.json();
+
+        res.json({
+            success: response.ok,
+            status: response.status,
+            endpoint: api.endpoint,
+            url: url,
+            data: data
+        });
+
+    } catch (err) {
+        console.error('API Explorer test error:', err);
+        res.status(500).json({
+            success: false,
+            error: err.message
+        });
+    }
+});
+
+// Comprehensive SP-API Diagnostic endpoint - tests multiple APIs to identify the issue
+app.get('/api/sp-api/diagnose', async (req, res) => {
+    const results = {
+        timestamp: new Date().toISOString(),
+        environment: {},
+        tokenStatus: {},
+        endpointTests: [],
+        diagnosis: [],
+        recommendations: []
+    };
+
+    try {
+        // Step 1: Check environment configuration
+        results.environment = {
+            hasLwaClientId: !!process.env.LWA_CLIENT_ID,
+            hasLwaClientSecret: !!process.env.LWA_CLIENT_SECRET,
+            hasAwsAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+            hasAwsSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+            hasIamArn: !!process.env.IAM_ARN,
+            iamArnValue: process.env.IAM_ARN || 'Not set',
+            iamArnType: process.env.IAM_ARN
+                ? (process.env.IAM_ARN.includes(':user/') ? 'USER (should be ROLE)' :
+                   process.env.IAM_ARN.includes(':role/') ? 'ROLE (correct)' : 'UNKNOWN')
+                : 'Not set'
+        };
+
+        if (process.env.IAM_ARN && process.env.IAM_ARN.includes(':user/')) {
+            results.diagnosis.push('⚠️ IAM ARN is a User ARN, but Amazon requires a Role ARN');
+            results.recommendations.push('Create an IAM Role and use its ARN instead of the User ARN');
+        }
+
+        // Step 2: Check token status
+        try {
+            const tokenResult = await pool.query(
+                `SELECT refresh_token, access_token, expires_at, selling_partner_id, created_at
+                 FROM oauth_tokens ORDER BY created_at DESC LIMIT 1`
+            );
+
+            if (tokenResult.rows.length === 0) {
+                results.tokenStatus = { hasTokens: false, error: 'No tokens found in database' };
+                results.diagnosis.push('❌ No OAuth tokens found - authorization not completed');
+                results.recommendations.push('Complete OAuth flow at /auth/amazon/login');
+            } else {
+                const token = tokenResult.rows[0];
+                const now = new Date();
+                const expiresAt = token.expires_at ? new Date(token.expires_at) : null;
+
+                results.tokenStatus = {
+                    hasTokens: true,
+                    hasRefreshToken: !!token.refresh_token,
+                    hasAccessToken: !!token.access_token,
+                    sellingPartnerId: token.selling_partner_id || 'Not set',
+                    tokenCreatedAt: token.created_at,
+                    accessTokenExpired: expiresAt ? expiresAt <= now : true,
+                    expiresAt: token.expires_at
+                };
+
+                if (!token.selling_partner_id) {
+                    results.diagnosis.push('⚠️ No selling_partner_id stored - may indicate incomplete authorization');
+                }
+            }
+        } catch (dbErr) {
+            results.tokenStatus = { error: dbErr.message };
+        }
+
+        // Step 3: Try to get a valid access token
+        let accessToken = null;
+        try {
+            accessToken = await getValidAccessToken();
+            results.tokenStatus.accessTokenValid = true;
+            results.tokenStatus.accessTokenRefreshed = true;
+        } catch (tokenErr) {
+            results.tokenStatus.accessTokenValid = false;
+            results.tokenStatus.accessTokenError = tokenErr.message;
+            results.diagnosis.push(`❌ Cannot get valid access token: ${tokenErr.message}`);
+        }
+
+        // Step 4: Test multiple endpoints (if we have an access token)
+        if (accessToken) {
+            const canadaMarketplaceId = 'A2EUQ1WTGCTBG2';
+            const usMarketplaceId = 'ATVPDKIKX0DER';
+
+            const endpointsToTest = [
+                {
+                    name: 'Sellers - Marketplace Participations (Seller-only)',
+                    url: 'https://sellingpartnerapi-na.amazon.com/sellers/v1/marketplaceParticipations',
+                    method: 'GET',
+                    expectedForVendor: 'FAIL',
+                    note: 'This endpoint is for Seller accounts only, NOT Vendor accounts'
+                },
+                {
+                    name: 'Catalog Items - Search (Works for both)',
+                    url: `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items?marketplaceIds=${canadaMarketplaceId}&keywords=test`,
+                    method: 'GET',
+                    expectedForVendor: 'SHOULD WORK',
+                    note: 'Catalog API works for both Sellers and Vendors'
+                },
+                {
+                    name: 'Vendor Direct Fulfillment - Orders (Vendor-only)',
+                    url: 'https://sellingpartnerapi-na.amazon.com/vendor/directFulfillment/orders/2021-12-28/purchaseOrders?shipFromPartyId=test',
+                    method: 'GET',
+                    expectedForVendor: 'SHOULD WORK (if role enabled)',
+                    note: 'Vendor Direct Fulfillment API - for Vendor accounts'
+                },
+                {
+                    name: 'Vendor Orders - Purchase Orders (Vendor-only)',
+                    url: 'https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrders',
+                    method: 'GET',
+                    expectedForVendor: 'SHOULD WORK (if role enabled)',
+                    note: 'Vendor Retail Procurement Orders API'
+                },
+                {
+                    name: 'Token Info - Verify token details',
+                    url: 'https://api.amazon.com/auth/o2/tokeninfo',
+                    method: 'GET',
+                    isTokenInfo: true,
+                    note: 'Validates the access token and shows associated app/user'
+                }
+            ];
+
+            for (const endpoint of endpointsToTest) {
+                const testResult = {
+                    name: endpoint.name,
+                    url: endpoint.url,
+                    expectedForVendor: endpoint.expectedForVendor,
+                    note: endpoint.note
+                };
+
+                try {
+                    let response;
+
+                    if (endpoint.isTokenInfo) {
+                        // Token info endpoint uses different auth
+                        response = await fetch(`${endpoint.url}?access_token=${accessToken}`, {
+                            method: endpoint.method
+                        });
+                    } else {
+                        // Try without AWS signing first
+                        response = await fetch(endpoint.url, {
+                            method: endpoint.method,
+                            headers: {
+                                'x-amz-access-token': accessToken,
+                                'Content-Type': 'application/json'
+                            }
+                        });
+
+                        // If 403 and we have AWS creds, try with signing
+                        if (response.status === 403 && process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+                            testResult.triedAwsSigning = true;
+                            try {
+                                const signedHeaders = await signSpApiRequest(endpoint.url, endpoint.method, accessToken);
+                                response = await fetch(endpoint.url, {
+                                    method: endpoint.method,
+                                    headers: signedHeaders
+                                });
+                            } catch (signErr) {
+                                testResult.awsSigningError = signErr.message;
+                            }
+                        }
+                    }
+
+                    testResult.status = response.status;
+                    testResult.statusText = response.statusText;
+
+                    const responseText = await response.text();
+                    try {
+                        testResult.response = JSON.parse(responseText);
+                    } catch {
+                        testResult.response = responseText.substring(0, 500);
+                    }
+
+                    if (response.ok) {
+                        testResult.success = true;
+                    } else {
+                        testResult.success = false;
+
+                        // Analyze specific error
+                        if (response.status === 403) {
+                            if (endpoint.name.includes('Seller')) {
+                                testResult.analysis = 'Expected for Vendor account - this is a Seller-only endpoint';
+                            } else {
+                                testResult.analysis = 'Access denied - check roles/permissions in SPP';
+                            }
+                        } else if (response.status === 401) {
+                            testResult.analysis = 'Authentication failed - token may be invalid or expired';
+                        } else if (response.status === 400) {
+                            testResult.analysis = 'Bad request - may indicate endpoint works but parameters are wrong';
+                        }
+                    }
+                } catch (fetchErr) {
+                    testResult.success = false;
+                    testResult.error = fetchErr.message;
+                }
+
+                results.endpointTests.push(testResult);
+            }
+
+            // Analyze results
+            const sellerEndpoint = results.endpointTests.find(t => t.name.includes('Seller'));
+            const catalogEndpoint = results.endpointTests.find(t => t.name.includes('Catalog'));
+            const vendorEndpoints = results.endpointTests.filter(t => t.name.includes('Vendor'));
+            const tokenInfo = results.endpointTests.find(t => t.name.includes('Token Info'));
+
+            if (sellerEndpoint?.status === 403 && catalogEndpoint?.status === 403) {
+                results.diagnosis.push('❌ Both Seller and Catalog endpoints return 403 - likely a token/authorization issue');
+                results.recommendations.push('Verify your refresh token is from the correct account');
+                results.recommendations.push('Re-authorize the app in Solutions Provider Portal');
+            } else if (sellerEndpoint?.status === 403 && catalogEndpoint?.success) {
+                results.diagnosis.push('✅ Catalog works but Seller endpoint fails - CONFIRMS you have a Vendor account');
+                results.recommendations.push('Use Vendor-specific APIs instead of Seller APIs');
+            } else if (sellerEndpoint?.status === 403 && vendorEndpoints.some(v => v.success)) {
+                results.diagnosis.push('✅ Vendor endpoints work! You have a properly configured Vendor account');
+            }
+
+            if (tokenInfo?.success && tokenInfo?.response) {
+                results.tokenInfo = tokenInfo.response;
+                results.diagnosis.push(`ℹ️ Token belongs to app: ${tokenInfo.response.app_id || 'unknown'}`);
+            }
+
+            // Check if ALL endpoints fail with 403
+            const all403 = results.endpointTests.every(t => t.status === 403);
+            if (all403) {
+                results.diagnosis.push('❌ ALL endpoints return 403 - this suggests:');
+                results.diagnosis.push('   1. Token is from wrong account');
+                results.diagnosis.push('   2. App not properly authorized');
+                results.diagnosis.push('   3. IAM Role not linked to app');
+                results.recommendations.push('Delete stored tokens and re-authorize from scratch');
+                results.recommendations.push('Verify IAM Role ARN is configured in your app settings');
+            }
+        }
+
+        // Final summary
+        results.summary = {
+            environmentOk: results.environment.hasLwaClientId && results.environment.hasLwaClientSecret,
+            tokensOk: results.tokenStatus.hasTokens && results.tokenStatus.accessTokenValid,
+            accountType: results.endpointTests.find(t => t.name.includes('Seller'))?.status === 403 ? 'Likely VENDOR' : 'Unknown',
+            likelyIssue: results.diagnosis.length > 0 ? results.diagnosis[0] : 'Unable to determine'
+        };
+
+        res.json(results);
+    } catch (err) {
+        console.error('Diagnostic error:', err);
+        res.status(500).json({
+            error: err.message,
+            partialResults: results
+        });
+    }
+});
+
 // Check if scraper is currently running
 app.get('/api/scraper-status', (req, res) => {
     // #region agent log
