@@ -1876,58 +1876,6 @@ const availableApis = [
         }
     },
     {
-        id: 'product-pricing',
-        name: 'Product Pricing',
-        description: 'Get pricing information for products',
-        icon: '💰',
-        color: 'amber',
-        method: 'GET',
-        endpoint: '/products/pricing/v0/price',
-        vendorOnly: false,
-        params: [
-            { key: 'asins', name: 'ASINs', required: true, default: '', placeholder: 'e.g., B08N5WRWNW,B07XJ8C8F5', description: 'Comma-separated list of ASINs (max 20)' },
-            { key: 'marketplaceId', name: 'Marketplace ID', required: true, default: 'A2EUQ1WTGCTBG2', description: 'Canada: A2EUQ1WTGCTBG2' }
-        ],
-        buildUrl: (params) => {
-            if (!params.asins) {
-                throw new Error('ASINs parameter is required');
-            }
-            const asins = params.asins.split(',').map(a => a.trim()).filter(a => a).slice(0, 20);
-            if (asins.length === 0) {
-                throw new Error('At least one valid ASIN is required');
-            }
-            const asinParams = asins.map(a => `Asins=${a}`).join('&');
-            return `https://sellingpartnerapi-na.amazon.com/products/pricing/v0/price?MarketplaceId=${params.marketplaceId}&ItemType=Asin&${asinParams}`;
-        }
-    },
-    {
-        id: 'product-fees',
-        name: 'Product Fees Estimate',
-        description: 'Get estimated fees for selling a product',
-        icon: '🧾',
-        color: 'rose',
-        method: 'GET',
-        endpoint: '/products/fees/v0/items/{asin}/feesEstimate',
-        vendorOnly: false,
-        params: [
-            { key: 'asin', name: 'ASIN', required: true, default: '', placeholder: 'e.g., B08N5WRWNW', description: 'Product ASIN' },
-            { key: 'marketplaceId', name: 'Marketplace ID', required: true, default: 'A2EUQ1WTGCTBG2', description: 'Canada: A2EUQ1WTGCTBG2' },
-            { key: 'price', name: 'Price', required: true, default: '29.99', description: 'Listing price for fee calculation' }
-        ],
-        buildUrl: (params) => `https://sellingpartnerapi-na.amazon.com/products/fees/v0/items/${params.asin}/feesEstimate`,
-        method: 'POST',
-        buildBody: (params) => ({
-            FeesEstimateRequest: {
-                MarketplaceId: params.marketplaceId,
-                IsAmazonFulfilled: true,
-                PriceToEstimateFees: {
-                    ListingPrice: { CurrencyCode: 'CAD', Amount: parseFloat(params.price) }
-                },
-                Identifier: params.asin
-            }
-        })
-    },
-    {
         id: 'reports-list',
         name: 'List Reports',
         description: 'Get a list of available reports',
