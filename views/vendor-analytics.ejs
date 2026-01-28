@@ -97,15 +97,42 @@
             </div>
         </div>
 
-        <!-- Report Type Legend -->
+        <!-- Column Visibility Controls -->
         <div class="bg-white rounded-2xl shadow-lg p-4 mb-6 border border-slate-200">
-            <div class="flex flex-wrap gap-3 text-xs">
-                <% Object.entries(reportTypes).forEach(([key, config]) => { %>
-                <div class="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full">
-                    <span class="font-bold text-slate-700"><%= config.shortName %></span>
-                    <span class="text-slate-500">(<%= key.replace('GET_', '').replace(/_/g, ' ') %>)</span>
-                </div>
-                <% }); %>
+            <div class="flex flex-wrap items-center gap-2">
+                <span class="text-sm font-bold text-slate-700 mr-2">Show Columns:</span>
+                <label class="flex items-center gap-1 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200">
+                    <input type="checkbox" class="col-toggle w-4 h-4" data-col="status" checked onchange="toggleColumn('status')">
+                    <span class="text-xs font-medium text-slate-700">Status</span>
+                </label>
+                <label class="flex items-center gap-1 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200">
+                    <input type="checkbox" class="col-toggle w-4 h-4" data-col="rt-inv" checked onchange="toggleColumn('rt-inv')">
+                    <span class="text-xs font-medium text-slate-700">RT Inventory</span>
+                </label>
+                <label class="flex items-center gap-1 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200">
+                    <input type="checkbox" class="col-toggle w-4 h-4" data-col="rt-sales" checked onchange="toggleColumn('rt-sales')">
+                    <span class="text-xs font-medium text-slate-700">RT Sales</span>
+                </label>
+                <label class="flex items-center gap-1 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200">
+                    <input type="checkbox" class="col-toggle w-4 h-4" data-col="sales" checked onchange="toggleColumn('sales')">
+                    <span class="text-xs font-medium text-slate-700">Sales</span>
+                </label>
+                <label class="flex items-center gap-1 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200">
+                    <input type="checkbox" class="col-toggle w-4 h-4" data-col="traffic" checked onchange="toggleColumn('traffic')">
+                    <span class="text-xs font-medium text-slate-700">Traffic</span>
+                </label>
+                <label class="flex items-center gap-1 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200">
+                    <input type="checkbox" class="col-toggle w-4 h-4" data-col="margin" checked onchange="toggleColumn('margin')">
+                    <span class="text-xs font-medium text-slate-700">Margin</span>
+                </label>
+                <label class="flex items-center gap-1 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200">
+                    <input type="checkbox" class="col-toggle w-4 h-4" data-col="inventory" checked onchange="toggleColumn('inventory')">
+                    <span class="text-xs font-medium text-slate-700">Inventory</span>
+                </label>
+                <label class="flex items-center gap-1 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200">
+                    <input type="checkbox" class="col-toggle w-4 h-4" data-col="last-ordered" checked onchange="toggleColumn('last-ordered')">
+                    <span class="text-xs font-medium text-slate-700">Last Ordered</span>
+                </label>
             </div>
         </div>
 
@@ -119,35 +146,35 @@
                                 <input type="checkbox" id="selectAll" onchange="toggleSelectAll()" class="w-4 h-4 cursor-pointer">
                             </th>
                             <th class="sticky-col px-4 py-3 text-left font-bold bg-slate-900" style="left: 40px;">ASIN</th>
-                            <th class="px-3 py-3 text-center font-bold bg-slate-900" style="min-width: 130px;">
+                            <th class="px-3 py-3 text-center font-bold bg-slate-900 col-status" style="min-width: 130px;">
                                 <div>Product Status</div>
                                 <div class="text-xs font-normal text-slate-400">Availability & Price</div>
                             </th>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-rt-inv">
                                 <div>RT Inventory</div>
                                 <div class="text-xs font-normal text-slate-400">Highly Available</div>
                             </th>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-rt-sales">
                                 <div>RT Sales</div>
                                 <div class="text-xs font-normal text-slate-400">Units & Revenue</div>
                             </th>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-sales">
                                 <div>Sales</div>
                                 <div class="text-xs font-normal text-slate-400">Shipped & Ordered</div>
                             </th>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-traffic">
                                 <div>Traffic</div>
                                 <div class="text-xs font-normal text-slate-400">Glance Views</div>
                             </th>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-margin">
                                 <div>Margin</div>
                                 <div class="text-xs font-normal text-slate-400">Net PPM</div>
                             </th>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-inventory">
                                 <div>Inventory</div>
                                 <div class="text-xs font-normal text-slate-400">On Hand</div>
                             </th>
-                            <th class="px-3 py-3 text-center font-bold bg-slate-900" style="min-width: 100px;">
+                            <th class="px-3 py-3 text-center font-bold bg-slate-900 col-last-ordered" style="min-width: 100px;">
                                 <div>Last Ordered</div>
                                 <div class="text-xs font-normal text-slate-400">PO Date</div>
                             </th>
@@ -187,7 +214,7 @@
                             </td>
 
                             <!-- Product Status Column -->
-                            <td class="px-3 py-3 text-center">
+                            <td class="px-3 py-3 text-center col-status">
                                 <% if (tracker.availability) { %>
                                     <% if (tracker.availability === 'In Stock') { %>
                                         <span class="status-badge status-instock">In Stock</span>
@@ -207,7 +234,7 @@
                             </td>
 
                             <!-- RT Inventory Column -->
-                            <td class="report-cell px-3 py-3 text-center">
+                            <td class="report-cell px-3 py-3 text-center col-rt-inv">
                                 <% if (rtInv) {
                                     const data = typeof rtInv === 'string' ? JSON.parse(rtInv) : rtInv;
                                 %>
@@ -224,7 +251,7 @@
                             </td>
 
                             <!-- RT Sales Column -->
-                            <td class="report-cell px-3 py-3">
+                            <td class="report-cell px-3 py-3 col-rt-sales">
                                 <% if (rtSales) {
                                     const data = typeof rtSales === 'string' ? JSON.parse(rtSales) : rtSales;
                                 %>
@@ -246,7 +273,7 @@
                             </td>
 
                             <!-- Sales Column -->
-                            <td class="report-cell px-3 py-3">
+                            <td class="report-cell px-3 py-3 col-sales">
                                 <% if (sales) {
                                     const data = typeof sales === 'string' ? JSON.parse(sales) : sales;
                                 %>
@@ -272,7 +299,7 @@
                             </td>
 
                             <!-- Traffic Column -->
-                            <td class="report-cell px-3 py-3 text-center">
+                            <td class="report-cell px-3 py-3 text-center col-traffic">
                                 <% if (traffic) {
                                     const data = typeof traffic === 'string' ? JSON.parse(traffic) : traffic;
                                 %>
@@ -286,7 +313,7 @@
                             </td>
 
                             <!-- Margin Column -->
-                            <td class="report-cell px-3 py-3 text-center">
+                            <td class="report-cell px-3 py-3 text-center col-margin">
                                 <% if (margin) {
                                     const data = typeof margin === 'string' ? JSON.parse(margin) : margin;
                                 %>
@@ -306,7 +333,7 @@
                             </td>
 
                             <!-- Inventory Column -->
-                            <td class="report-cell px-3 py-3">
+                            <td class="report-cell px-3 py-3 col-inventory">
                                 <% if (inventory) {
                                     const data = typeof inventory === 'string' ? JSON.parse(inventory) : inventory;
                                 %>
@@ -328,7 +355,7 @@
                             </td>
 
                             <!-- Last Ordered Column -->
-                            <td class="px-3 py-3 text-center">
+                            <td class="px-3 py-3 text-center col-last-ordered">
                                 <% const lastOrdered = lastOrderedByAsin[asin]; %>
                                 <% if (lastOrdered) { %>
                                     <div class="metric-item">
@@ -481,6 +508,37 @@
             // Use the same sync modal as refreshAllReports
             refreshAllReports();
         }
+
+        // Column visibility toggle
+        function toggleColumn(colName) {
+            const cells = document.querySelectorAll(`.col-${colName}`);
+            const checkbox = document.querySelector(`.col-toggle[data-col="${colName}"]`);
+            const isVisible = checkbox.checked;
+
+            cells.forEach(cell => {
+                cell.style.display = isVisible ? '' : 'none';
+            });
+
+            // Save preference to localStorage
+            const prefs = JSON.parse(localStorage.getItem('vendorAnalyticsColumns') || '{}');
+            prefs[colName] = isVisible;
+            localStorage.setItem('vendorAnalyticsColumns', JSON.stringify(prefs));
+        }
+
+        // Restore column visibility from localStorage on page load
+        function restoreColumnVisibility() {
+            const prefs = JSON.parse(localStorage.getItem('vendorAnalyticsColumns') || '{}');
+            Object.keys(prefs).forEach(colName => {
+                const checkbox = document.querySelector(`.col-toggle[data-col="${colName}"]`);
+                if (checkbox) {
+                    checkbox.checked = prefs[colName];
+                    toggleColumn(colName);
+                }
+            });
+        }
+
+        // Initialize column visibility on page load
+        restoreColumnVisibility();
 
         function closeSyncModal() {
             document.getElementById('syncModal').classList.add('hidden');
