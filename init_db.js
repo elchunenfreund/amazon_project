@@ -76,6 +76,11 @@ const client = new Client({
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_vendor_reports_type_date ON vendor_reports(report_type, report_date);
         `);
+        // Add unique constraint for upserts
+        await client.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_reports_unique
+            ON vendor_reports(report_type, asin, report_date);
+        `);
         console.log("✅ Table 'vendor_reports' is ready.");
 
         // 4. Create the Catalog Details table (for product catalog info)

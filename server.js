@@ -2344,10 +2344,28 @@ app.get('/vendor-analytics', async (req, res) => {
             asinTrackerData[row.asin] = row;
         });
 
+        // Get last ordered date per ASIN from purchase_orders
+        const lastOrderResult = await pool.query(`
+            SELECT
+                item->>'amazonProductIdentifier' as asin,
+                MAX(po_date) as last_ordered
+            FROM purchase_orders,
+                 jsonb_array_elements(items) as item
+            WHERE item->>'amazonProductIdentifier' IS NOT NULL
+            GROUP BY item->>'amazonProductIdentifier'
+        `);
+        const lastOrderedByAsin = {};
+        lastOrderResult.rows.forEach(row => {
+            if (row.asin) {
+                lastOrderedByAsin[row.asin] = row.last_ordered;
+            }
+        });
+
         res.render('vendor-analytics', {
             asins,
             dataByAsin,
             asinTrackerData,
+            lastOrderedByAsin,
             reportTypes: VENDOR_REPORT_TYPES,
             startDate,
             endDate
@@ -2601,19 +2619,33 @@ app.get('/api/vendor-reports/download/:reportDocumentId', async (req, res) => {
         // Optionally save to database
         if (saveToDb === 'true' && reportType && reportData) {
             const reportConfig = VENDOR_REPORT_TYPES[reportType];
-            if (reportConfig && reportData[reportConfig.dataKey]) {
-                // Extract ASIN-level data and save
-                const asinData = reportData[reportConfig.dataKey] || [];
-                for (const item of asinData) {
-                    if (item.asin) {
-                        const reportDate = item.startDate || item.endDate || new Date().toISOString().split('T')[0];
-                        await pool.query(
-                            `INSERT INTO vendor_reports (report_type, asin, report_date, data)
-                             VALUES ($1, $2, $3, $4)
-                             ON CONFLICT DO NOTHING`,
-                            [reportType, item.asin, reportDate, JSON.stringify(item)]
-                        );
-                    }
+            const dataKey = reportConfig?.dataKey;
+
+            // Try multiple possible data locations for different report formats
+            let asinData = [];
+            if (dataKey && reportData[dataKey]) {
+                asinData = reportData[dataKey];
+            } else if (Array.isArray(reportData)) {
+                asinData = reportData;
+            } else if (reportData.reportData && Array.isArray(reportData.reportData)) {
+                asinData = reportData.reportData;
+            }
+
+            console.log(`[${reportType}] Found ${asinData.length} items to save`);
+
+            for (const item of asinData) {
+                if (item.asin) {
+                    // Use today's date for real-time reports, or extract from item
+                    const reportDate = item.startDate || item.endDate || item.date || new Date().toISOString().split('T')[0];
+
+                    // For real-time reports, use UPSERT to update existing data
+                    await pool.query(
+                        `INSERT INTO vendor_reports (report_type, asin, report_date, data)
+                         VALUES ($1, $2, $3, $4)
+                         ON CONFLICT (report_type, asin, report_date)
+                         DO UPDATE SET data = EXCLUDED.data, created_at = CURRENT_TIMESTAMP`,
+                        [reportType, item.asin, reportDate, JSON.stringify(item)]
+                    );
                 }
             }
         }

@@ -141,13 +141,17 @@
                                 <div>Inventory</div>
                                 <div class="text-xs font-normal text-slate-400">On Hand</div>
                             </th>
+                            <th class="px-3 py-3 text-center font-bold bg-slate-900" style="min-width: 100px;">
+                                <div>Last Ordered</div>
+                                <div class="text-xs font-normal text-slate-400">PO Date</div>
+                            </th>
                             <th class="px-4 py-3 text-center font-bold bg-slate-900">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200">
                         <% if (asins.length === 0) { %>
                         <tr>
-                            <td colspan="9" class="px-4 py-12 text-center text-slate-500">
+                            <td colspan="10" class="px-4 py-12 text-center text-slate-500">
                                 <p class="text-4xl mb-4">📊</p>
                                 <p class="font-medium">No ASINs tracked yet</p>
                                 <p class="text-sm">Add ASINs on the Products page to see analytics</p>
@@ -313,15 +317,33 @@
                                 <% } %>
                             </td>
 
+                            <!-- Last Ordered Column -->
+                            <td class="px-3 py-3 text-center">
+                                <% const lastOrdered = lastOrderedByAsin[asin]; %>
+                                <% if (lastOrdered) { %>
+                                    <div class="metric-item">
+                                        <div class="metric-label">PO Date</div>
+                                        <div class="metric-value text-slate-700 text-sm"><%= new Date(lastOrdered).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) %></div>
+                                    </div>
+                                <% } else { %>
+                                    <span class="text-slate-400">-</span>
+                                <% } %>
+                            </td>
+
                             <!-- Actions Column -->
                             <td class="px-4 py-3 text-center">
-                                <div class="flex flex-col gap-1">
-                                    <button onclick="showAsinDetail('<%= asin %>')" class="text-blue-600 hover:text-blue-800 text-xs font-medium hover:underline">
-                                        View Details
+                                <div class="flex flex-col gap-2">
+                                    <div class="flex gap-1 justify-center">
+                                        <button onclick="showAsinDetail('<%= asin %>')" class="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-medium hover:bg-blue-200" title="View detailed report">
+                                            Details
+                                        </button>
+                                        <a href="/catalog/<%= asin %>" class="bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs font-medium hover:bg-slate-200" title="View catalog info">
+                                            Catalog
+                                        </a>
+                                    </div>
+                                    <button onclick="syncSingleAsin('<%= asin %>')" class="bg-emerald-100 text-emerald-700 px-2 py-1 rounded text-xs font-medium hover:bg-emerald-200" title="Sync reports for this ASIN">
+                                        Sync Reports
                                     </button>
-                                    <a href="/catalog/<%= asin %>" class="text-slate-500 hover:text-slate-700 text-xs">
-                                        Catalog
-                                    </a>
                                 </div>
                             </td>
                         </tr>
@@ -405,6 +427,7 @@
         const reportTypeKeys = Object.keys(reportTypes);
         const dataByAsin = <%- JSON.stringify(dataByAsin) %>;
         const asinTrackerData = <%- JSON.stringify(asinTrackerData) %>;
+        const lastOrderedByAsin = <%- JSON.stringify(lastOrderedByAsin) %>;
 
         function applyDateFilter() {
             const startDate = document.getElementById('startDate').value;
@@ -551,11 +574,15 @@
                 else if (tracker.availability === 'Back Order') badgeClass = 'status-backorder';
                 else if (tracker.availability === 'Unavailable') badgeClass = 'status-unavailable';
 
-                statusHtml = `<div class="flex items-center gap-4">
+                const lastOrdered = lastOrderedByAsin[asin];
+                const lastOrderedStr = lastOrdered ? new Date(lastOrdered).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : null;
+
+                statusHtml = `<div class="flex flex-wrap items-center gap-4">
                     <div><span class="status-badge ${badgeClass}">${tracker.availability}</span></div>
                     ${tracker.price && tracker.price !== 'N/A' ? `<div class="text-xl font-bold text-slate-700">${tracker.price}</div>` : ''}
-                    ${tracker.header ? `<div class="text-sm text-slate-500 flex-1">${tracker.header}</div>` : ''}
-                </div>`;
+                    ${lastOrderedStr ? `<div class="text-sm"><span class="text-slate-500">Last Ordered:</span> <span class="font-medium">${lastOrderedStr}</span></div>` : ''}
+                </div>
+                ${tracker.header ? `<div class="text-sm text-slate-500 mt-2">${tracker.header}</div>` : ''}`;
             } else {
                 statusHtml = '<span class="text-slate-400">No tracker data available</span>';
             }
@@ -633,6 +660,87 @@
 
         function noDataHtml() {
             return '<span class="text-slate-400">No data available for this period</span>';
+        }
+
+        // Sync reports for a single ASIN (syncs all reports then highlights the ASIN row)
+        async function syncSingleAsin(asin) {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            // Show modal with ASIN-specific message
+            document.getElementById('syncModal').classList.remove('hidden');
+            document.getElementById('syncModal').classList.add('flex');
+            document.getElementById('closeSyncBtn').classList.add('hidden');
+
+            const progressDiv = document.getElementById('syncProgress');
+            progressDiv.innerHTML = `<div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <span class="font-medium text-blue-800">Syncing reports for ASIN: ${asin}</span>
+                <p class="text-xs text-blue-600 mt-1">Note: Amazon reports cover all ASINs, so all data will be refreshed.</p>
+            </div>`;
+
+            for (const reportType of reportTypeKeys) {
+                const itemId = `sync-${reportType}`;
+                progressDiv.innerHTML += `
+                    <div id="${itemId}" class="flex items-center gap-3 p-3 bg-slate-100 rounded-lg">
+                        <div class="loading-spinner"></div>
+                        <div>
+                            <div class="font-medium text-slate-800">${reportTypes[reportType].name}</div>
+                            <div class="text-xs text-slate-500">Creating report request...</div>
+                        </div>
+                    </div>
+                `;
+
+                try {
+                    const createResp = await fetch('/api/vendor-reports/create', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ reportType, startDate, endDate })
+                    });
+                    const createData = await createResp.json();
+
+                    if (!createData.success) {
+                        throw new Error(createData.error || 'Failed to create report');
+                    }
+
+                    const reportId = createData.reportId;
+                    updateSyncItem(itemId, 'loading', `Report ID: ${reportId} - Checking status...`);
+
+                    let reportDocumentId = null;
+                    for (let i = 0; i < 30; i++) {
+                        await sleep(2000);
+                        const statusResp = await fetch(`/api/vendor-reports/status/${reportId}`);
+                        const statusData = await statusResp.json();
+
+                        if (statusData.status === 'DONE') {
+                            reportDocumentId = statusData.reportDocumentId;
+                            updateSyncItem(itemId, 'loading', 'Report ready - Downloading...');
+                            break;
+                        } else if (statusData.status === 'CANCELLED' || statusData.status === 'FATAL') {
+                            throw new Error(`Report ${statusData.status}`);
+                        }
+                        updateSyncItem(itemId, 'loading', `Status: ${statusData.status} (attempt ${i + 1}/30)`);
+                    }
+
+                    if (!reportDocumentId) {
+                        throw new Error('Report timed out');
+                    }
+
+                    const downloadResp = await fetch(
+                        `/api/vendor-reports/download/${reportDocumentId}?reportType=${reportType}&saveToDb=true`
+                    );
+                    const downloadData = await downloadResp.json();
+
+                    if (!downloadData.success) {
+                        throw new Error('Failed to download report');
+                    }
+
+                    updateSyncItem(itemId, 'success', 'Synced successfully');
+                } catch (err) {
+                    updateSyncItem(itemId, 'error', err.message);
+                }
+            }
+
+            document.getElementById('closeSyncBtn').classList.remove('hidden');
         }
     </script>
 </body>
