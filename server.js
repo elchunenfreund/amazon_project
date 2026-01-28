@@ -2255,43 +2255,43 @@ const VENDOR_REPORT_TYPES = {
         name: 'Real-Time Inventory',
         shortName: 'RT Inventory',
         dataKey: 'inventoryByAsin',
-        metrics: ['asin', 'highlyAvailableInventory']
+        metrics: ['asin', 'highlyAvailableInventory'],
+        isRealTime: true
     },
     'GET_VENDOR_REAL_TIME_SALES_REPORT': {
         name: 'Real-Time Sales',
         shortName: 'RT Sales',
         dataKey: 'salesByAsin',
-        metrics: ['asin', 'orderedUnits', 'orderedRevenue']
+        metrics: ['asin', 'orderedUnits', 'orderedRevenue'],
+        isRealTime: true
     },
     'GET_VENDOR_SALES_REPORT': {
         name: 'Sales Report',
         shortName: 'Sales',
         dataKey: 'salesByAsin',
-        metrics: ['asin', 'shippedUnits', 'shippedRevenue', 'shippedCogs', 'orderedUnits', 'orderedRevenue']
+        metrics: ['asin', 'shippedUnits', 'shippedRevenue', 'shippedCogs', 'orderedUnits', 'orderedRevenue'],
+        requiresOptions: ['reportPeriod', 'distributorView', 'sellingProgram']
     },
     'GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT': {
         name: 'Net Pure Product Margin',
         shortName: 'Margin',
         dataKey: 'netPureProductMarginByAsin',
-        metrics: ['asin', 'netPureProductMargin']
+        metrics: ['asin', 'netPureProductMargin'],
+        requiresOptions: ['reportPeriod']
     },
     'GET_VENDOR_TRAFFIC_REPORT': {
         name: 'Traffic Report',
         shortName: 'Traffic',
         dataKey: 'trafficByAsin',
-        metrics: ['asin', 'glanceViews']
+        metrics: ['asin', 'glanceViews'],
+        requiresOptions: ['reportPeriod']
     },
     'GET_VENDOR_INVENTORY_REPORT': {
         name: 'Inventory Report',
         shortName: 'Inventory',
         dataKey: 'inventoryByAsin',
-        metrics: ['asin', 'sellableOnHandInventoryUnits', 'sellableOnHandInventoryCost', 'unsellableOnHandInventoryUnits']
-    },
-    'GET_SALES_AND_TRAFFIC_REPORT': {
-        name: 'Sales & Traffic',
-        shortName: 'Sales+Traffic',
-        dataKey: 'salesAndTrafficByAsin',
-        metrics: ['asin', 'orderedProductSales', 'totalOrderItems', 'pageViews', 'sessions']
+        metrics: ['asin', 'sellableOnHandInventoryUnits', 'sellableOnHandInventoryCost', 'unsellableOnHandInventoryUnits'],
+        requiresOptions: ['reportPeriod', 'distributorView', 'sellingProgram']
     }
 };
 
@@ -2397,6 +2397,7 @@ app.post('/api/vendor-reports/create', async (req, res) => {
 
         const accessToken = await getValidAccessToken();
         const marketplaceId = 'A2EUQ1WTGCTBG2'; // Canada
+        const reportConfig = VENDOR_REPORT_TYPES[reportType];
 
         // Build report specification based on report type
         const reportSpec = {
@@ -2404,31 +2405,50 @@ app.post('/api/vendor-reports/create', async (req, res) => {
             marketplaceIds: [marketplaceId]
         };
 
-        // Add date range for reports that support it
-        if (startDate) reportSpec.dataStartTime = startDate + 'T00:00:00Z';
-        if (endDate) reportSpec.dataEndTime = endDate + 'T23:59:59Z';
+        // Handle date range based on report type
+        if (reportConfig.isRealTime) {
+            // Real-time reports use different date handling - max 7 day span for inventory, 14 for sales
+            // They can look back up to 30 days
+            const end = endDate ? new Date(endDate) : new Date();
+            const start = startDate ? new Date(startDate) : new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-        // Add report options if provided
+            // Limit span based on report type
+            const maxSpan = reportType.includes('INVENTORY') ? 7 : 14;
+            const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+            if (daysDiff > maxSpan) {
+                start.setTime(end.getTime() - maxSpan * 24 * 60 * 60 * 1000);
+            }
+
+            reportSpec.dataStartTime = start.toISOString();
+            reportSpec.dataEndTime = end.toISOString();
+        } else {
+            // Standard reports need reportPeriod-aligned dates
+            if (startDate) reportSpec.dataStartTime = startDate + 'T00:00:00Z';
+            if (endDate) reportSpec.dataEndTime = endDate + 'T23:59:59Z';
+        }
+
+        // Add report options if provided or use defaults
         if (reportOptions) {
             reportSpec.reportOptions = reportOptions;
-        } else {
-            // Default options for different report types
-            if (reportType === 'GET_VENDOR_SALES_REPORT' ||
-                reportType === 'GET_VENDOR_INVENTORY_REPORT' ||
-                reportType === 'GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT' ||
-                reportType === 'GET_VENDOR_TRAFFIC_REPORT') {
-                reportSpec.reportOptions = {
-                    reportPeriod: 'DAY'
-                };
+        } else if (!reportConfig.isRealTime) {
+            // Set default options for non-real-time reports
+            reportSpec.reportOptions = {};
+
+            // All vendor analytics reports need reportPeriod
+            if (reportConfig.requiresOptions?.includes('reportPeriod')) {
+                reportSpec.reportOptions.reportPeriod = 'DAY';
             }
-            if (reportType === 'GET_VENDOR_SALES_REPORT' || reportType === 'GET_VENDOR_INVENTORY_REPORT') {
-                reportSpec.reportOptions = {
-                    ...reportSpec.reportOptions,
-                    distributorView: 'MANUFACTURING',
-                    sellingProgram: 'RETAIL'
-                };
+
+            // Some reports need distributorView and sellingProgram
+            if (reportConfig.requiresOptions?.includes('distributorView')) {
+                reportSpec.reportOptions.distributorView = 'MANUFACTURING';
+            }
+            if (reportConfig.requiresOptions?.includes('sellingProgram')) {
+                reportSpec.reportOptions.sellingProgram = 'RETAIL';
             }
         }
+
+        console.log(`Creating report ${reportType}:`, JSON.stringify(reportSpec, null, 2));
 
         // Create report request
         const createUrl = 'https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports';
@@ -2444,6 +2464,7 @@ app.post('/api/vendor-reports/create', async (req, res) => {
         const data = await response.json();
 
         if (!response.ok) {
+            console.error(`Report creation failed for ${reportType}:`, data);
             return res.status(response.status).json({
                 success: false,
                 error: 'Failed to create report',
