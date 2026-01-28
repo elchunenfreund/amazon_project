@@ -2333,9 +2333,21 @@ app.get('/vendor-analytics', async (req, res) => {
             }
         }
 
+        // Get latest ASIN tracker data (availability, price) from daily_reports
+        const trackerResult = await pool.query(`
+            SELECT DISTINCT ON (asin) asin, availability, price, seller, stock_level, header, check_date
+            FROM daily_reports
+            ORDER BY asin, check_date DESC
+        `);
+        const asinTrackerData = {};
+        trackerResult.rows.forEach(row => {
+            asinTrackerData[row.asin] = row;
+        });
+
         res.render('vendor-analytics', {
             asins,
             dataByAsin,
+            asinTrackerData,
             reportTypes: VENDOR_REPORT_TYPES,
             startDate,
             endDate

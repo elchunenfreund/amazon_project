@@ -7,7 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
-        .report-cell { min-width: 120px; }
+        .report-cell { min-width: 140px; }
         .sticky-col { position: sticky; left: 0; z-index: 10; background: inherit; }
         .table-container { overflow-x: auto; }
         thead th { position: sticky; top: 0; z-index: 20; }
@@ -25,9 +25,16 @@
             0% { transform: rotate(0deg); }
             100% { transform: rotate(360deg); }
         }
-        .metric-value { font-size: 0.85rem; font-weight: 600; }
-        .metric-label { font-size: 0.65rem; color: #64748b; }
-        .report-badge { font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; }
+        .metric-row { display: flex; justify-content: space-between; align-items: center; padding: 2px 0; }
+        .metric-label { font-size: 0.7rem; color: #64748b; font-weight: 500; }
+        .metric-value { font-size: 0.8rem; font-weight: 600; }
+        .unavailable-row { background-color: #fef2f2 !important; }
+        .unavailable-row:hover { background-color: #fee2e2 !important; }
+        .status-badge { font-size: 0.7rem; padding: 3px 8px; border-radius: 6px; font-weight: 600; display: inline-block; }
+        .status-instock { background: #dcfce7; color: #166534; }
+        .status-backorder { background: #fef3c7; color: #92400e; }
+        .status-unavailable { background: #fee2e2; color: #991b1b; }
+        .status-nodata { background: #f1f5f9; color: #64748b; }
     </style>
 </head>
 <body class="bg-slate-100 min-h-screen">
@@ -88,65 +95,206 @@
                     <thead class="bg-slate-900 text-white">
                         <tr>
                             <th class="sticky-col px-4 py-3 text-left font-bold bg-slate-900">ASIN</th>
-                            <% Object.entries(reportTypes).forEach(([key, config]) => { %>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
-                                <div><%= config.shortName %></div>
-                                <div class="text-xs font-normal text-slate-400"><%= config.metrics.slice(1).join(', ') %></div>
+                            <th class="px-3 py-3 text-center font-bold bg-slate-900" style="min-width: 130px;">
+                                <div>Product Status</div>
+                                <div class="text-xs font-normal text-slate-400">Availability & Price</div>
                             </th>
-                            <% }); %>
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                                <div>RT Inventory</div>
+                                <div class="text-xs font-normal text-slate-400">Highly Available</div>
+                            </th>
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                                <div>RT Sales</div>
+                                <div class="text-xs font-normal text-slate-400">Units & Revenue</div>
+                            </th>
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                                <div>Sales</div>
+                                <div class="text-xs font-normal text-slate-400">Shipped & Ordered</div>
+                            </th>
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                                <div>Traffic</div>
+                                <div class="text-xs font-normal text-slate-400">Glance Views</div>
+                            </th>
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                                <div>Margin</div>
+                                <div class="text-xs font-normal text-slate-400">Net PPM</div>
+                            </th>
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
+                                <div>Inventory</div>
+                                <div class="text-xs font-normal text-slate-400">On Hand</div>
+                            </th>
                             <th class="px-4 py-3 text-center font-bold bg-slate-900">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200">
                         <% if (asins.length === 0) { %>
                         <tr>
-                            <td colspan="<%= Object.keys(reportTypes).length + 2 %>" class="px-4 py-12 text-center text-slate-500">
+                            <td colspan="9" class="px-4 py-12 text-center text-slate-500">
                                 <p class="text-4xl mb-4">📊</p>
                                 <p class="font-medium">No ASINs tracked yet</p>
                                 <p class="text-sm">Add ASINs on the Products page to see analytics</p>
                             </td>
                         </tr>
                         <% } else { %>
-                        <% asins.forEach(asin => { %>
-                        <tr class="hover:bg-slate-50" id="row-<%= asin %>">
-                            <td class="sticky-col px-4 py-3 bg-white">
+                        <% asins.forEach(asin => {
+                            const tracker = asinTrackerData[asin] || {};
+                            const isUnavailable = tracker.availability === 'Unavailable';
+                            const rtInv = dataByAsin[asin]?.['GET_VENDOR_REAL_TIME_INVENTORY_REPORT'];
+                            const rtSales = dataByAsin[asin]?.['GET_VENDOR_REAL_TIME_SALES_REPORT'];
+                            const sales = dataByAsin[asin]?.['GET_VENDOR_SALES_REPORT'];
+                            const traffic = dataByAsin[asin]?.['GET_VENDOR_TRAFFIC_REPORT'];
+                            const margin = dataByAsin[asin]?.['GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT'];
+                            const inventory = dataByAsin[asin]?.['GET_VENDOR_INVENTORY_REPORT'];
+                        %>
+                        <tr class="hover:bg-slate-50 <%= isUnavailable ? 'unavailable-row' : '' %>" id="row-<%= asin %>">
+                            <!-- ASIN Column -->
+                            <td class="sticky-col px-4 py-3 <%= isUnavailable ? 'bg-red-50' : 'bg-white' %>">
                                 <a href="/catalog/<%= asin %>" class="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline">
                                     <%= asin %>
                                 </a>
                             </td>
-                            <% Object.keys(reportTypes).forEach(reportType => { %>
-                            <td class="report-cell px-3 py-3 text-center" id="cell-<%= asin %>-<%= reportType %>">
-                                <% const reportData = dataByAsin[asin]?.[reportType]; %>
-                                <% if (reportData) { %>
-                                    <% const data = typeof reportData === 'string' ? JSON.parse(reportData) : reportData; %>
+
+                            <!-- Product Status Column -->
+                            <td class="px-3 py-3 text-center">
+                                <% if (tracker.availability) { %>
+                                    <% if (tracker.availability === 'In Stock') { %>
+                                        <span class="status-badge status-instock">In Stock</span>
+                                    <% } else if (tracker.availability === 'Back Order') { %>
+                                        <span class="status-badge status-backorder">Back Order</span>
+                                    <% } else if (tracker.availability === 'Unavailable') { %>
+                                        <span class="status-badge status-unavailable">Unavailable</span>
+                                    <% } else { %>
+                                        <span class="status-badge status-nodata"><%= tracker.availability %></span>
+                                    <% } %>
+                                    <% if (tracker.price && tracker.price !== 'N/A') { %>
+                                        <div class="mt-1 text-sm font-semibold text-slate-700"><%= tracker.price %></div>
+                                    <% } %>
+                                <% } else { %>
+                                    <span class="status-badge status-nodata">No Data</span>
+                                <% } %>
+                            </td>
+
+                            <!-- RT Inventory Column -->
+                            <td class="report-cell px-3 py-3 text-center">
+                                <% if (rtInv) {
+                                    const data = typeof rtInv === 'string' ? JSON.parse(rtInv) : rtInv;
+                                %>
+                                    <% if (data.highlyAvailableInventory !== undefined) { %>
+                                        <span class="status-badge <%= data.highlyAvailableInventory ? 'status-instock' : 'status-unavailable' %>">
+                                            <%= data.highlyAvailableInventory ? 'Yes' : 'No' %>
+                                        </span>
+                                    <% } else { %>
+                                        <span class="text-slate-400">-</span>
+                                    <% } %>
+                                <% } else { %>
+                                    <span class="text-slate-400 text-xs">No data</span>
+                                <% } %>
+                            </td>
+
+                            <!-- RT Sales Column -->
+                            <td class="report-cell px-3 py-3">
+                                <% if (rtSales) {
+                                    const data = typeof rtSales === 'string' ? JSON.parse(rtSales) : rtSales;
+                                %>
                                     <div class="space-y-1">
-                                        <% if (data.orderedUnits !== undefined) { %>
-                                        <div><span class="metric-value text-blue-600"><%= data.orderedUnits %></span> <span class="metric-label">units</span></div>
-                                        <% } %>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Units:</span>
+                                            <span class="metric-value text-blue-600"><%= data.orderedUnits !== undefined ? data.orderedUnits : '-' %></span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Revenue:</span>
+                                            <span class="metric-value text-green-600">
+                                                <% if (data.orderedRevenue?.amount !== undefined) { %>
+                                                    $<%= parseFloat(data.orderedRevenue.amount).toFixed(0) %>
+                                                <% } else { %>-<% } %>
+                                            </span>
+                                        </div>
+                                    </div>
+                                <% } else { %>
+                                    <span class="text-slate-400 text-xs">No data</span>
+                                <% } %>
+                            </td>
+
+                            <!-- Sales Column -->
+                            <td class="report-cell px-3 py-3">
+                                <% if (sales) {
+                                    const data = typeof sales === 'string' ? JSON.parse(sales) : sales;
+                                %>
+                                    <div class="space-y-1">
+                                        <div class="metric-row">
+                                            <span class="metric-label">Shipped:</span>
+                                            <span class="metric-value text-purple-600"><%= data.shippedUnits !== undefined ? data.shippedUnits : '-' %></span>
+                                        </div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Ordered:</span>
+                                            <span class="metric-value text-blue-600"><%= data.orderedUnits !== undefined ? data.orderedUnits : '-' %></span>
+                                        </div>
                                         <% if (data.orderedRevenue?.amount !== undefined) { %>
-                                        <div><span class="metric-value text-green-600">$<%= parseFloat(data.orderedRevenue.amount).toFixed(2) %></span></div>
-                                        <% } %>
-                                        <% if (data.shippedUnits !== undefined) { %>
-                                        <div><span class="metric-value text-purple-600"><%= data.shippedUnits %></span> <span class="metric-label">shipped</span></div>
-                                        <% } %>
-                                        <% if (data.glanceViews !== undefined) { %>
-                                        <div><span class="metric-value text-orange-600"><%= data.glanceViews %></span> <span class="metric-label">views</span></div>
-                                        <% } %>
-                                        <% if (data.netPureProductMargin !== undefined) { %>
-                                        <div><span class="metric-value text-teal-600"><%= (data.netPureProductMargin * 100).toFixed(1) %>%</span> <span class="metric-label">margin</span></div>
-                                        <% } %>
-                                        <% if (data.sellableOnHandInventoryUnits !== undefined) { %>
-                                        <div><span class="metric-value text-indigo-600"><%= data.sellableOnHandInventoryUnits %></span> <span class="metric-label">on hand</span></div>
-                                        <% } %>
-                                        <% if (data.highlyAvailableInventory !== undefined) { %>
-                                        <div><span class="metric-value <%= data.highlyAvailableInventory ? 'text-green-600' : 'text-red-600' %>"><%= data.highlyAvailableInventory ? 'Yes' : 'No' %></span></div>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Revenue:</span>
+                                            <span class="metric-value text-green-600">$<%= parseFloat(data.orderedRevenue.amount).toFixed(0) %></span>
+                                        </div>
                                         <% } %>
                                     </div>
                                 <% } else { %>
-                                    <span class="text-slate-400">-</span>
+                                    <span class="text-slate-400 text-xs">No data</span>
                                 <% } %>
                             </td>
-                            <% }); %>
+
+                            <!-- Traffic Column -->
+                            <td class="report-cell px-3 py-3 text-center">
+                                <% if (traffic) {
+                                    const data = typeof traffic === 'string' ? JSON.parse(traffic) : traffic;
+                                %>
+                                    <div class="metric-row justify-center">
+                                        <span class="metric-value text-orange-600"><%= data.glanceViews !== undefined ? data.glanceViews.toLocaleString() : '-' %></span>
+                                    </div>
+                                    <div class="text-xs text-slate-500">views</div>
+                                <% } else { %>
+                                    <span class="text-slate-400 text-xs">No data</span>
+                                <% } %>
+                            </td>
+
+                            <!-- Margin Column -->
+                            <td class="report-cell px-3 py-3 text-center">
+                                <% if (margin) {
+                                    const data = typeof margin === 'string' ? JSON.parse(margin) : margin;
+                                %>
+                                    <% if (data.netPureProductMargin !== undefined) { %>
+                                        <span class="metric-value <%= data.netPureProductMargin >= 0 ? 'text-teal-600' : 'text-red-600' %>">
+                                            <%= (data.netPureProductMargin * 100).toFixed(1) %>%
+                                        </span>
+                                    <% } else { %>
+                                        <span class="text-slate-400">-</span>
+                                    <% } %>
+                                <% } else { %>
+                                    <span class="text-slate-400 text-xs">No data</span>
+                                <% } %>
+                            </td>
+
+                            <!-- Inventory Column -->
+                            <td class="report-cell px-3 py-3">
+                                <% if (inventory) {
+                                    const data = typeof inventory === 'string' ? JSON.parse(inventory) : inventory;
+                                %>
+                                    <div class="space-y-1">
+                                        <div class="metric-row">
+                                            <span class="metric-label">Sellable:</span>
+                                            <span class="metric-value text-indigo-600"><%= data.sellableOnHandInventoryUnits !== undefined ? data.sellableOnHandInventoryUnits : '-' %></span>
+                                        </div>
+                                        <% if (data.unsellableOnHandInventoryUnits !== undefined && data.unsellableOnHandInventoryUnits > 0) { %>
+                                        <div class="metric-row">
+                                            <span class="metric-label">Unsellable:</span>
+                                            <span class="metric-value text-red-500"><%= data.unsellableOnHandInventoryUnits %></span>
+                                        </div>
+                                        <% } %>
+                                    </div>
+                                <% } else { %>
+                                    <span class="text-slate-400 text-xs">No data</span>
+                                <% } %>
+                            </td>
+
+                            <!-- Actions Column -->
                             <td class="px-4 py-3 text-center">
                                 <a href="/catalog/<%= asin %>" class="text-blue-600 hover:text-blue-800 text-xs font-medium">
                                     View Catalog
