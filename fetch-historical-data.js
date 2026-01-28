@@ -28,9 +28,10 @@ const REPORT_DATA_KEYS = {
     'GET_VENDOR_INVENTORY_REPORT': 'inventoryByAsin'
 };
 
-// Rate limiting - Amazon allows ~2 reports/minute
-const DELAY_BETWEEN_REQUESTS = 35000; // 35 seconds between requests
-const MAX_RETRIES = 3;
+// Rate limiting - Amazon has strict quotas on vendor reports
+const DELAY_BETWEEN_REQUESTS = 90000; // 90 seconds between requests (safer)
+const QUOTA_EXCEEDED_DELAY = 300000; // 5 minutes when quota exceeded
+const MAX_RETRIES = 5;
 
 async function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
@@ -318,8 +319,11 @@ async function fetchHistoricalData() {
                     console.error(`  ERROR (attempt ${retries}/${MAX_RETRIES}): ${err.message}`);
 
                     if (retries < MAX_RETRIES) {
-                        console.log(`  Retrying in 60 seconds...`);
-                        await sleep(60000);
+                        // Check if quota exceeded - need longer wait
+                        const isQuotaError = err.message.includes('QuotaExceeded');
+                        const waitTime = isQuotaError ? QUOTA_EXCEEDED_DELAY : 60000;
+                        console.log(`  Retrying in ${waitTime / 1000} seconds...${isQuotaError ? ' (quota exceeded)' : ''}`);
+                        await sleep(waitTime);
                     } else {
                         totalErrors++;
                     }
