@@ -138,7 +138,10 @@ async function waitForReport(accessToken, reportId, maxAttempts = 60) {
         if (data.processingStatus === 'DONE') {
             return data.reportDocumentId;
         } else if (data.processingStatus === 'CANCELLED' || data.processingStatus === 'FATAL') {
-            throw new Error(`Report ${reportId} failed: ${data.processingStatus}`);
+            // FATAL usually means no data for this period - skip quickly
+            const err = new Error(`Report ${reportId} failed: ${data.processingStatus}`);
+            err.isFatal = true;
+            throw err;
         }
 
         if (i % 6 === 0) { // Log every 30 seconds
@@ -317,6 +320,14 @@ async function fetchHistoricalData() {
                 } catch (err) {
                     retries++;
                     console.error(`  ERROR (attempt ${retries}/${MAX_RETRIES}): ${err.message}`);
+
+                    // FATAL errors mean Amazon can't generate the report (no data for period)
+                    // Skip quickly instead of wasting retries
+                    if (err.isFatal) {
+                        console.log(`  Skipping - Amazon returned FATAL (likely no data for this period)`);
+                        totalErrors++;
+                        break;
+                    }
 
                     if (retries < MAX_RETRIES) {
                         // Check if quota exceeded - need longer wait
