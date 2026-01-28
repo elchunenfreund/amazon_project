@@ -89,12 +89,12 @@
                         <tr>
                             <th class="sticky-col px-4 py-3 text-left font-bold bg-slate-900">ASIN</th>
                             <% Object.entries(reportTypes).forEach(([key, config]) => { %>
-                            <th class="report-cell px-3 py-3 text-center font-bold">
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900">
                                 <div><%= config.shortName %></div>
                                 <div class="text-xs font-normal text-slate-400"><%= config.metrics.slice(1).join(', ') %></div>
                             </th>
                             <% }); %>
-                            <th class="px-4 py-3 text-center font-bold">Actions</th>
+                            <th class="px-4 py-3 text-center font-bold bg-slate-900">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200">
