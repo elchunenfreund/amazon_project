@@ -2435,8 +2435,25 @@ app.post('/api/vendor-reports/create', async (req, res) => {
             reportSpec.reportOptions = {};
 
             // All vendor analytics reports need reportPeriod
+            // Use WEEK instead of DAY - more reliable and matches Amazon's data availability
             if (reportConfig.requiresOptions?.includes('reportPeriod')) {
-                reportSpec.reportOptions.reportPeriod = 'DAY';
+                reportSpec.reportOptions.reportPeriod = 'WEEK';
+
+                // For WEEK reports, align dates to week boundaries (Sunday-Saturday)
+                const endDateObj = endDate ? new Date(endDate) : new Date();
+                // Go back to last Saturday (end of complete week)
+                const dayOfWeek = endDateObj.getUTCDay();
+                const lastSaturday = new Date(endDateObj);
+                lastSaturday.setUTCDate(lastSaturday.getUTCDate() - (dayOfWeek + 1));
+                lastSaturday.setUTCHours(23, 59, 59, 0);
+
+                // Start from 4 weeks before (Sunday)
+                const startSunday = new Date(lastSaturday);
+                startSunday.setUTCDate(startSunday.getUTCDate() - 27);
+                startSunday.setUTCHours(0, 0, 0, 0);
+
+                reportSpec.dataStartTime = startSunday.toISOString();
+                reportSpec.dataEndTime = lastSaturday.toISOString();
             }
 
             // Some reports need distributorView and sellingProgram
