@@ -315,15 +315,72 @@
 
                             <!-- Actions Column -->
                             <td class="px-4 py-3 text-center">
-                                <a href="/catalog/<%= asin %>" class="text-blue-600 hover:text-blue-800 text-xs font-medium">
-                                    View Catalog
-                                </a>
+                                <div class="flex flex-col gap-1">
+                                    <button onclick="showAsinDetail('<%= asin %>')" class="text-blue-600 hover:text-blue-800 text-xs font-medium hover:underline">
+                                        View Details
+                                    </button>
+                                    <a href="/catalog/<%= asin %>" class="text-slate-500 hover:text-slate-700 text-xs">
+                                        Catalog
+                                    </a>
+                                </div>
                             </td>
                         </tr>
                         <% }); %>
                         <% } %>
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- ASIN Detail Modal -->
+        <div id="asinDetailModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-white rounded-2xl p-6 max-w-2xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-auto">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-slate-900">
+                        ASIN: <span id="detailAsin" class="font-mono text-blue-600"></span>
+                    </h3>
+                    <button onclick="closeAsinDetail()" class="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
+                </div>
+
+                <!-- Product Status -->
+                <div id="detailStatus" class="mb-6 p-4 bg-slate-50 rounded-xl"></div>
+
+                <!-- Report Sections -->
+                <div class="space-y-4">
+                    <div class="border border-slate-200 rounded-xl overflow-hidden">
+                        <div class="bg-slate-100 px-4 py-2 font-bold text-slate-700">Real-Time Inventory</div>
+                        <div id="detailRtInv" class="p-4"></div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl overflow-hidden">
+                        <div class="bg-slate-100 px-4 py-2 font-bold text-slate-700">Real-Time Sales</div>
+                        <div id="detailRtSales" class="p-4"></div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl overflow-hidden">
+                        <div class="bg-slate-100 px-4 py-2 font-bold text-slate-700">Sales Report</div>
+                        <div id="detailSales" class="p-4"></div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl overflow-hidden">
+                        <div class="bg-slate-100 px-4 py-2 font-bold text-slate-700">Traffic Report</div>
+                        <div id="detailTraffic" class="p-4"></div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl overflow-hidden">
+                        <div class="bg-slate-100 px-4 py-2 font-bold text-slate-700">Net Pure Product Margin</div>
+                        <div id="detailMargin" class="p-4"></div>
+                    </div>
+                    <div class="border border-slate-200 rounded-xl overflow-hidden">
+                        <div class="bg-slate-100 px-4 py-2 font-bold text-slate-700">Inventory Report</div>
+                        <div id="detailInventory" class="p-4"></div>
+                    </div>
+                </div>
+
+                <div class="mt-6 flex justify-end gap-3">
+                    <a id="detailCatalogLink" href="#" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-300 transition-all">
+                        View Catalog
+                    </a>
+                    <button onclick="closeAsinDetail()" class="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-blue-700 transition-all">
+                        Close
+                    </button>
+                </div>
             </div>
         </div>
 
@@ -346,6 +403,8 @@
     <script>
         const reportTypes = <%- JSON.stringify(reportTypes) %>;
         const reportTypeKeys = Object.keys(reportTypes);
+        const dataByAsin = <%- JSON.stringify(dataByAsin) %>;
+        const asinTrackerData = <%- JSON.stringify(asinTrackerData) %>;
 
         function applyDateFilter() {
             const startDate = document.getElementById('startDate').value;
@@ -476,6 +535,104 @@
 
         function sleep(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
+        }
+
+        // ASIN Detail Modal Functions
+        function showAsinDetail(asin) {
+            document.getElementById('detailAsin').textContent = asin;
+            document.getElementById('detailCatalogLink').href = `/catalog/${asin}`;
+
+            // Product Status
+            const tracker = asinTrackerData[asin] || {};
+            let statusHtml = '';
+            if (tracker.availability) {
+                let badgeClass = 'status-nodata';
+                if (tracker.availability === 'In Stock') badgeClass = 'status-instock';
+                else if (tracker.availability === 'Back Order') badgeClass = 'status-backorder';
+                else if (tracker.availability === 'Unavailable') badgeClass = 'status-unavailable';
+
+                statusHtml = `<div class="flex items-center gap-4">
+                    <div><span class="status-badge ${badgeClass}">${tracker.availability}</span></div>
+                    ${tracker.price && tracker.price !== 'N/A' ? `<div class="text-xl font-bold text-slate-700">${tracker.price}</div>` : ''}
+                    ${tracker.header ? `<div class="text-sm text-slate-500 flex-1">${tracker.header}</div>` : ''}
+                </div>`;
+            } else {
+                statusHtml = '<span class="text-slate-400">No tracker data available</span>';
+            }
+            document.getElementById('detailStatus').innerHTML = statusHtml;
+
+            // RT Inventory
+            const rtInv = dataByAsin[asin]?.['GET_VENDOR_REAL_TIME_INVENTORY_REPORT'];
+            document.getElementById('detailRtInv').innerHTML = rtInv
+                ? formatMetric('Highly Available Inventory', rtInv.highlyAvailableInventory !== undefined
+                    ? (rtInv.highlyAvailableInventory ? '<span class="text-green-600 font-bold">Yes</span>' : '<span class="text-red-600 font-bold">No</span>')
+                    : '-')
+                : noDataHtml();
+
+            // RT Sales
+            const rtSales = dataByAsin[asin]?.['GET_VENDOR_REAL_TIME_SALES_REPORT'];
+            document.getElementById('detailRtSales').innerHTML = rtSales
+                ? `<div class="grid grid-cols-2 gap-4">
+                    ${formatMetric('Ordered Units', rtSales.orderedUnits ?? '-')}
+                    ${formatMetric('Ordered Revenue', rtSales.orderedRevenue?.amount ? '$' + parseFloat(rtSales.orderedRevenue.amount).toFixed(2) : '-')}
+                   </div>`
+                : noDataHtml();
+
+            // Sales
+            const sales = dataByAsin[asin]?.['GET_VENDOR_SALES_REPORT'];
+            document.getElementById('detailSales').innerHTML = sales
+                ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    ${formatMetric('Shipped Units', sales.shippedUnits ?? '-')}
+                    ${formatMetric('Shipped Revenue', sales.shippedRevenue?.amount ? '$' + parseFloat(sales.shippedRevenue.amount).toFixed(2) : '-')}
+                    ${formatMetric('Shipped COGS', sales.shippedCogs?.amount ? '$' + parseFloat(sales.shippedCogs.amount).toFixed(2) : '-')}
+                    ${formatMetric('Ordered Units', sales.orderedUnits ?? '-')}
+                    ${formatMetric('Ordered Revenue', sales.orderedRevenue?.amount ? '$' + parseFloat(sales.orderedRevenue.amount).toFixed(2) : '-')}
+                   </div>`
+                : noDataHtml();
+
+            // Traffic
+            const traffic = dataByAsin[asin]?.['GET_VENDOR_TRAFFIC_REPORT'];
+            document.getElementById('detailTraffic').innerHTML = traffic
+                ? formatMetric('Glance Views', traffic.glanceViews?.toLocaleString() ?? '-')
+                : noDataHtml();
+
+            // Margin
+            const margin = dataByAsin[asin]?.['GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT'];
+            document.getElementById('detailMargin').innerHTML = margin
+                ? formatMetric('Net Pure Product Margin', margin.netPureProductMargin !== undefined
+                    ? `<span class="${margin.netPureProductMargin >= 0 ? 'text-green-600' : 'text-red-600'} font-bold">${(margin.netPureProductMargin * 100).toFixed(2)}%</span>`
+                    : '-')
+                : noDataHtml();
+
+            // Inventory
+            const inventory = dataByAsin[asin]?.['GET_VENDOR_INVENTORY_REPORT'];
+            document.getElementById('detailInventory').innerHTML = inventory
+                ? `<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    ${formatMetric('Sellable On Hand Units', inventory.sellableOnHandInventoryUnits ?? '-')}
+                    ${formatMetric('Sellable On Hand Cost', inventory.sellableOnHandInventoryCost?.amount ? '$' + parseFloat(inventory.sellableOnHandInventoryCost.amount).toFixed(2) : '-')}
+                    ${formatMetric('Unsellable On Hand Units', inventory.unsellableOnHandInventoryUnits ?? '-')}
+                   </div>`
+                : noDataHtml();
+
+            // Show modal
+            document.getElementById('asinDetailModal').classList.remove('hidden');
+            document.getElementById('asinDetailModal').classList.add('flex');
+        }
+
+        function closeAsinDetail() {
+            document.getElementById('asinDetailModal').classList.add('hidden');
+            document.getElementById('asinDetailModal').classList.remove('flex');
+        }
+
+        function formatMetric(label, value) {
+            return `<div class="metric-item">
+                <div class="metric-label">${label}</div>
+                <div class="metric-value text-lg">${value}</div>
+            </div>`;
+        }
+
+        function noDataHtml() {
+            return '<span class="text-slate-400">No data available for this period</span>';
         }
     </script>
 </body>
