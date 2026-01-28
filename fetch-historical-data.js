@@ -61,7 +61,7 @@ async function getAccessToken() {
         body: new URLSearchParams({
             grant_type: 'refresh_token',
             refresh_token: refresh_token,
-            client_id: process.env.LWA_APP_ID,
+            client_id: process.env.LWA_CLIENT_ID,
             client_secret: process.env.LWA_CLIENT_SECRET
         })
     });
