@@ -81,6 +81,21 @@ const client = new Client({
             CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_reports_unique
             ON vendor_reports(report_type, asin, report_date);
         `);
+        // Add new columns for tracking actual data period (for RT reports fix)
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='vendor_reports' AND column_name='data_start_date') THEN
+                    ALTER TABLE vendor_reports ADD COLUMN data_start_date DATE;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='vendor_reports' AND column_name='data_end_date') THEN
+                    ALTER TABLE vendor_reports ADD COLUMN data_end_date DATE;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='vendor_reports' AND column_name='report_request_date') THEN
+                    ALTER TABLE vendor_reports ADD COLUMN report_request_date TIMESTAMP;
+                END IF;
+            END $$;
+        `);
         console.log("✅ Table 'vendor_reports' is ready.");
 
         // 4. Create the Catalog Details table (for product catalog info)
@@ -129,6 +144,32 @@ const client = new Client({
             CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(po_status);
         `);
         console.log("✅ Table 'purchase_orders' is ready.");
+
+        // 5b. Create PO Line Items table (denormalized for faster ASIN queries)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS po_line_items (
+                id SERIAL PRIMARY KEY,
+                po_number TEXT NOT NULL,
+                asin TEXT NOT NULL,
+                vendor_sku TEXT,
+                ordered_quantity INTEGER,
+                acknowledged_quantity INTEGER,
+                net_cost_amount DECIMAL(10,2),
+                net_cost_currency TEXT,
+                product_title TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_po_line_items_asin ON po_line_items(asin);
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_po_line_items_po ON po_line_items(po_number);
+        `);
+        await client.query(`
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_po_line_items_unique ON po_line_items(po_number, asin);
+        `);
+        console.log("✅ Table 'po_line_items' is ready.");
 
         // 6. Create OAuth Tokens table (if not exists)
         await client.query(`

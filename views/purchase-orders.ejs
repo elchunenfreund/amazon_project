@@ -208,6 +208,9 @@
 
     <script>
         const purchaseOrders = <%- JSON.stringify(purchaseOrders) %>;
+        const productTitles = <%- JSON.stringify(productTitles || {}) %>;
+        const vendorSkus = <%- JSON.stringify(vendorSkus || {}) %>;
+        const inventoryByAsin = <%- JSON.stringify(inventoryByAsin || {}) %>;
 
         // Set default date range (last 30 days)
         document.getElementById('createdAfter').value = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -266,54 +269,140 @@
             const rawData = typeof po.raw_data === 'string' ? JSON.parse(po.raw_data) : po.raw_data;
             const items = typeof po.items === 'string' ? JSON.parse(po.items) : po.items;
 
+            // Calculate totals
+            let totalOrdered = 0;
+            let totalAccepted = 0;
+            let totalValue = 0;
+            let hasInventoryIssues = false;
+
             let itemsHtml = '';
             if (items && Array.isArray(items)) {
+                const itemRows = items.map(item => {
+                    const asin = item.amazonProductIdentifier || '-';
+                    const title = productTitles[asin] || '';
+                    const sku = item.vendorProductIdentifier || vendorSkus[asin] || '-';
+                    const ordered = parseInt(item.orderedQuantity?.amount) || 0;
+                    const accepted = parseInt(item.acknowledgedQuantity?.amount) || 0;
+                    const unitCost = item.netCost?.amount ? parseFloat(item.netCost.amount) : 0;
+                    const lineTotal = ordered * unitCost;
+
+                    totalOrdered += ordered;
+                    totalAccepted += accepted;
+                    totalValue += lineTotal;
+
+                    // Get inventory info
+                    const inv = inventoryByAsin[asin];
+                    const currentInv = inv?.sellableUnits || 0;
+                    const invStatus = !inv ? 'no-data' : (currentInv === 0 ? 'out' : (currentInv < ordered ? 'low' : 'ok'));
+                    if (invStatus === 'out' || invStatus === 'low') hasInventoryIssues = true;
+
+                    const invBadge = invStatus === 'no-data' ? '<span class="text-slate-400 text-xs">No data</span>' :
+                                     invStatus === 'out' ? '<span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-medium">0 units</span>' :
+                                     invStatus === 'low' ? '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-medium">' + currentInv + ' units</span>' :
+                                     '<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-medium">' + currentInv + ' units</span>';
+
+                    return `
+                        <tr class="${invStatus === 'out' ? 'bg-red-50' : ''}">
+                            <td class="px-3 py-2">
+                                <a href="/catalog/${asin}" class="font-mono font-bold text-blue-600 hover:underline">${asin}</a>
+                                ${title ? '<div class="text-xs text-slate-500 max-w-[200px] truncate" title="' + title.replace(/"/g, '&quot;') + '">' + title + '</div>' : ''}
+                            </td>
+                            <td class="px-3 py-2 text-xs text-slate-600">${sku}</td>
+                            <td class="px-3 py-2 text-right font-medium">${ordered}</td>
+                            <td class="px-3 py-2 text-right font-medium ${accepted < ordered ? 'text-amber-600' : ''}">${accepted || '-'}</td>
+                            <td class="px-3 py-2 text-center">${invBadge}</td>
+                            <td class="px-3 py-2 text-right">${unitCost ? '$' + unitCost.toFixed(2) : '-'}</td>
+                            <td class="px-3 py-2 text-right font-medium">${lineTotal ? '$' + lineTotal.toFixed(2) : '-'}</td>
+                        </tr>
+                    `;
+                }).join('');
+
                 itemsHtml = `
-                    <h4 class="font-bold text-slate-800 mb-3">Line Items</h4>
+                    <h4 class="font-bold text-slate-800 mb-3">Line Items (${items.length})</h4>
                     <div class="overflow-x-auto">
                         <table class="w-full text-sm border border-slate-200 rounded-lg">
                             <thead class="bg-slate-100">
                                 <tr>
-                                    <th class="px-3 py-2 text-left">ASIN</th>
+                                    <th class="px-3 py-2 text-left">Product (ASIN / Title)</th>
                                     <th class="px-3 py-2 text-left">Vendor SKU</th>
-                                    <th class="px-3 py-2 text-right">Qty Ordered</th>
-                                    <th class="px-3 py-2 text-right">Qty Accepted</th>
+                                    <th class="px-3 py-2 text-right">Ordered</th>
+                                    <th class="px-3 py-2 text-right">Accepted</th>
+                                    <th class="px-3 py-2 text-center">Inventory</th>
                                     <th class="px-3 py-2 text-right">Unit Cost</th>
+                                    <th class="px-3 py-2 text-right">Line Total</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-200">
-                                ${items.map(item => `
-                                    <tr>
-                                        <td class="px-3 py-2 font-mono">${item.amazonProductIdentifier || '-'}</td>
-                                        <td class="px-3 py-2">${item.vendorProductIdentifier || '-'}</td>
-                                        <td class="px-3 py-2 text-right">${item.orderedQuantity?.amount || '-'}</td>
-                                        <td class="px-3 py-2 text-right">${item.acknowledgedQuantity?.amount || '-'}</td>
-                                        <td class="px-3 py-2 text-right">${item.netCost?.amount ? '$' + parseFloat(item.netCost.amount).toFixed(2) : '-'}</td>
-                                    </tr>
-                                `).join('')}
+                                ${itemRows}
                             </tbody>
+                            <tfoot class="bg-slate-50 font-bold">
+                                <tr>
+                                    <td class="px-3 py-2">Totals</td>
+                                    <td class="px-3 py-2"></td>
+                                    <td class="px-3 py-2 text-right">${totalOrdered}</td>
+                                    <td class="px-3 py-2 text-right">${totalAccepted}</td>
+                                    <td class="px-3 py-2"></td>
+                                    <td class="px-3 py-2"></td>
+                                    <td class="px-3 py-2 text-right">$${totalValue.toFixed(2)}</td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                 `;
             }
 
+            // Status badge color
+            const statusColors = {
+                'New': 'bg-blue-100 text-blue-800',
+                'Acknowledged': 'bg-amber-100 text-amber-800',
+                'Shipped': 'bg-green-100 text-green-800',
+                'Closed': 'bg-slate-100 text-slate-800',
+                'Cancelled': 'bg-red-100 text-red-800'
+            };
+            const statusClass = statusColors[po.po_status] || 'bg-slate-100 text-slate-800';
+
             document.getElementById('poModalContent').innerHTML = `
-                <div class="grid grid-cols-2 gap-6 mb-6">
-                    <div>
-                        <div class="text-sm text-slate-500">PO Number</div>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="bg-slate-50 p-3 rounded-lg">
+                        <div class="text-xs text-slate-500">PO Number</div>
                         <div class="font-mono font-bold text-lg">${po.po_number}</div>
                     </div>
-                    <div>
-                        <div class="text-sm text-slate-500">Status</div>
-                        <div class="font-bold text-lg">${po.po_status || 'Unknown'}</div>
+                    <div class="bg-slate-50 p-3 rounded-lg">
+                        <div class="text-xs text-slate-500">Status</div>
+                        <span class="inline-block mt-1 px-3 py-1 rounded-full text-sm font-bold ${statusClass}">${po.po_status || 'Unknown'}</span>
                     </div>
-                    <div>
-                        <div class="text-sm text-slate-500">PO Date</div>
-                        <div>${po.po_date ? new Date(po.po_date).toLocaleString() : '-'}</div>
+                    <div class="bg-slate-50 p-3 rounded-lg">
+                        <div class="text-xs text-slate-500">PO Date</div>
+                        <div class="font-medium">${po.po_date ? new Date(po.po_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}</div>
                     </div>
-                    <div>
-                        <div class="text-sm text-slate-500">Last Updated</div>
-                        <div>${po.updated_at ? new Date(po.updated_at).toLocaleString() : '-'}</div>
+                    <div class="bg-slate-50 p-3 rounded-lg">
+                        <div class="text-xs text-slate-500">Total Value</div>
+                        <div class="font-bold text-lg text-green-700">$${totalValue.toFixed(2)}</div>
+                    </div>
+                </div>
+
+                ${hasInventoryIssues ? `
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                    <div class="flex items-center gap-2 text-amber-800">
+                        <span class="text-xl">⚠️</span>
+                        <span class="font-bold">Inventory Alert</span>
+                    </div>
+                    <p class="text-sm text-amber-700 mt-1">Some items in this PO have low or zero inventory. Check the inventory column for details.</p>
+                </div>
+                ` : ''}
+
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="border border-slate-200 rounded-lg p-3">
+                        <div class="text-xs text-slate-500 mb-1">Ship Window</div>
+                        ${po.ship_window_start && po.ship_window_end ? `
+                            <div class="font-medium">${new Date(po.ship_window_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(po.ship_window_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                        ` : '<span class="text-slate-400">Not specified</span>'}
+                    </div>
+                    <div class="border border-slate-200 rounded-lg p-3">
+                        <div class="text-xs text-slate-500 mb-1">Delivery Window</div>
+                        ${po.delivery_window_start && po.delivery_window_end ? `
+                            <div class="font-medium">${new Date(po.delivery_window_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(po.delivery_window_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                        ` : '<span class="text-slate-400">Not specified</span>'}
                     </div>
                 </div>
 
