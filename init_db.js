@@ -57,6 +57,88 @@ const client = new Client({
         `);
         console.log("✅ Table 'daily_reports' is ready.");
 
+        // 3. Create the Vendor Reports table (for SP-API analytics reports)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS vendor_reports (
+                id SERIAL PRIMARY KEY,
+                report_type TEXT NOT NULL,
+                report_id TEXT,
+                asin TEXT,
+                report_date DATE NOT NULL,
+                data JSONB NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        // Add index for faster queries
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_vendor_reports_asin_date ON vendor_reports(asin, report_date);
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_vendor_reports_type_date ON vendor_reports(report_type, report_date);
+        `);
+        console.log("✅ Table 'vendor_reports' is ready.");
+
+        // 4. Create the Catalog Details table (for product catalog info)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS catalog_details (
+                id SERIAL PRIMARY KEY,
+                asin TEXT UNIQUE NOT NULL,
+                title TEXT,
+                brand TEXT,
+                product_type TEXT,
+                images JSONB,
+                attributes JSONB,
+                dimensions JSONB,
+                identifiers JSONB,
+                sales_ranks JSONB,
+                last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log("✅ Table 'catalog_details' is ready.");
+
+        // 5. Create the Purchase Orders table (for vendor PO tracking)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS purchase_orders (
+                id SERIAL PRIMARY KEY,
+                po_number TEXT UNIQUE NOT NULL,
+                po_date TIMESTAMP,
+                po_status TEXT,
+                ship_window_start TIMESTAMP,
+                ship_window_end TIMESTAMP,
+                delivery_window_start TIMESTAMP,
+                delivery_window_end TIMESTAMP,
+                buying_party JSONB,
+                selling_party JSONB,
+                ship_to_party JSONB,
+                bill_to_party JSONB,
+                items JSONB,
+                raw_data JSONB,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_purchase_orders_date ON purchase_orders(po_date);
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_purchase_orders_status ON purchase_orders(po_status);
+        `);
+        console.log("✅ Table 'purchase_orders' is ready.");
+
+        // 6. Create OAuth Tokens table (if not exists)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS oauth_tokens (
+                id SERIAL PRIMARY KEY,
+                refresh_token TEXT,
+                access_token TEXT,
+                expires_at TIMESTAMP,
+                selling_partner_id TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log("✅ Table 'oauth_tokens' is ready.");
+
     } catch (e) {
         console.error("❌ Database Initialization Error:", e.message);
     } finally {

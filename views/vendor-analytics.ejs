@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Vendor Analytics - Amazon Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .report-cell { min-width: 120px; }
+        .sticky-col { position: sticky; left: 0; z-index: 10; background: inherit; }
+        .table-container { overflow-x: auto; }
+        thead th { position: sticky; top: 0; z-index: 20; }
+        thead th.sticky-col { z-index: 30; }
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            animation: spin 1s linear infinite;
+            display: inline-block;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .metric-value { font-size: 0.85rem; font-weight: 600; }
+        .metric-label { font-size: 0.65rem; color: #64748b; }
+        .report-badge { font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+    <div class="max-w-full mx-auto px-4 md:px-8 py-8">
+        <!-- Header -->
+        <header class="mb-8">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 class="text-4xl font-black text-slate-900 tracking-tight">Vendor Analytics</h1>
+                    <p class="text-slate-500 font-medium">ASIN-level performance metrics from SP-API reports</p>
+                </div>
+                <div class="flex gap-3">
+                    <a href="/" class="bg-slate-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-slate-700 transition-all">Dashboard</a>
+                    <a href="/purchase-orders" class="bg-purple-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-purple-700 transition-all">Purchase Orders</a>
+                </div>
+            </div>
+        </header>
+
+        <!-- Date Range Filter -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200">
+            <div class="flex flex-wrap items-end gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
+                    <input type="date" id="startDate" value="<%= startDate %>"
+                           class="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">End Date</label>
+                    <input type="date" id="endDate" value="<%= endDate %>"
+                           class="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                </div>
+                <button onclick="applyDateFilter()" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 transition-all">
+                    Apply Filter
+                </button>
+                <button onclick="refreshAllReports()" id="refreshBtn" class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition-all">
+                    Sync Reports from SP-API
+                </button>
+                <div id="syncStatus" class="text-sm text-slate-500 ml-4"></div>
+            </div>
+        </div>
+
+        <!-- Report Type Legend -->
+        <div class="bg-white rounded-2xl shadow-lg p-4 mb-6 border border-slate-200">
+            <div class="flex flex-wrap gap-3 text-xs">
+                <% Object.entries(reportTypes).forEach(([key, config]) => { %>
+                <div class="flex items-center gap-2 px-3 py-1 bg-slate-100 rounded-full">
+                    <span class="font-bold text-slate-700"><%= config.shortName %></span>
+                    <span class="text-slate-500">(<%= key.replace('GET_', '').replace(/_/g, ' ') %>)</span>
+                </div>
+                <% }); %>
+            </div>
+        </div>
+
+        <!-- Main Data Table -->
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <div class="table-container max-h-[70vh] overflow-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-900 text-white">
+                        <tr>
+                            <th class="sticky-col px-4 py-3 text-left font-bold bg-slate-900">ASIN</th>
+                            <% Object.entries(reportTypes).forEach(([key, config]) => { %>
+                            <th class="report-cell px-3 py-3 text-center font-bold">
+                                <div><%= config.shortName %></div>
+                                <div class="text-xs font-normal text-slate-400"><%= config.metrics.slice(1).join(', ') %></div>
+                            </th>
+                            <% }); %>
+                            <th class="px-4 py-3 text-center font-bold">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        <% if (asins.length === 0) { %>
+                        <tr>
+                            <td colspan="<%= Object.keys(reportTypes).length + 2 %>" class="px-4 py-12 text-center text-slate-500">
+                                <p class="text-4xl mb-4">📊</p>
+                                <p class="font-medium">No ASINs tracked yet</p>
+                                <p class="text-sm">Add ASINs on the Products page to see analytics</p>
+                            </td>
+                        </tr>
+                        <% } else { %>
+                        <% asins.forEach(asin => { %>
+                        <tr class="hover:bg-slate-50" id="row-<%= asin %>">
+                            <td class="sticky-col px-4 py-3 bg-white">
+                                <a href="/catalog/<%= asin %>" class="font-mono font-bold text-blue-600 hover:text-blue-800 hover:underline">
+                                    <%= asin %>
+                                </a>
+                            </td>
+                            <% Object.keys(reportTypes).forEach(reportType => { %>
+                            <td class="report-cell px-3 py-3 text-center" id="cell-<%= asin %>-<%= reportType %>">
+                                <% const reportData = dataByAsin[asin]?.[reportType]; %>
+                                <% if (reportData) { %>
+                                    <% const data = typeof reportData === 'string' ? JSON.parse(reportData) : reportData; %>
+                                    <div class="space-y-1">
+                                        <% if (data.orderedUnits !== undefined) { %>
+                                        <div><span class="metric-value text-blue-600"><%= data.orderedUnits %></span> <span class="metric-label">units</span></div>
+                                        <% } %>
+                                        <% if (data.orderedRevenue?.amount !== undefined) { %>
+                                        <div><span class="metric-value text-green-600">$<%= parseFloat(data.orderedRevenue.amount).toFixed(2) %></span></div>
+                                        <% } %>
+                                        <% if (data.shippedUnits !== undefined) { %>
+                                        <div><span class="metric-value text-purple-600"><%= data.shippedUnits %></span> <span class="metric-label">shipped</span></div>
+                                        <% } %>
+                                        <% if (data.glanceViews !== undefined) { %>
+                                        <div><span class="metric-value text-orange-600"><%= data.glanceViews %></span> <span class="metric-label">views</span></div>
+                                        <% } %>
+                                        <% if (data.netPureProductMargin !== undefined) { %>
+                                        <div><span class="metric-value text-teal-600"><%= (data.netPureProductMargin * 100).toFixed(1) %>%</span> <span class="metric-label">margin</span></div>
+                                        <% } %>
+                                        <% if (data.sellableOnHandInventoryUnits !== undefined) { %>
+                                        <div><span class="metric-value text-indigo-600"><%= data.sellableOnHandInventoryUnits %></span> <span class="metric-label">on hand</span></div>
+                                        <% } %>
+                                        <% if (data.highlyAvailableInventory !== undefined) { %>
+                                        <div><span class="metric-value <%= data.highlyAvailableInventory ? 'text-green-600' : 'text-red-600' %>"><%= data.highlyAvailableInventory ? 'Yes' : 'No' %></span></div>
+                                        <% } %>
+                                    </div>
+                                <% } else { %>
+                                    <span class="text-slate-400">-</span>
+                                <% } %>
+                            </td>
+                            <% }); %>
+                            <td class="px-4 py-3 text-center">
+                                <a href="/catalog/<%= asin %>" class="text-blue-600 hover:text-blue-800 text-xs font-medium">
+                                    View Catalog
+                                </a>
+                            </td>
+                        </tr>
+                        <% }); %>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sync Progress Modal -->
+        <div id="syncModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-white rounded-2xl p-8 max-w-lg w-full mx-4 shadow-2xl">
+                <h3 class="text-xl font-bold text-slate-900 mb-4">Syncing Reports from SP-API</h3>
+                <div id="syncProgress" class="space-y-3">
+                    <!-- Progress items will be inserted here -->
+                </div>
+                <div class="mt-6 flex justify-end">
+                    <button onclick="closeSyncModal()" id="closeSyncBtn" class="bg-slate-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-slate-700 transition-all hidden">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const reportTypes = <%- JSON.stringify(reportTypes) %>;
+        const reportTypeKeys = Object.keys(reportTypes);
+
+        function applyDateFilter() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            window.location.href = `/vendor-analytics?startDate=${startDate}&endDate=${endDate}`;
+        }
+
+        function closeSyncModal() {
+            document.getElementById('syncModal').classList.add('hidden');
+            document.getElementById('syncModal').classList.remove('flex');
+            // Refresh page to show new data
+            window.location.reload();
+        }
+
+        async function refreshAllReports() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            // Show modal
+            document.getElementById('syncModal').classList.remove('hidden');
+            document.getElementById('syncModal').classList.add('flex');
+            document.getElementById('closeSyncBtn').classList.add('hidden');
+
+            const progressDiv = document.getElementById('syncProgress');
+            progressDiv.innerHTML = '';
+
+            let hasErrors = false;
+
+            for (const reportType of reportTypeKeys) {
+                const itemId = `sync-${reportType}`;
+                progressDiv.innerHTML += `
+                    <div id="${itemId}" class="flex items-center gap-3 p-3 bg-slate-100 rounded-lg">
+                        <div class="loading-spinner"></div>
+                        <div>
+                            <div class="font-medium text-slate-800">${reportTypes[reportType].name}</div>
+                            <div class="text-xs text-slate-500">Creating report request...</div>
+                        </div>
+                    </div>
+                `;
+
+                try {
+                    // Step 1: Create report request
+                    const createResp = await fetch('/api/vendor-reports/create', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            reportType,
+                            startDate,
+                            endDate
+                        })
+                    });
+
+                    const createData = await createResp.json();
+
+                    if (!createData.success) {
+                        throw new Error(createData.error || 'Failed to create report');
+                    }
+
+                    const reportId = createData.reportId;
+                    updateSyncItem(itemId, 'loading', `Report ID: ${reportId} - Checking status...`);
+
+                    // Step 2: Poll for status (max 30 attempts, 2 second intervals)
+                    let reportDocumentId = null;
+                    for (let i = 0; i < 30; i++) {
+                        await sleep(2000);
+
+                        const statusResp = await fetch(`/api/vendor-reports/status/${reportId}`);
+                        const statusData = await statusResp.json();
+
+                        if (statusData.status === 'DONE') {
+                            reportDocumentId = statusData.reportDocumentId;
+                            updateSyncItem(itemId, 'loading', 'Report ready - Downloading...');
+                            break;
+                        } else if (statusData.status === 'CANCELLED' || statusData.status === 'FATAL') {
+                            throw new Error(`Report ${statusData.status}`);
+                        }
+
+                        updateSyncItem(itemId, 'loading', `Status: ${statusData.status} (attempt ${i + 1}/30)`);
+                    }
+
+                    if (!reportDocumentId) {
+                        throw new Error('Report timed out');
+                    }
+
+                    // Step 3: Download and save report
+                    const downloadResp = await fetch(
+                        `/api/vendor-reports/download/${reportDocumentId}?reportType=${reportType}&saveToDb=true`
+                    );
+                    const downloadData = await downloadResp.json();
+
+                    if (!downloadData.success) {
+                        throw new Error('Failed to download report');
+                    }
+
+                    updateSyncItem(itemId, 'success', 'Synced successfully');
+
+                } catch (err) {
+                    hasErrors = true;
+                    updateSyncItem(itemId, 'error', err.message);
+                }
+            }
+
+            // Show close button
+            document.getElementById('closeSyncBtn').classList.remove('hidden');
+        }
+
+        function updateSyncItem(itemId, status, message) {
+            const item = document.getElementById(itemId);
+            if (!item) return;
+
+            const statusDiv = item.querySelector('div:first-child');
+            const messageDiv = item.querySelector('.text-xs');
+
+            if (status === 'success') {
+                statusDiv.innerHTML = '<span class="text-2xl">OK</span>';
+                statusDiv.className = 'text-green-600 font-bold';
+                item.className = 'flex items-center gap-3 p-3 bg-green-50 rounded-lg border border-green-200';
+            } else if (status === 'error') {
+                statusDiv.innerHTML = '<span class="text-2xl">X</span>';
+                statusDiv.className = 'text-red-600 font-bold';
+                item.className = 'flex items-center gap-3 p-3 bg-red-50 rounded-lg border border-red-200';
+            }
+
+            if (messageDiv) {
+                messageDiv.textContent = message;
+            }
+        }
+
+        function sleep(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+    </script>
+</body>
+</html>

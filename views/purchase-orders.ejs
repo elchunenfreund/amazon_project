@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Purchase Orders - Amazon Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .status-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .status-new { background: #dbeafe; color: #1e40af; }
+        .status-acknowledged { background: #fef3c7; color: #92400e; }
+        .status-shipped { background: #d1fae5; color: #065f46; }
+        .status-cancelled { background: #fee2e2; color: #991b1b; }
+        .status-closed { background: #e5e7eb; color: #374151; }
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .table-container { overflow-x: auto; }
+        thead th { position: sticky; top: 0; z-index: 10; }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+    <div class="max-w-full mx-auto px-4 md:px-8 py-8">
+        <!-- Header -->
+        <header class="mb-8">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <h1 class="text-4xl font-black text-slate-900 tracking-tight">Purchase Orders</h1>
+                    <p class="text-slate-500 font-medium">Vendor Central purchase orders from Amazon</p>
+                </div>
+                <div class="flex gap-3">
+                    <a href="/" class="bg-slate-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-slate-700 transition-all">Dashboard</a>
+                    <a href="/vendor-analytics" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all">Vendor Analytics</a>
+                </div>
+            </div>
+        </header>
+
+        <!-- Sync Controls -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200">
+            <div class="flex flex-wrap items-end gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Created After</label>
+                    <input type="date" id="createdAfter"
+                           class="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Created Before</label>
+                    <input type="date" id="createdBefore"
+                           class="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none">
+                </div>
+                <button onclick="syncPurchaseOrders()" id="syncBtn" class="bg-purple-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-purple-700 transition-all flex items-center gap-2">
+                    <span id="syncBtnText">Sync from SP-API</span>
+                    <div id="syncSpinner" class="loading-spinner hidden"></div>
+                </button>
+                <div id="syncStatus" class="text-sm text-slate-500 ml-4"></div>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+            <div class="bg-white rounded-xl shadow-lg p-4 border border-slate-200">
+                <div class="text-2xl font-black text-slate-900" id="totalPOs"><%= purchaseOrders.length %></div>
+                <div class="text-xs text-slate-500 font-medium">Total POs</div>
+            </div>
+            <div class="bg-blue-50 rounded-xl shadow-lg p-4 border border-blue-200">
+                <div class="text-2xl font-black text-blue-700" id="newPOs"><%= purchaseOrders.filter(p => p.po_status === 'New').length %></div>
+                <div class="text-xs text-blue-600 font-medium">New</div>
+            </div>
+            <div class="bg-amber-50 rounded-xl shadow-lg p-4 border border-amber-200">
+                <div class="text-2xl font-black text-amber-700" id="acknowledgedPOs"><%= purchaseOrders.filter(p => p.po_status === 'Acknowledged').length %></div>
+                <div class="text-xs text-amber-600 font-medium">Acknowledged</div>
+            </div>
+            <div class="bg-emerald-50 rounded-xl shadow-lg p-4 border border-emerald-200">
+                <div class="text-2xl font-black text-emerald-700" id="shippedPOs"><%= purchaseOrders.filter(p => ['Shipped', 'Closed'].includes(p.po_status)).length %></div>
+                <div class="text-xs text-emerald-600 font-medium">Shipped/Closed</div>
+            </div>
+            <div class="bg-red-50 rounded-xl shadow-lg p-4 border border-red-200">
+                <div class="text-2xl font-black text-red-700" id="cancelledPOs"><%= purchaseOrders.filter(p => p.po_status === 'Cancelled').length %></div>
+                <div class="text-xs text-red-600 font-medium">Cancelled</div>
+            </div>
+        </div>
+
+        <!-- Purchase Orders Table -->
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
+            <div class="table-container max-h-[65vh] overflow-auto">
+                <table class="w-full text-sm">
+                    <thead class="bg-slate-900 text-white">
+                        <tr>
+                            <th class="px-4 py-3 text-left font-bold">PO Number</th>
+                            <th class="px-4 py-3 text-left font-bold">Date</th>
+                            <th class="px-4 py-3 text-center font-bold">Status</th>
+                            <th class="px-4 py-3 text-left font-bold">Ship Window</th>
+                            <th class="px-4 py-3 text-left font-bold">Delivery Window</th>
+                            <th class="px-4 py-3 text-center font-bold">Items</th>
+                            <th class="px-4 py-3 text-left font-bold">Ship To</th>
+                            <th class="px-4 py-3 text-center font-bold">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-200">
+                        <% if (purchaseOrders.length === 0) { %>
+                        <tr>
+                            <td colspan="8" class="px-4 py-12 text-center text-slate-500">
+                                <p class="text-4xl mb-4">No Purchase Orders</p>
+                                <p class="font-medium">No purchase orders synced yet</p>
+                                <p class="text-sm">Click "Sync from SP-API" to fetch your vendor purchase orders</p>
+                            </td>
+                        </tr>
+                        <% } else { %>
+                        <% purchaseOrders.forEach(po => { %>
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-4 py-3">
+                                <span class="font-mono font-bold text-slate-800"><%= po.po_number %></span>
+                            </td>
+                            <td class="px-4 py-3 text-slate-600">
+                                <% if (po.po_date) { %>
+                                <%= new Date(po.po_date).toLocaleDateString('en-CA') %>
+                                <% } else { %>
+                                -
+                                <% } %>
+                            </td>
+                            <td class="px-4 py-3 text-center">
+                                <% const statusClass = {
+                                    'New': 'status-new',
+                                    'Acknowledged': 'status-acknowledged',
+                                    'Shipped': 'status-shipped',
+                                    'Closed': 'status-closed',
+                                    'Cancelled': 'status-cancelled'
+                                }[po.po_status] || 'status-new'; %>
+                                <span class="status-badge <%= statusClass %>"><%= po.po_status || 'Unknown' %></span>
+                            </td>
+                            <td class="px-4 py-3 text-xs text-slate-600">
+                                <% if (po.ship_window_start && po.ship_window_end) { %>
+                                <div><%= new Date(po.ship_window_start).toLocaleDateString('en-CA') %></div>
+                                <div class="text-slate-400">to <%= new Date(po.ship_window_end).toLocaleDateString('en-CA') %></div>
+                                <% } else { %>
+                                -
+                                <% } %>
+                            </td>
+                            <td class="px-4 py-3 text-xs text-slate-600">
+                                <% if (po.delivery_window_start && po.delivery_window_end) { %>
+                                <div><%= new Date(po.delivery_window_start).toLocaleDateString('en-CA') %></div>
+                                <div class="text-slate-400">to <%= new Date(po.delivery_window_end).toLocaleDateString('en-CA') %></div>
+                                <% } else { %>
+                                -
+                                <% } %>
+                            </td>
+                            <td class="px-4 py-3 text-center">
+                                <% const items = typeof po.items === 'string' ? JSON.parse(po.items) : po.items; %>
+                                <% if (items && Array.isArray(items)) { %>
+                                <span class="font-bold text-slate-800"><%= items.length %></span>
+                                <span class="text-slate-500 text-xs">items</span>
+                                <% } else { %>
+                                -
+                                <% } %>
+                            </td>
+                            <td class="px-4 py-3 text-xs">
+                                <% const shipTo = typeof po.ship_to_party === 'string' ? JSON.parse(po.ship_to_party) : po.ship_to_party; %>
+                                <% if (shipTo?.address) { %>
+                                <div class="text-slate-700"><%= shipTo.address.city || '' %></div>
+                                <div class="text-slate-400"><%= shipTo.address.stateOrRegion || '' %>, <%= shipTo.address.countryCode || '' %></div>
+                                <% } else { %>
+                                -
+                                <% } %>
+                            </td>
+                            <td class="px-4 py-3 text-center">
+                                <button onclick="showPODetails('<%= po.po_number %>')" class="text-purple-600 hover:text-purple-800 text-xs font-medium">
+                                    View Details
+                                </button>
+                            </td>
+                        </tr>
+                        <% }); %>
+                        <% } %>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- PO Details Modal -->
+        <div id="poModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-white rounded-2xl p-8 max-w-4xl w-full mx-4 shadow-2xl max-h-[90vh] overflow-auto">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-xl font-bold text-slate-900">Purchase Order Details</h3>
+                    <button onclick="closePOModal()" class="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
+                </div>
+                <div id="poModalContent">
+                    <!-- Content will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const purchaseOrders = <%- JSON.stringify(purchaseOrders) %>;
+
+        // Set default date range (last 30 days)
+        document.getElementById('createdAfter').value = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        document.getElementById('createdBefore').value = new Date().toISOString().split('T')[0];
+
+        async function syncPurchaseOrders() {
+            const createdAfter = document.getElementById('createdAfter').value;
+            const createdBefore = document.getElementById('createdBefore').value;
+
+            const syncBtn = document.getElementById('syncBtn');
+            const syncBtnText = document.getElementById('syncBtnText');
+            const syncSpinner = document.getElementById('syncSpinner');
+            const syncStatus = document.getElementById('syncStatus');
+
+            syncBtn.disabled = true;
+            syncBtnText.textContent = 'Syncing...';
+            syncSpinner.classList.remove('hidden');
+            syncStatus.textContent = '';
+
+            try {
+                const response = await fetch('/api/purchase-orders/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        createdAfter: createdAfter ? createdAfter + 'T00:00:00Z' : undefined,
+                        createdBefore: createdBefore ? createdBefore + 'T23:59:59Z' : undefined
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    syncStatus.textContent = `Synced ${data.savedCount} of ${data.totalFetched} orders`;
+                    syncStatus.className = 'text-sm text-green-600 ml-4';
+
+                    // Refresh page after short delay
+                    setTimeout(() => window.location.reload(), 1500);
+                } else {
+                    syncStatus.textContent = 'Sync failed: ' + (data.error || 'Unknown error');
+                    syncStatus.className = 'text-sm text-red-600 ml-4';
+                }
+            } catch (err) {
+                syncStatus.textContent = 'Error: ' + err.message;
+                syncStatus.className = 'text-sm text-red-600 ml-4';
+            } finally {
+                syncBtn.disabled = false;
+                syncBtnText.textContent = 'Sync from SP-API';
+                syncSpinner.classList.add('hidden');
+            }
+        }
+
+        function showPODetails(poNumber) {
+            const po = purchaseOrders.find(p => p.po_number === poNumber);
+            if (!po) return;
+
+            const rawData = typeof po.raw_data === 'string' ? JSON.parse(po.raw_data) : po.raw_data;
+            const items = typeof po.items === 'string' ? JSON.parse(po.items) : po.items;
+
+            let itemsHtml = '';
+            if (items && Array.isArray(items)) {
+                itemsHtml = `
+                    <h4 class="font-bold text-slate-800 mb-3">Line Items</h4>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm border border-slate-200 rounded-lg">
+                            <thead class="bg-slate-100">
+                                <tr>
+                                    <th class="px-3 py-2 text-left">ASIN</th>
+                                    <th class="px-3 py-2 text-left">Vendor SKU</th>
+                                    <th class="px-3 py-2 text-right">Qty Ordered</th>
+                                    <th class="px-3 py-2 text-right">Qty Accepted</th>
+                                    <th class="px-3 py-2 text-right">Unit Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">
+                                ${items.map(item => `
+                                    <tr>
+                                        <td class="px-3 py-2 font-mono">${item.amazonProductIdentifier || '-'}</td>
+                                        <td class="px-3 py-2">${item.vendorProductIdentifier || '-'}</td>
+                                        <td class="px-3 py-2 text-right">${item.orderedQuantity?.amount || '-'}</td>
+                                        <td class="px-3 py-2 text-right">${item.acknowledgedQuantity?.amount || '-'}</td>
+                                        <td class="px-3 py-2 text-right">${item.netCost?.amount ? '$' + parseFloat(item.netCost.amount).toFixed(2) : '-'}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            document.getElementById('poModalContent').innerHTML = `
+                <div class="grid grid-cols-2 gap-6 mb-6">
+                    <div>
+                        <div class="text-sm text-slate-500">PO Number</div>
+                        <div class="font-mono font-bold text-lg">${po.po_number}</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-slate-500">Status</div>
+                        <div class="font-bold text-lg">${po.po_status || 'Unknown'}</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-slate-500">PO Date</div>
+                        <div>${po.po_date ? new Date(po.po_date).toLocaleString() : '-'}</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-slate-500">Last Updated</div>
+                        <div>${po.updated_at ? new Date(po.updated_at).toLocaleString() : '-'}</div>
+                    </div>
+                </div>
+
+                <div class="mb-6">
+                    ${itemsHtml}
+                </div>
+
+                <details class="mt-4">
+                    <summary class="cursor-pointer text-sm text-slate-500 hover:text-slate-700">View Raw JSON Data</summary>
+                    <pre class="mt-2 p-4 bg-slate-900 text-slate-300 rounded-lg text-xs overflow-auto max-h-64">${JSON.stringify(rawData, null, 2)}</pre>
+                </details>
+            `;
+
+            document.getElementById('poModal').classList.remove('hidden');
+            document.getElementById('poModal').classList.add('flex');
+        }
+
+        function closePOModal() {
+            document.getElementById('poModal').classList.add('hidden');
+            document.getElementById('poModal').classList.remove('flex');
+        }
+
+        // Close modal on outside click
+        document.getElementById('poModal').addEventListener('click', function(e) {
+            if (e.target === this) closePOModal();
+        });
+    </script>
+</body>
+</html>

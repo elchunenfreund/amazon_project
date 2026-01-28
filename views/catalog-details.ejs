@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Catalog Details - <%= asin %> - Amazon Tracker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .image-thumbnail {
+            width: 100px;
+            height: 100px;
+            object-fit: contain;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px;
+            background: white;
+        }
+        .attribute-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 12px;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 min-h-screen">
+    <div class="max-w-6xl mx-auto px-4 md:px-8 py-8">
+        <!-- Header -->
+        <header class="mb-8">
+            <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                    <div class="flex items-center gap-3 mb-2">
+                        <h1 class="text-4xl font-black text-slate-900 tracking-tight font-mono"><%= asin %></h1>
+                        <a href="https://amazon.ca/dp/<%= asin %>" target="_blank"
+                           class="bg-orange-500 text-white px-3 py-1 rounded-lg text-sm font-bold hover:bg-orange-600 transition-all">
+                            View on Amazon
+                        </a>
+                    </div>
+                    <p class="text-slate-500 font-medium">Product Catalog Details from SP-API</p>
+                </div>
+                <div class="flex gap-3">
+                    <a href="/" class="bg-slate-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-slate-700 transition-all">Dashboard</a>
+                    <a href="/vendor-analytics" class="bg-blue-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all">Vendor Analytics</a>
+                </div>
+            </div>
+        </header>
+
+        <!-- Fetch Button -->
+        <div class="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200">
+            <div class="flex items-center gap-4">
+                <button onclick="fetchCatalogData()" id="fetchBtn" class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition-all flex items-center gap-2">
+                    <span id="fetchBtnText">Refresh from SP-API</span>
+                    <div id="fetchSpinner" class="loading-spinner hidden"></div>
+                </button>
+                <div id="fetchStatus" class="text-sm text-slate-500"></div>
+                <% if (catalogData?.last_updated) { %>
+                <div class="ml-auto text-sm text-slate-400">
+                    Last updated: <%= new Date(catalogData.last_updated).toLocaleString() %>
+                </div>
+                <% } %>
+            </div>
+        </div>
+
+        <% if (catalogData) { %>
+        <!-- Product Overview -->
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 mb-8">
+            <div class="flex flex-col md:flex-row gap-8">
+                <!-- Product Images -->
+                <div class="flex-shrink-0">
+                    <% const images = typeof catalogData.images === 'string' ? JSON.parse(catalogData.images) : catalogData.images; %>
+                    <% if (images && images.length > 0) { %>
+                        <% const mainImage = images[0]?.images?.find(i => i.variant === 'MAIN') || images[0]?.images?.[0]; %>
+                        <% if (mainImage) { %>
+                        <img src="<%= mainImage.link %>" alt="Product Image"
+                             class="w-64 h-64 object-contain border border-slate-200 rounded-xl p-4 bg-white shadow-lg">
+                        <% } %>
+                        <div class="flex gap-2 mt-4 flex-wrap">
+                            <% images[0]?.images?.slice(0, 5).forEach(img => { %>
+                            <img src="<%= img.link %>" alt="<%= img.variant %>" class="image-thumbnail cursor-pointer hover:border-blue-400"
+                                 onclick="window.open('<%= img.link %>', '_blank')">
+                            <% }); %>
+                        </div>
+                    <% } else { %>
+                        <div class="w-64 h-64 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400">
+                            <span class="text-6xl">No Image</span>
+                        </div>
+                    <% } %>
+                </div>
+
+                <!-- Product Info -->
+                <div class="flex-grow">
+                    <h2 class="text-2xl font-bold text-slate-900 mb-4"><%= catalogData.title || 'No title available' %></h2>
+
+                    <div class="grid grid-cols-2 gap-4 mb-6">
+                        <div class="attribute-card">
+                            <div class="text-xs text-slate-500 uppercase font-medium">Brand</div>
+                            <div class="font-bold text-slate-800"><%= catalogData.brand || '-' %></div>
+                        </div>
+                        <div class="attribute-card">
+                            <div class="text-xs text-slate-500 uppercase font-medium">Product Type</div>
+                            <div class="font-bold text-slate-800"><%= catalogData.product_type || '-' %></div>
+                        </div>
+                    </div>
+
+                    <!-- Identifiers -->
+                    <% const identifiers = typeof catalogData.identifiers === 'string' ? JSON.parse(catalogData.identifiers) : catalogData.identifiers; %>
+                    <% if (identifiers && identifiers.length > 0) { %>
+                    <div class="mb-6">
+                        <h3 class="font-bold text-slate-700 mb-3">Product Identifiers</h3>
+                        <div class="flex flex-wrap gap-2">
+                            <% identifiers[0]?.identifiers?.forEach(id => { %>
+                            <div class="bg-slate-100 px-3 py-1 rounded-full text-sm">
+                                <span class="text-slate-500"><%= id.identifierType %>:</span>
+                                <span class="font-mono font-medium"><%= id.identifier %></span>
+                            </div>
+                            <% }); %>
+                        </div>
+                    </div>
+                    <% } %>
+
+                    <!-- Sales Rank -->
+                    <% const salesRanks = typeof catalogData.sales_ranks === 'string' ? JSON.parse(catalogData.sales_ranks) : catalogData.sales_ranks; %>
+                    <% if (salesRanks && salesRanks.length > 0) { %>
+                    <div class="mb-6">
+                        <h3 class="font-bold text-slate-700 mb-3">Sales Rankings</h3>
+                        <div class="space-y-2">
+                            <% salesRanks[0]?.displayGroupRanks?.forEach(rank => { %>
+                            <div class="flex items-center gap-2">
+                                <span class="bg-amber-100 text-amber-800 px-2 py-1 rounded font-bold text-sm">#<%= rank.rank %></span>
+                                <span class="text-slate-600 text-sm"><%= rank.title %></span>
+                            </div>
+                            <% }); %>
+                            <% salesRanks[0]?.classificationRanks?.forEach(rank => { %>
+                            <div class="flex items-center gap-2">
+                                <span class="bg-blue-100 text-blue-800 px-2 py-1 rounded font-bold text-sm">#<%= rank.rank %></span>
+                                <span class="text-slate-600 text-sm"><%= rank.title %></span>
+                            </div>
+                            <% }); %>
+                        </div>
+                    </div>
+                    <% } %>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dimensions -->
+        <% const dimensions = typeof catalogData.dimensions === 'string' ? JSON.parse(catalogData.dimensions) : catalogData.dimensions; %>
+        <% if (dimensions && dimensions.length > 0) { %>
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 mb-8">
+            <h3 class="text-xl font-bold text-slate-900 mb-4">Dimensions & Weight</h3>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <% const dims = dimensions[0]; %>
+                <% if (dims?.item?.length) { %>
+                <div class="attribute-card">
+                    <div class="text-xs text-slate-500 uppercase font-medium">Length</div>
+                    <div class="font-bold text-slate-800"><%= dims.item.length.value %> <%= dims.item.length.unit %></div>
+                </div>
+                <% } %>
+                <% if (dims?.item?.width) { %>
+                <div class="attribute-card">
+                    <div class="text-xs text-slate-500 uppercase font-medium">Width</div>
+                    <div class="font-bold text-slate-800"><%= dims.item.width.value %> <%= dims.item.width.unit %></div>
+                </div>
+                <% } %>
+                <% if (dims?.item?.height) { %>
+                <div class="attribute-card">
+                    <div class="text-xs text-slate-500 uppercase font-medium">Height</div>
+                    <div class="font-bold text-slate-800"><%= dims.item.height.value %> <%= dims.item.height.unit %></div>
+                </div>
+                <% } %>
+                <% if (dims?.item?.weight) { %>
+                <div class="attribute-card">
+                    <div class="text-xs text-slate-500 uppercase font-medium">Weight</div>
+                    <div class="font-bold text-slate-800"><%= dims.item.weight.value %> <%= dims.item.weight.unit %></div>
+                </div>
+                <% } %>
+                <% if (dims?.package?.length) { %>
+                <div class="attribute-card">
+                    <div class="text-xs text-slate-500 uppercase font-medium">Package Length</div>
+                    <div class="font-bold text-slate-800"><%= dims.package.length.value %> <%= dims.package.length.unit %></div>
+                </div>
+                <% } %>
+                <% if (dims?.package?.width) { %>
+                <div class="attribute-card">
+                    <div class="text-xs text-slate-500 uppercase font-medium">Package Width</div>
+                    <div class="font-bold text-slate-800"><%= dims.package.width.value %> <%= dims.package.width.unit %></div>
+                </div>
+                <% } %>
+                <% if (dims?.package?.height) { %>
+                <div class="attribute-card">
+                    <div class="text-xs text-slate-500 uppercase font-medium">Package Height</div>
+                    <div class="font-bold text-slate-800"><%= dims.package.height.value %> <%= dims.package.height.unit %></div>
+                </div>
+                <% } %>
+                <% if (dims?.package?.weight) { %>
+                <div class="attribute-card">
+                    <div class="text-xs text-slate-500 uppercase font-medium">Package Weight</div>
+                    <div class="font-bold text-slate-800"><%= dims.package.weight.value %> <%= dims.package.weight.unit %></div>
+                </div>
+                <% } %>
+            </div>
+        </div>
+        <% } %>
+
+        <!-- Attributes -->
+        <% const attributes = typeof catalogData.attributes === 'string' ? JSON.parse(catalogData.attributes) : catalogData.attributes; %>
+        <% if (attributes && Object.keys(attributes).length > 0) { %>
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-8 mb-8">
+            <h3 class="text-xl font-bold text-slate-900 mb-4">Product Attributes</h3>
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <% Object.entries(attributes).slice(0, 30).forEach(([key, values]) => { %>
+                <div class="attribute-card">
+                    <div class="text-xs text-slate-500 uppercase font-medium truncate" title="<%= key %>"><%= key.replace(/_/g, ' ') %></div>
+                    <div class="font-medium text-slate-800 text-sm">
+                        <% if (Array.isArray(values)) { %>
+                            <%= values.map(v => v.value || v).join(', ').substring(0, 100) %>
+                        <% } else { %>
+                            <%= JSON.stringify(values).substring(0, 100) %>
+                        <% } %>
+                    </div>
+                </div>
+                <% }); %>
+            </div>
+            <% if (Object.keys(attributes).length > 30) { %>
+            <details class="mt-4">
+                <summary class="cursor-pointer text-sm text-blue-600 hover:text-blue-800 font-medium">
+                    Show all <%= Object.keys(attributes).length %> attributes
+                </summary>
+                <pre class="mt-2 p-4 bg-slate-900 text-slate-300 rounded-lg text-xs overflow-auto max-h-96"><%= JSON.stringify(attributes, null, 2) %></pre>
+            </details>
+            <% } %>
+        </div>
+        <% } %>
+
+        <!-- Raw JSON Data -->
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-8">
+            <details>
+                <summary class="cursor-pointer text-lg font-bold text-slate-700 hover:text-slate-900">
+                    View Raw Catalog Data (JSON)
+                </summary>
+                <pre class="mt-4 p-4 bg-slate-900 text-slate-300 rounded-lg text-xs overflow-auto max-h-96"><%= JSON.stringify(catalogData, null, 2) %></pre>
+            </details>
+        </div>
+
+        <% } else { %>
+        <!-- No Data State -->
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-12 text-center">
+            <p class="text-6xl mb-4">No Catalog Data</p>
+            <p class="text-slate-600 font-medium mb-6">No catalog data has been fetched for this ASIN yet.</p>
+            <button onclick="fetchCatalogData()" class="bg-emerald-600 text-white px-8 py-3 rounded-xl font-bold hover:bg-emerald-700 transition-all">
+                Fetch Catalog Data from SP-API
+            </button>
+        </div>
+        <% } %>
+    </div>
+
+    <script>
+        const asin = '<%= asin %>';
+
+        async function fetchCatalogData() {
+            const fetchBtn = document.getElementById('fetchBtn');
+            const fetchBtnText = document.getElementById('fetchBtnText');
+            const fetchSpinner = document.getElementById('fetchSpinner');
+            const fetchStatus = document.getElementById('fetchStatus');
+
+            if (fetchBtn) {
+                fetchBtn.disabled = true;
+                fetchBtnText.textContent = 'Fetching...';
+                fetchSpinner.classList.remove('hidden');
+            }
+            if (fetchStatus) fetchStatus.textContent = '';
+
+            try {
+                const response = await fetch(`/api/catalog/fetch/${asin}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    if (fetchStatus) {
+                        fetchStatus.textContent = 'Catalog data fetched successfully!';
+                        fetchStatus.className = 'text-sm text-green-600';
+                    }
+                    // Reload page to show new data
+                    setTimeout(() => window.location.reload(), 1000);
+                } else {
+                    if (fetchStatus) {
+                        fetchStatus.textContent = 'Error: ' + (data.error || 'Failed to fetch catalog data');
+                        fetchStatus.className = 'text-sm text-red-600';
+                    }
+                }
+            } catch (err) {
+                if (fetchStatus) {
+                    fetchStatus.textContent = 'Error: ' + err.message;
+                    fetchStatus.className = 'text-sm text-red-600';
+                }
+            } finally {
+                if (fetchBtn) {
+                    fetchBtn.disabled = false;
+                    fetchBtnText.textContent = 'Refresh from SP-API';
+                    fetchSpinner.classList.add('hidden');
+                }
+            }
+        }
+    </script>
+</body>
+</html>

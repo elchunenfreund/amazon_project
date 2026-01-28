@@ -2245,4 +2245,581 @@ app.get('/api/scraper-status', (req, res) => {
     res.json({ running: !!currentScraperProcess });
 });
 
+// ============================================
+// VENDOR ANALYTICS - Reports API Integration
+// ============================================
+
+// Report types configuration
+const VENDOR_REPORT_TYPES = {
+    'GET_VENDOR_REAL_TIME_INVENTORY_REPORT': {
+        name: 'Real-Time Inventory',
+        shortName: 'RT Inventory',
+        dataKey: 'inventoryByAsin',
+        metrics: ['asin', 'highlyAvailableInventory']
+    },
+    'GET_VENDOR_REAL_TIME_SALES_REPORT': {
+        name: 'Real-Time Sales',
+        shortName: 'RT Sales',
+        dataKey: 'salesByAsin',
+        metrics: ['asin', 'orderedUnits', 'orderedRevenue']
+    },
+    'GET_VENDOR_SALES_REPORT': {
+        name: 'Sales Report',
+        shortName: 'Sales',
+        dataKey: 'salesByAsin',
+        metrics: ['asin', 'shippedUnits', 'shippedRevenue', 'shippedCogs', 'orderedUnits', 'orderedRevenue']
+    },
+    'GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT': {
+        name: 'Net Pure Product Margin',
+        shortName: 'Margin',
+        dataKey: 'netPureProductMarginByAsin',
+        metrics: ['asin', 'netPureProductMargin']
+    },
+    'GET_VENDOR_TRAFFIC_REPORT': {
+        name: 'Traffic Report',
+        shortName: 'Traffic',
+        dataKey: 'trafficByAsin',
+        metrics: ['asin', 'glanceViews']
+    },
+    'GET_VENDOR_INVENTORY_REPORT': {
+        name: 'Inventory Report',
+        shortName: 'Inventory',
+        dataKey: 'inventoryByAsin',
+        metrics: ['asin', 'sellableOnHandInventoryUnits', 'sellableOnHandInventoryCost', 'unsellableOnHandInventoryUnits']
+    },
+    'GET_SALES_AND_TRAFFIC_REPORT': {
+        name: 'Sales & Traffic',
+        shortName: 'Sales+Traffic',
+        dataKey: 'salesAndTrafficByAsin',
+        metrics: ['asin', 'orderedProductSales', 'totalOrderItems', 'pageViews', 'sessions']
+    }
+};
+
+// Vendor Analytics Page
+app.get('/vendor-analytics', async (req, res) => {
+    try {
+        // Get all tracked ASINs
+        const asinsResult = await pool.query('SELECT DISTINCT asin FROM products ORDER BY asin');
+        const asins = asinsResult.rows.map(r => r.asin);
+
+        // Get date range from query params or default to last 30 days
+        const endDate = req.query.endDate || new Date().toISOString().split('T')[0];
+        const startDate = req.query.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        // Get stored report data for the date range
+        const reportsResult = await pool.query(
+            `SELECT asin, report_type, report_date, data
+             FROM vendor_reports
+             WHERE report_date >= $1 AND report_date <= $2
+             ORDER BY report_date DESC`,
+            [startDate, endDate]
+        );
+
+        // Organize data by ASIN
+        const dataByAsin = {};
+        for (const asin of asins) {
+            dataByAsin[asin] = {};
+            for (const reportType of Object.keys(VENDOR_REPORT_TYPES)) {
+                dataByAsin[asin][reportType] = null;
+            }
+        }
+
+        // Fill in report data
+        for (const row of reportsResult.rows) {
+            if (dataByAsin[row.asin]) {
+                if (!dataByAsin[row.asin][row.report_type]) {
+                    dataByAsin[row.asin][row.report_type] = row.data;
+                }
+            }
+        }
+
+        res.render('vendor-analytics', {
+            asins,
+            dataByAsin,
+            reportTypes: VENDOR_REPORT_TYPES,
+            startDate,
+            endDate
+        });
+    } catch (err) {
+        console.error('Vendor analytics error:', err);
+        res.status(500).send('Error loading vendor analytics: ' + err.message);
+    }
+});
+
+// Purchase Orders Page
+app.get('/purchase-orders', async (req, res) => {
+    try {
+        // Get POs from database
+        const posResult = await pool.query(
+            `SELECT * FROM purchase_orders ORDER BY po_date DESC LIMIT 100`
+        );
+
+        res.render('purchase-orders', {
+            purchaseOrders: posResult.rows
+        });
+    } catch (err) {
+        console.error('Purchase orders error:', err);
+        res.status(500).send('Error loading purchase orders: ' + err.message);
+    }
+});
+
+// Catalog Details Page
+app.get('/catalog/:asin', async (req, res) => {
+    try {
+        const { asin } = req.params;
+
+        // Get catalog details from database
+        const catalogResult = await pool.query(
+            'SELECT * FROM catalog_details WHERE asin = $1',
+            [asin]
+        );
+
+        let catalogData = catalogResult.rows[0] || null;
+
+        res.render('catalog-details', {
+            asin,
+            catalogData
+        });
+    } catch (err) {
+        console.error('Catalog details error:', err);
+        res.status(500).send('Error loading catalog details: ' + err.message);
+    }
+});
+
+// API: Create a report request
+app.post('/api/vendor-reports/create', async (req, res) => {
+    try {
+        const { reportType, startDate, endDate, reportOptions } = req.body;
+
+        if (!reportType || !VENDOR_REPORT_TYPES[reportType]) {
+            return res.status(400).json({ error: 'Invalid report type' });
+        }
+
+        const accessToken = await getValidAccessToken();
+        const marketplaceId = 'A2EUQ1WTGCTBG2'; // Canada
+
+        // Build report specification based on report type
+        const reportSpec = {
+            reportType: reportType,
+            marketplaceIds: [marketplaceId]
+        };
+
+        // Add date range for reports that support it
+        if (startDate) reportSpec.dataStartTime = startDate + 'T00:00:00Z';
+        if (endDate) reportSpec.dataEndTime = endDate + 'T23:59:59Z';
+
+        // Add report options if provided
+        if (reportOptions) {
+            reportSpec.reportOptions = reportOptions;
+        } else {
+            // Default options for different report types
+            if (reportType === 'GET_VENDOR_SALES_REPORT' ||
+                reportType === 'GET_VENDOR_INVENTORY_REPORT' ||
+                reportType === 'GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT' ||
+                reportType === 'GET_VENDOR_TRAFFIC_REPORT') {
+                reportSpec.reportOptions = {
+                    reportPeriod: 'DAY'
+                };
+            }
+            if (reportType === 'GET_VENDOR_SALES_REPORT' || reportType === 'GET_VENDOR_INVENTORY_REPORT') {
+                reportSpec.reportOptions = {
+                    ...reportSpec.reportOptions,
+                    distributorView: 'MANUFACTURING',
+                    sellingProgram: 'RETAIL'
+                };
+            }
+        }
+
+        // Create report request
+        const createUrl = 'https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports';
+        const response = await fetch(createUrl, {
+            method: 'POST',
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(reportSpec)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            return res.status(response.status).json({
+                success: false,
+                error: 'Failed to create report',
+                details: data
+            });
+        }
+
+        res.json({
+            success: true,
+            reportId: data.reportId,
+            message: 'Report request created successfully'
+        });
+    } catch (err) {
+        console.error('Create report error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Check report status
+app.get('/api/vendor-reports/status/:reportId', async (req, res) => {
+    try {
+        const { reportId } = req.params;
+        const accessToken = await getValidAccessToken();
+
+        const statusUrl = `https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports/${reportId}`;
+        const response = await fetch(statusUrl, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        res.json({
+            success: response.ok,
+            status: data.processingStatus,
+            reportDocumentId: data.reportDocumentId,
+            data
+        });
+    } catch (err) {
+        console.error('Report status error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Download and parse report document
+app.get('/api/vendor-reports/download/:reportDocumentId', async (req, res) => {
+    try {
+        const { reportDocumentId } = req.params;
+        const { reportType, saveToDb } = req.query;
+        const accessToken = await getValidAccessToken();
+
+        // Get report document info (includes download URL)
+        const docUrl = `https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/documents/${reportDocumentId}`;
+        const docResponse = await fetch(docUrl, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const docData = await docResponse.json();
+
+        if (!docResponse.ok) {
+            return res.status(docResponse.status).json({
+                success: false,
+                error: 'Failed to get report document',
+                details: docData
+            });
+        }
+
+        // Download the actual report content
+        const downloadUrl = docData.url;
+        const compressionAlgorithm = docData.compressionAlgorithm;
+
+        const reportResponse = await fetch(downloadUrl);
+
+        if (!reportResponse.ok) {
+            return res.status(reportResponse.status).json({
+                success: false,
+                error: 'Failed to download report content'
+            });
+        }
+
+        let reportContent;
+
+        if (compressionAlgorithm === 'GZIP') {
+            const zlib = require('zlib');
+            const buffer = await reportResponse.arrayBuffer();
+            reportContent = zlib.gunzipSync(Buffer.from(buffer)).toString('utf8');
+        } else {
+            reportContent = await reportResponse.text();
+        }
+
+        // Parse JSON report
+        let reportData;
+        try {
+            reportData = JSON.parse(reportContent);
+        } catch (parseErr) {
+            // Some reports might be CSV or other formats
+            reportData = { rawContent: reportContent };
+        }
+
+        // Optionally save to database
+        if (saveToDb === 'true' && reportType && reportData) {
+            const reportConfig = VENDOR_REPORT_TYPES[reportType];
+            if (reportConfig && reportData[reportConfig.dataKey]) {
+                // Extract ASIN-level data and save
+                const asinData = reportData[reportConfig.dataKey] || [];
+                for (const item of asinData) {
+                    if (item.asin) {
+                        const reportDate = item.startDate || item.endDate || new Date().toISOString().split('T')[0];
+                        await pool.query(
+                            `INSERT INTO vendor_reports (report_type, asin, report_date, data)
+                             VALUES ($1, $2, $3, $4)
+                             ON CONFLICT DO NOTHING`,
+                            [reportType, item.asin, reportDate, JSON.stringify(item)]
+                        );
+                    }
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            compressionAlgorithm,
+            reportData
+        });
+    } catch (err) {
+        console.error('Download report error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Fetch all reports for a specific type and date range
+app.get('/api/vendor-reports/fetch', async (req, res) => {
+    try {
+        const { reportType, startDate, endDate, pageSize } = req.query;
+        const accessToken = await getValidAccessToken();
+
+        let url = `https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports?pageSize=${pageSize || 10}`;
+
+        if (reportType) {
+            url += `&reportTypes=${encodeURIComponent(reportType)}`;
+        }
+        if (startDate) {
+            url += `&createdAfter=${encodeURIComponent(startDate + 'T00:00:00Z')}`;
+        }
+        if (endDate) {
+            url += `&createdBefore=${encodeURIComponent(endDate + 'T23:59:59Z')}`;
+        }
+
+        const response = await fetch(url, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        res.json({
+            success: response.ok,
+            data
+        });
+    } catch (err) {
+        console.error('Fetch reports error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Sync Purchase Orders from SP-API
+app.post('/api/purchase-orders/sync', async (req, res) => {
+    try {
+        const { createdAfter, createdBefore } = req.body;
+        const accessToken = await getValidAccessToken();
+
+        let url = 'https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrders?limit=100';
+        if (createdAfter) url += `&createdAfter=${encodeURIComponent(createdAfter)}`;
+        if (createdBefore) url += `&createdBefore=${encodeURIComponent(createdBefore)}`;
+
+        const response = await fetch(url, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            return res.status(response.status).json({
+                success: false,
+                error: 'Failed to fetch purchase orders',
+                details: data
+            });
+        }
+
+        // Save POs to database
+        const orders = data.payload?.orders || [];
+        let savedCount = 0;
+
+        for (const order of orders) {
+            try {
+                await pool.query(
+                    `INSERT INTO purchase_orders (
+                        po_number, po_date, po_status,
+                        ship_window_start, ship_window_end,
+                        delivery_window_start, delivery_window_end,
+                        buying_party, selling_party, ship_to_party, bill_to_party,
+                        items, raw_data, updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+                    ON CONFLICT (po_number) DO UPDATE SET
+                        po_status = EXCLUDED.po_status,
+                        items = EXCLUDED.items,
+                        raw_data = EXCLUDED.raw_data,
+                        updated_at = CURRENT_TIMESTAMP`,
+                    [
+                        order.purchaseOrderNumber,
+                        order.purchaseOrderDate,
+                        order.purchaseOrderState,
+                        order.shipWindow?.start,
+                        order.shipWindow?.end,
+                        order.deliveryWindow?.start,
+                        order.deliveryWindow?.end,
+                        JSON.stringify(order.buyingParty),
+                        JSON.stringify(order.sellingParty),
+                        JSON.stringify(order.shipToParty),
+                        JSON.stringify(order.billToParty),
+                        JSON.stringify(order.items),
+                        JSON.stringify(order)
+                    ]
+                );
+                savedCount++;
+            } catch (dbErr) {
+                console.error('Error saving PO:', order.purchaseOrderNumber, dbErr.message);
+            }
+        }
+
+        res.json({
+            success: true,
+            totalFetched: orders.length,
+            savedCount,
+            nextToken: data.payload?.pagination?.nextToken
+        });
+    } catch (err) {
+        console.error('Sync POs error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Fetch catalog details for an ASIN
+app.post('/api/catalog/fetch/:asin', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const accessToken = await getValidAccessToken();
+        const marketplaceId = 'A2EUQ1WTGCTBG2'; // Canada
+
+        const includedData = 'summaries,attributes,dimensions,identifiers,images,productTypes,salesRanks';
+        const url = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items/${asin}?marketplaceIds=${marketplaceId}&includedData=${includedData}`;
+
+        const response = await fetch(url, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            return res.status(response.status).json({
+                success: false,
+                error: 'Failed to fetch catalog data',
+                details: data
+            });
+        }
+
+        // Extract relevant data
+        const summary = data.summaries?.[0] || {};
+        const catalogData = {
+            asin,
+            title: summary.itemName,
+            brand: summary.brand,
+            product_type: data.productTypes?.[0]?.productType,
+            images: data.images,
+            attributes: data.attributes,
+            dimensions: data.dimensions,
+            identifiers: data.identifiers,
+            sales_ranks: data.salesRanks
+        };
+
+        // Save to database
+        await pool.query(
+            `INSERT INTO catalog_details (asin, title, brand, product_type, images, attributes, dimensions, identifiers, sales_ranks, last_updated)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+             ON CONFLICT (asin) DO UPDATE SET
+                title = EXCLUDED.title,
+                brand = EXCLUDED.brand,
+                product_type = EXCLUDED.product_type,
+                images = EXCLUDED.images,
+                attributes = EXCLUDED.attributes,
+                dimensions = EXCLUDED.dimensions,
+                identifiers = EXCLUDED.identifiers,
+                sales_ranks = EXCLUDED.sales_ranks,
+                last_updated = CURRENT_TIMESTAMP`,
+            [
+                asin,
+                catalogData.title,
+                catalogData.brand,
+                catalogData.product_type,
+                JSON.stringify(catalogData.images),
+                JSON.stringify(catalogData.attributes),
+                JSON.stringify(catalogData.dimensions),
+                JSON.stringify(catalogData.identifiers),
+                JSON.stringify(catalogData.sales_ranks)
+            ]
+        );
+
+        res.json({
+            success: true,
+            catalogData: data
+        });
+    } catch (err) {
+        console.error('Fetch catalog error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Get stored vendor report data for analytics page
+app.get('/api/vendor-analytics/data', async (req, res) => {
+    try {
+        const { startDate, endDate, asins } = req.query;
+
+        let query = `
+            SELECT asin, report_type, report_date, data
+            FROM vendor_reports
+            WHERE report_date >= $1 AND report_date <= $2
+        `;
+        const params = [startDate, endDate];
+
+        if (asins) {
+            const asinList = asins.split(',');
+            query += ` AND asin = ANY($3)`;
+            params.push(asinList);
+        }
+
+        query += ` ORDER BY asin, report_type, report_date DESC`;
+
+        const result = await pool.query(query, params);
+
+        // Organize by ASIN and report type
+        const organized = {};
+        for (const row of result.rows) {
+            if (!organized[row.asin]) {
+                organized[row.asin] = {};
+            }
+            if (!organized[row.asin][row.report_type]) {
+                organized[row.asin][row.report_type] = [];
+            }
+            organized[row.asin][row.report_type].push({
+                date: row.report_date,
+                data: row.data
+            });
+        }
+
+        res.json({
+            success: true,
+            data: organized,
+            reportTypes: VENDOR_REPORT_TYPES
+        });
+    } catch (err) {
+        console.error('Vendor analytics data error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 server.listen(port, () => console.log(`Active on ${port}`));
