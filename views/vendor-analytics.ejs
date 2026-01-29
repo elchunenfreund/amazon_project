@@ -281,9 +281,13 @@
                                         <div class="metric-item">
                                             <div class="metric-label">Revenue</div>
                                             <div class="metric-value text-green-600">
-                                                <% if (data.orderedRevenue?.amount !== undefined) { %>$<%= parseFloat(data.orderedRevenue.amount).toFixed(0) %><% } else { %>-<% } %>
+                                                <% const rtRev = data.orderedRevenue?.amount !== undefined ? data.orderedRevenue.amount : (typeof data.orderedRevenue === 'number' ? data.orderedRevenue : null); %>
+                                                <% if (rtRev !== null) { %>$<%= parseFloat(rtRev).toFixed(0) %><% } else { %>-<% } %>
                                             </div>
                                         </div>
+                                    </div>
+                                    <div class="text-[10px] text-slate-400 mt-1" title="Data from <%= data.startTime %> to <%= data.endTime %>">
+                                        <%= data.startTime ? new Date(data.startTime).toLocaleDateString('en-CA') : '' %>
                                     </div>
                                 <% } else { %>
                                     <span class="text-slate-400">-</span>
