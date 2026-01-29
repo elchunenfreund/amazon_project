@@ -5,14 +5,46 @@
     <title>History: <%= asin %></title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
     <style>
         body { font-family: 'Inter', sans-serif; font-size: 16px; }
         table { font-size: 16px; }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-content {
+            background: white;
+            border-radius: 12px;
+            width: 95%;
+            max-width: 1200px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+        }
     </style>
 </head>
 <body class="bg-slate-100 p-8 font-sans">
     <div class="max-w-6xl mx-auto">
-        <a href="/" class="inline-block mb-6 text-blue-600 font-bold hover:underline text-base">← Back to Dashboard</a>
+        <div class="flex items-center justify-between mb-6">
+            <a href="/" class="text-blue-600 font-bold hover:underline text-base">← Back to Dashboard</a>
+            <button onclick="openAnalyticsModal()" class="bg-indigo-600 text-white px-4 py-2 rounded-lg font-semibold hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"/>
+                </svg>
+                Analytics
+            </button>
+        </div>
         <h1 class="text-3xl font-black mb-2 text-slate-800">History for <a href="https://www.amazon.ca/dp/<%= asin %>" target="_blank" class="font-mono text-blue-600 hover:underline"><%= asin %></a></h1>
         <p class="text-slate-500 mb-8 font-mono text-base"><%= reports.length %> entries found</p>
 
@@ -60,5 +92,215 @@
             </table>
         </div>
     </div>
+
+    <!-- Analytics Modal -->
+    <div id="analyticsModal" class="modal-overlay" onclick="if(event.target === this) closeAnalyticsModal()">
+        <div class="modal-content">
+            <div class="sticky top-0 bg-white border-b border-slate-200 p-4 flex items-center justify-between">
+                <h2 class="text-xl font-bold text-slate-800">Analytics for <%= asin %></h2>
+                <button onclick="closeAnalyticsModal()" class="text-slate-400 hover:text-slate-600 p-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="p-6">
+                <!-- Metric Selectors -->
+                <div class="flex flex-wrap gap-4 mb-4">
+                    <div class="flex flex-wrap gap-2">
+                        <label class="inline-flex items-center gap-1 text-sm bg-slate-100 px-3 py-1 rounded-full cursor-pointer">
+                            <input type="checkbox" id="chk-poOrdered" checked class="metric-checkbox" onchange="updateAnalyticsChart()">
+                            <span>PO Ordered</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1 text-sm bg-slate-100 px-3 py-1 rounded-full cursor-pointer">
+                            <input type="checkbox" id="chk-poAccepted" checked class="metric-checkbox" onchange="updateAnalyticsChart()">
+                            <span>PO Accepted</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1 text-sm bg-slate-100 px-3 py-1 rounded-full cursor-pointer">
+                            <input type="checkbox" id="chk-soldUnits" checked class="metric-checkbox" onchange="updateAnalyticsChart()">
+                            <span>Units Sold</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1 text-sm bg-slate-100 px-3 py-1 rounded-full cursor-pointer">
+                            <input type="checkbox" id="chk-revenue" class="metric-checkbox" onchange="updateAnalyticsChart()">
+                            <span>Revenue ($)</span>
+                        </label>
+                        <label class="inline-flex items-center gap-1 text-sm bg-slate-100 px-3 py-1 rounded-full cursor-pointer">
+                            <input type="checkbox" id="chk-ranking" class="metric-checkbox" onchange="updateAnalyticsChart()">
+                            <span>Ranking</span>
+                        </label>
+                    </div>
+                </div>
+                <!-- Period and Aggregation -->
+                <div class="flex flex-wrap gap-4 mb-6">
+                    <div class="flex gap-1 bg-slate-100 rounded-lg p-1">
+                        <button class="period-btn px-3 py-1 text-sm rounded-md" data-period="30d" onclick="setPeriod('30d')">30D</button>
+                        <button class="period-btn px-3 py-1 text-sm rounded-md bg-white shadow" data-period="90d" onclick="setPeriod('90d')">90D</button>
+                        <button class="period-btn px-3 py-1 text-sm rounded-md" data-period="1y" onclick="setPeriod('1y')">1Y</button>
+                        <button class="period-btn px-3 py-1 text-sm rounded-md" data-period="all" onclick="setPeriod('all')">All</button>
+                    </div>
+                    <div class="flex gap-1 bg-slate-100 rounded-lg p-1">
+                        <button class="agg-btn px-3 py-1 text-sm rounded-md bg-white shadow" data-agg="day" onclick="setAggregation('day')">Daily</button>
+                        <button class="agg-btn px-3 py-1 text-sm rounded-md" data-agg="week" onclick="setAggregation('week')">Weekly</button>
+                    </div>
+                    <button onclick="resetAnalyticsZoom()" class="px-3 py-1 text-sm bg-slate-200 rounded-md hover:bg-slate-300">Reset Zoom</button>
+                </div>
+                <!-- Chart -->
+                <div class="bg-slate-50 rounded-lg p-4" style="height: 400px;">
+                    <canvas id="analyticsChart"></canvas>
+                </div>
+                <!-- Summary Stats -->
+                <div id="analyticsSummary" class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+                    <div class="bg-blue-50 rounded-lg p-4">
+                        <div class="text-xs text-blue-600 font-semibold uppercase">Total PO Ordered</div>
+                        <div id="stat-poOrdered" class="text-2xl font-bold text-blue-800">-</div>
+                    </div>
+                    <div class="bg-green-50 rounded-lg p-4">
+                        <div class="text-xs text-green-600 font-semibold uppercase">Total PO Accepted</div>
+                        <div id="stat-poAccepted" class="text-2xl font-bold text-green-800">-</div>
+                    </div>
+                    <div class="bg-amber-50 rounded-lg p-4">
+                        <div class="text-xs text-amber-600 font-semibold uppercase">Total Units Sold</div>
+                        <div id="stat-soldUnits" class="text-2xl font-bold text-amber-800">-</div>
+                    </div>
+                    <div class="bg-red-50 rounded-lg p-4">
+                        <div class="text-xs text-red-600 font-semibold uppercase">Total Revenue</div>
+                        <div id="stat-revenue" class="text-2xl font-bold text-red-800">-</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const currentAsin = '<%= asin %>';
+        let analyticsChart = null;
+        let chartData = null;
+        let chartSettings = { period: '90d', aggregation: 'day' };
+
+        function openAnalyticsModal() {
+            document.getElementById('analyticsModal').classList.add('active');
+            document.body.style.overflow = 'hidden';
+            loadAnalyticsData();
+        }
+
+        function closeAnalyticsModal() {
+            document.getElementById('analyticsModal').classList.remove('active');
+            document.body.style.overflow = '';
+        }
+
+        function setPeriod(period) {
+            chartSettings.period = period;
+            document.querySelectorAll('.period-btn').forEach(btn => {
+                btn.classList.toggle('bg-white', btn.dataset.period === period);
+                btn.classList.toggle('shadow', btn.dataset.period === period);
+            });
+            loadAnalyticsData();
+        }
+
+        function setAggregation(agg) {
+            chartSettings.aggregation = agg;
+            document.querySelectorAll('.agg-btn').forEach(btn => {
+                btn.classList.toggle('bg-white', btn.dataset.agg === agg);
+                btn.classList.toggle('shadow', btn.dataset.agg === agg);
+            });
+            loadAnalyticsData();
+        }
+
+        async function loadAnalyticsData() {
+            const metrics = ['poOrdered', 'poAccepted', 'soldUnits', 'revenue', 'ranking'];
+            const url = `/api/charts/multi-series?asins=${currentAsin}&metrics=${metrics.join(',')}&period=${chartSettings.period}&aggregation=${chartSettings.aggregation}`;
+
+            try {
+                const response = await fetch(url);
+                chartData = await response.json();
+                updateAnalyticsChart();
+                updateSummaryStats();
+            } catch (err) {
+                console.error('Failed to load analytics:', err);
+            }
+        }
+
+        function updateAnalyticsChart() {
+            if (!chartData) return;
+
+            const ctx = document.getElementById('analyticsChart').getContext('2d');
+            const selectedMetrics = [];
+            document.querySelectorAll('.metric-checkbox:checked').forEach(cb => {
+                selectedMetrics.push(cb.id.replace('chk-', ''));
+            });
+
+            const datasets = chartData.series
+                .filter(s => selectedMetrics.includes(s.metric))
+                .map(s => ({
+                    label: s.label,
+                    data: s.values,
+                    borderColor: s.color,
+                    backgroundColor: s.color + '20',
+                    fill: false,
+                    tension: 0.3,
+                    yAxisID: s.yAxisID || 'y'
+                }));
+
+            if (analyticsChart) {
+                analyticsChart.destroy();
+            }
+
+            analyticsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartData.dates,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: { position: 'top' },
+                        zoom: {
+                            zoom: {
+                                wheel: { enabled: true },
+                                drag: { enabled: true, backgroundColor: 'rgba(59, 130, 246, 0.2)' },
+                                mode: 'x'
+                            },
+                            pan: { enabled: true, mode: 'x' }
+                        }
+                    },
+                    scales: {
+                        y: { type: 'linear', position: 'left', title: { display: true, text: 'Units' } },
+                        y1: { type: 'linear', position: 'right', title: { display: true, text: 'Revenue ($)' }, grid: { drawOnChartArea: false } },
+                        y2: { type: 'linear', position: 'right', reverse: true, title: { display: true, text: 'Ranking' }, grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+
+        function updateSummaryStats() {
+            if (!chartData) return;
+            chartData.series.forEach(s => {
+                const total = s.values.reduce((a, b) => a + (b || 0), 0);
+                const el = document.getElementById('stat-' + s.metric);
+                if (el) {
+                    if (s.metric === 'revenue') {
+                        el.textContent = '$' + total.toLocaleString(undefined, { maximumFractionDigits: 0 });
+                    } else if (s.metric === 'ranking') {
+                        const avg = s.values.filter(v => v).length > 0 ? Math.round(total / s.values.filter(v => v).length) : '-';
+                        el.textContent = avg.toLocaleString ? avg.toLocaleString() : avg;
+                    } else {
+                        el.textContent = total.toLocaleString();
+                    }
+                }
+            });
+        }
+
+        function resetAnalyticsZoom() {
+            if (analyticsChart) analyticsChart.resetZoom();
+        }
+
+        // Close modal on Escape key
+        document.addEventListener('keydown', e => {
+            if (e.key === 'Escape') closeAnalyticsModal();
+        });
+    </script>
 </body>
 </html>
