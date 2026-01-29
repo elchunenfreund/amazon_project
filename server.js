@@ -2382,6 +2382,17 @@ app.get('/vendor-analytics', async (req, res) => {
             }
         });
 
+        // Fill remaining gaps from po_line_items product_title
+        const poTitleResult = await pool.query(`
+            SELECT DISTINCT ON (asin) asin, product_title FROM po_line_items
+            WHERE product_title IS NOT NULL ORDER BY asin, created_at DESC
+        `);
+        poTitleResult.rows.forEach(row => {
+            if (!productTitles[row.asin] && row.product_title) {
+                productTitles[row.asin] = row.product_title;
+            }
+        });
+
         // Get vendor SKUs from po_line_items
         const vendorSkus = {};
         const skuResult = await pool.query(`
@@ -2473,6 +2484,18 @@ app.get('/purchase-orders', async (req, res) => {
             dailyResult.rows.forEach(row => {
                 if (!productTitles[row.asin] && row.header) {
                     productTitles[row.asin] = row.header;
+                }
+            });
+
+            // Fill remaining gaps from po_line_items product_title
+            const poTitleResult = await pool.query(
+                `SELECT DISTINCT ON (asin) asin, product_title FROM po_line_items
+                 WHERE asin = ANY($1) AND product_title IS NOT NULL ORDER BY asin, created_at DESC`,
+                [asinArray]
+            );
+            poTitleResult.rows.forEach(row => {
+                if (!productTitles[row.asin] && row.product_title) {
+                    productTitles[row.asin] = row.product_title;
                 }
             });
 
