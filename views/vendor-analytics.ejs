@@ -399,6 +399,9 @@
                                     <a href="/catalog/<%= asin %>" class="bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs font-medium hover:bg-slate-200" title="View catalog info">
                                         Catalog
                                     </a>
+                                    <button onclick="showChartForAsin('<%= asin %>')" class="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-medium hover:bg-purple-200" title="View performance chart">
+                                        Chart
+                                    </button>
                                 </div>
                             </td>
                         </tr>
@@ -972,6 +975,24 @@
                 cb.addEventListener('change', updateChart);
             });
         });
+
+        // Show chart for a specific ASIN (called from row buttons)
+        function showChartForAsin(asin) {
+            // Select the ASIN in the dropdown
+            const dropdown = document.getElementById('chartAsinSelect');
+            if (dropdown) {
+                dropdown.value = asin;
+            }
+
+            // Scroll to chart section smoothly
+            const chartSection = document.getElementById('chartContainer');
+            if (chartSection) {
+                chartSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            // Update the chart
+            updateChart();
+        }
 
         async function updateChart() {
             const selectedAsins = getSelectedChartAsins();
