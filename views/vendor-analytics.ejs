@@ -7,6 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .report-cell { min-width: 120px; }
@@ -410,33 +411,66 @@
 
         <!-- Performance Charts Section -->
         <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-6 mt-8">
-            <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+            <div class="flex flex-wrap justify-between items-center gap-4 mb-4">
                 <div>
                     <h3 class="text-xl font-bold text-slate-900">Performance Charts</h3>
-                    <p class="text-sm text-slate-500">Visualize metrics over time for selected ASINs</p>
+                    <p class="text-sm text-slate-500">Visualize multiple metrics over time - click and drag to zoom</p>
                 </div>
-                <div class="flex flex-wrap items-center gap-3">
-                    <select id="chartMetric" onchange="updateChart()" class="px-3 py-2 rounded-lg border border-slate-300 text-sm">
-                        <option value="orderedUnits">Ordered Units (Weekly)</option>
-                        <option value="shippedUnits">Shipped Units (Weekly)</option>
-                        <option value="orderedRevenue">Revenue (Weekly)</option>
-                        <option value="glanceViews">Traffic / Views (Weekly)</option>
-                        <option value="sellableOnHandInventoryUnits">Inventory Units (Weekly)</option>
-                        <option value="netPureProductMargin">Margin % (Weekly)</option>
-                        <option value="rtOrderedUnits">RT Ordered Units</option>
-                        <option value="rtOrderedRevenue">RT Revenue</option>
-                    </select>
-                    <label class="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg cursor-pointer">
-                        <input type="checkbox" id="mergeAsins" onchange="updateChart()" class="w-4 h-4">
-                        <span class="text-sm font-medium text-slate-700">Merge ASINs</span>
+                <button onclick="resetChartZoom()" class="bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium hover:bg-slate-300">
+                    Reset Zoom
+                </button>
+            </div>
+
+            <!-- Metrics Selection -->
+            <div class="mb-4">
+                <div class="text-sm font-medium text-slate-700 mb-2">Select metrics to display:</div>
+                <div class="flex flex-wrap gap-2">
+                    <label class="metric-checkbox flex items-center gap-2 px-3 py-2 bg-blue-50 border-2 border-blue-200 rounded-lg cursor-pointer hover:bg-blue-100 transition-all">
+                        <input type="checkbox" class="chart-metric-cb w-4 h-4 accent-blue-600" value="poOrdered" checked>
+                        <span class="text-sm font-medium text-blue-800">PO Ordered</span>
                     </label>
-                    <button onclick="updateChart()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700">
-                        Refresh Chart
-                    </button>
+                    <label class="metric-checkbox flex items-center gap-2 px-3 py-2 bg-green-50 border-2 border-green-200 rounded-lg cursor-pointer hover:bg-green-100 transition-all">
+                        <input type="checkbox" class="chart-metric-cb w-4 h-4 accent-green-600" value="poAccepted" checked>
+                        <span class="text-sm font-medium text-green-800">PO Accepted</span>
+                    </label>
+                    <label class="metric-checkbox flex items-center gap-2 px-3 py-2 bg-amber-50 border-2 border-amber-200 rounded-lg cursor-pointer hover:bg-amber-100 transition-all">
+                        <input type="checkbox" class="chart-metric-cb w-4 h-4 accent-amber-600" value="soldUnits">
+                        <span class="text-sm font-medium text-amber-800">Units Sold</span>
+                    </label>
+                    <label class="metric-checkbox flex items-center gap-2 px-3 py-2 bg-red-50 border-2 border-red-200 rounded-lg cursor-pointer hover:bg-red-100 transition-all">
+                        <input type="checkbox" class="chart-metric-cb w-4 h-4 accent-red-600" value="revenue">
+                        <span class="text-sm font-medium text-red-800">Revenue ($)</span>
+                    </label>
+                    <label class="metric-checkbox flex items-center gap-2 px-3 py-2 bg-purple-50 border-2 border-purple-200 rounded-lg cursor-pointer hover:bg-purple-100 transition-all">
+                        <input type="checkbox" class="chart-metric-cb w-4 h-4 accent-purple-600" value="ranking">
+                        <span class="text-sm font-medium text-purple-800">Ranking</span>
+                    </label>
                 </div>
             </div>
+
+            <!-- Period and Aggregation Controls -->
+            <div class="flex flex-wrap gap-4 mb-4">
+                <div>
+                    <div class="text-sm font-medium text-slate-700 mb-2">Time Period:</div>
+                    <div class="flex gap-1">
+                        <button class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" data-period="30d">30 Days</button>
+                        <button class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white" data-period="90d">90 Days</button>
+                        <button class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" data-period="1y">1 Year</button>
+                        <button class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" data-period="all">All Time</button>
+                    </div>
+                </div>
+                <div>
+                    <div class="text-sm font-medium text-slate-700 mb-2">Aggregation:</div>
+                    <div class="flex gap-1">
+                        <button class="agg-btn px-3 py-1.5 text-sm font-medium rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200" data-agg="day">Daily</button>
+                        <button class="agg-btn px-3 py-1.5 text-sm font-medium rounded-lg bg-blue-600 text-white" data-agg="week">Weekly</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ASIN Selector -->
             <div class="mb-4">
-                <div class="text-sm font-medium text-slate-700 mb-2">Select ASINs to chart (check boxes in the table above, or select here):</div>
+                <div class="text-sm font-medium text-slate-700 mb-2">Select ASINs to chart:</div>
                 <div id="chartAsinSelector" class="flex flex-wrap gap-2 max-h-24 overflow-auto p-2 bg-slate-50 rounded-lg">
                     <% asins.forEach(asin => { %>
                     <label class="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded cursor-pointer hover:bg-blue-50">
@@ -446,12 +480,15 @@
                     <% }); %>
                 </div>
             </div>
-            <div id="chartContainer" class="relative" style="height: 350px;">
+
+            <!-- Chart Container -->
+            <div id="chartContainer" class="relative" style="height: 400px;">
                 <canvas id="analyticsChart"></canvas>
                 <div id="chartPlaceholder" class="absolute inset-0 flex items-center justify-center bg-slate-50 rounded-lg">
                     <div class="text-center text-slate-500">
                         <p class="text-lg font-medium">Select ASINs to display chart</p>
-                        <p class="text-sm">Use checkboxes in the table or the selector above</p>
+                        <p class="text-sm">Use checkboxes above to select ASINs</p>
+                        <p class="text-xs mt-2 text-slate-400">Tip: Click and drag on the chart to zoom into a date range</p>
                     </div>
                 </div>
             </div>
@@ -889,24 +926,78 @@
             return '<span class="text-slate-400">No data available for this period</span>';
         }
 
-        // Chart functionality
+        // Enhanced Chart functionality with multi-series and zoom
         let chart = null;
-        const chartColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
+        let chartPeriod = '90d';
+        let chartAggregation = 'week';
+
+        // Initialize chart controls
+        document.addEventListener('DOMContentLoaded', () => {
+            // Period buttons
+            document.querySelectorAll('.period-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.period-btn').forEach(b => {
+                        b.classList.remove('bg-blue-600', 'text-white');
+                        b.classList.add('bg-slate-100', 'text-slate-600');
+                    });
+                    btn.classList.remove('bg-slate-100', 'text-slate-600');
+                    btn.classList.add('bg-blue-600', 'text-white');
+                    chartPeriod = btn.dataset.period;
+                    updateChart();
+                });
+            });
+
+            // Aggregation buttons
+            document.querySelectorAll('.agg-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    document.querySelectorAll('.agg-btn').forEach(b => {
+                        b.classList.remove('bg-blue-600', 'text-white');
+                        b.classList.add('bg-slate-100', 'text-slate-600');
+                    });
+                    btn.classList.remove('bg-slate-100', 'text-slate-600');
+                    btn.classList.add('bg-blue-600', 'text-white');
+                    chartAggregation = btn.dataset.agg;
+                    updateChart();
+                });
+            });
+
+            // Metric checkboxes
+            document.querySelectorAll('.chart-metric-cb').forEach(cb => {
+                cb.addEventListener('change', updateChart);
+            });
+
+            // ASIN checkboxes
+            document.querySelectorAll('.chart-asin-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateChart);
+            });
+        });
 
         async function updateChart() {
             const selectedAsins = getSelectedChartAsins();
             if (selectedAsins.length === 0) {
                 document.getElementById('chartPlaceholder').classList.remove('hidden');
+                if (chart) { chart.destroy(); chart = null; }
+                return;
+            }
+
+            const selectedMetrics = Array.from(document.querySelectorAll('.chart-metric-cb:checked')).map(cb => cb.value);
+            if (selectedMetrics.length === 0) {
+                document.getElementById('chartPlaceholder').classList.remove('hidden');
+                if (chart) { chart.destroy(); chart = null; }
                 return;
             }
 
             document.getElementById('chartPlaceholder').classList.add('hidden');
 
-            const metric = document.getElementById('chartMetric').value;
-            const mergeAsins = document.getElementById('mergeAsins').checked;
-
             try {
-                const response = await fetch(`/api/vendor-analytics/chart-data?asins=${selectedAsins.join(',')}&metric=${metric}&startDate=${startDate}&endDate=${endDate}&merge=${mergeAsins}`);
+                const params = new URLSearchParams({
+                    asins: selectedAsins.join(','),
+                    metrics: selectedMetrics.join(','),
+                    period: chartPeriod,
+                    aggregation: chartAggregation
+                });
+
+                const response = await fetch(`/api/charts/multi-series?${params}`);
                 const data = await response.json();
 
                 if (!data.success) {
@@ -917,50 +1008,129 @@
                 if (chart) chart.destroy();
 
                 const ctx = document.getElementById('analyticsChart').getContext('2d');
+
+                // Build datasets with proper axis assignment
+                const datasets = data.series.map(s => ({
+                    label: s.label,
+                    data: s.values,
+                    borderColor: s.color,
+                    backgroundColor: s.color + '20',
+                    tension: 0.3,
+                    fill: false,
+                    yAxisID: s.yAxisID,
+                    pointRadius: chartAggregation === 'day' ? 2 : 4,
+                    borderWidth: 2
+                }));
+
+                // Determine which axes to show
+                const hasRevenue = selectedMetrics.includes('revenue');
+                const hasRanking = selectedMetrics.includes('ranking');
+
                 chart = new Chart(ctx, {
                     type: 'line',
                     data: {
                         labels: data.dates,
-                        datasets: data.series.map((s, i) => ({
-                            label: s.label,
-                            data: s.values,
-                            borderColor: chartColors[i % chartColors.length],
-                            backgroundColor: chartColors[i % chartColors.length] + '20',
-                            tension: 0.3,
-                            fill: true
-                        }))
+                        datasets: datasets
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        },
                         plugins: {
-                            legend: { position: 'bottom' },
+                            legend: {
+                                position: 'bottom',
+                                labels: {
+                                    usePointStyle: true,
+                                    padding: 15
+                                }
+                            },
                             tooltip: {
                                 callbacks: {
                                     label: (ctx) => {
                                         let value = ctx.raw;
-                                        if (metric.includes('Revenue')) value = '$' + value.toFixed(2);
-                                        else if (metric.includes('Margin')) value = (value * 100).toFixed(1) + '%';
+                                        if (value === null || value === undefined) return ctx.dataset.label + ': N/A';
+                                        const metric = data.series[ctx.datasetIndex]?.metric || '';
+                                        if (metric === 'revenue') value = '$' + value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                                        else if (metric === 'ranking') value = '#' + value.toLocaleString();
                                         else value = value.toLocaleString();
                                         return ctx.dataset.label + ': ' + value;
                                     }
+                                }
+                            },
+                            zoom: {
+                                zoom: {
+                                    wheel: { enabled: true },
+                                    pinch: { enabled: true },
+                                    drag: {
+                                        enabled: true,
+                                        backgroundColor: 'rgba(59, 130, 246, 0.2)',
+                                        borderColor: 'rgba(59, 130, 246, 0.8)',
+                                        borderWidth: 1
+                                    },
+                                    mode: 'x'
+                                },
+                                pan: {
+                                    enabled: true,
+                                    mode: 'x'
+                                },
+                                limits: {
+                                    x: { min: 'original', max: 'original' }
                                 }
                             }
                         },
                         scales: {
                             x: {
                                 type: 'category',
-                                title: { display: true, text: 'Date' }
+                                title: { display: true, text: 'Date', font: { weight: 'bold' } },
+                                ticks: {
+                                    maxRotation: 45,
+                                    minRotation: 0
+                                }
                             },
                             y: {
-                                beginAtZero: !metric.includes('Margin'),
-                                title: { display: true, text: metric }
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                title: { display: true, text: 'Units', font: { weight: 'bold' } },
+                                beginAtZero: true,
+                                grid: { color: '#e2e8f0' }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: hasRevenue,
+                                position: 'right',
+                                title: { display: hasRevenue, text: 'Revenue ($)', font: { weight: 'bold' } },
+                                beginAtZero: true,
+                                grid: { drawOnChartArea: false },
+                                ticks: {
+                                    callback: (value) => '$' + value.toLocaleString()
+                                }
+                            },
+                            y2: {
+                                type: 'linear',
+                                display: hasRanking,
+                                position: 'right',
+                                title: { display: hasRanking, text: 'Ranking (lower is better)', font: { weight: 'bold' } },
+                                reverse: true,
+                                grid: { drawOnChartArea: false },
+                                ticks: {
+                                    callback: (value) => '#' + value.toLocaleString()
+                                }
                             }
                         }
                     }
                 });
             } catch (err) {
                 console.error('Chart update error:', err);
+            }
+        }
+
+        function resetChartZoom() {
+            if (chart) {
+                chart.resetZoom();
             }
         }
 

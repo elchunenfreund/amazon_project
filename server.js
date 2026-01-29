@@ -2924,6 +2924,201 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
     }
 });
 
+// API: Multi-series chart data with multiple metrics, PO data, and rankings
+app.get('/api/charts/multi-series', async (req, res) => {
+    try {
+        const { asins, metrics, aggregation = 'week', period = '90d', startDate, endDate } = req.query;
+
+        if (!asins) {
+            return res.status(400).json({ error: 'Missing required parameter: asins' });
+        }
+
+        const asinList = asins.split(',').map(a => a.trim());
+        const metricList = metrics ? metrics.split(',').map(m => m.trim()) : ['soldUnits'];
+
+        // Calculate date range based on period
+        let dateStart, dateEnd;
+        const now = new Date();
+        dateEnd = endDate ? new Date(endDate) : now;
+
+        if (startDate) {
+            dateStart = new Date(startDate);
+        } else {
+            dateStart = new Date(now);
+            switch (period) {
+                case '30d': dateStart.setDate(dateStart.getDate() - 30); break;
+                case '90d': dateStart.setDate(dateStart.getDate() - 90); break;
+                case '1y': dateStart.setFullYear(dateStart.getFullYear() - 1); break;
+                case 'all': dateStart = new Date('2020-01-01'); break;
+                default: dateStart.setDate(dateStart.getDate() - 90);
+            }
+        }
+
+        const series = [];
+        const allDates = new Set();
+
+        // Define metric configurations
+        const metricConfigs = {
+            poOrdered: { label: 'PO Ordered', color: '#3b82f6', yAxisID: 'y', source: 'po' },
+            poAccepted: { label: 'PO Accepted', color: '#10b981', yAxisID: 'y', source: 'po' },
+            soldUnits: { label: 'Units Sold', color: '#f59e0b', yAxisID: 'y', source: 'sales', field: 'orderedUnits' },
+            shippedUnits: { label: 'Units Shipped', color: '#06b6d4', yAxisID: 'y', source: 'sales', field: 'shippedUnits' },
+            revenue: { label: 'Revenue ($)', color: '#ef4444', yAxisID: 'y1', source: 'sales', field: 'orderedRevenue', isAmount: true },
+            ranking: { label: 'Ranking', color: '#8b5cf6', yAxisID: 'y2', source: 'ranking' }
+        };
+
+        // Determine PostgreSQL date_trunc interval
+        const truncInterval = aggregation === 'day' ? 'day' : aggregation === 'month' ? 'month' : 'week';
+
+        // Fetch PO data if needed
+        if (metricList.includes('poOrdered') || metricList.includes('poAccepted')) {
+            const poResult = await pool.query(`
+                SELECT
+                    DATE_TRUNC($1, po.po_date)::DATE as period,
+                    SUM(pli.ordered_quantity) as ordered,
+                    SUM(COALESCE(pli.acknowledged_quantity, 0)) as accepted
+                FROM purchase_orders po
+                JOIN po_line_items pli ON po.po_number = pli.po_number
+                WHERE pli.asin = ANY($2)
+                  AND po.po_date >= $3
+                  AND po.po_date <= $4
+                GROUP BY DATE_TRUNC($1, po.po_date)
+                ORDER BY period
+            `, [truncInterval, asinList, dateStart, dateEnd]);
+
+            const poData = {};
+            for (const row of poResult.rows) {
+                const date = new Date(row.period).toISOString().split('T')[0];
+                allDates.add(date);
+                poData[date] = { ordered: parseInt(row.ordered) || 0, accepted: parseInt(row.accepted) || 0 };
+            }
+
+            if (metricList.includes('poOrdered')) {
+                series.push({
+                    metric: 'poOrdered',
+                    label: metricConfigs.poOrdered.label,
+                    color: metricConfigs.poOrdered.color,
+                    yAxisID: metricConfigs.poOrdered.yAxisID,
+                    dataMap: poData,
+                    valueKey: 'ordered'
+                });
+            }
+            if (metricList.includes('poAccepted')) {
+                series.push({
+                    metric: 'poAccepted',
+                    label: metricConfigs.poAccepted.label,
+                    color: metricConfigs.poAccepted.color,
+                    yAxisID: metricConfigs.poAccepted.yAxisID,
+                    dataMap: poData,
+                    valueKey: 'accepted'
+                });
+            }
+        }
+
+        // Fetch sales data if needed
+        const salesMetrics = metricList.filter(m => ['soldUnits', 'shippedUnits', 'revenue'].includes(m));
+        if (salesMetrics.length > 0) {
+            const salesResult = await pool.query(`
+                SELECT
+                    DATE_TRUNC($1, report_date)::DATE as period,
+                    SUM((data->>'orderedUnits')::INTEGER) as ordered_units,
+                    SUM((data->>'shippedUnits')::INTEGER) as shipped_units,
+                    SUM(CASE
+                        WHEN data->'orderedRevenue'->>'amount' IS NOT NULL
+                        THEN (data->'orderedRevenue'->>'amount')::DECIMAL
+                        ELSE 0
+                    END) as revenue
+                FROM vendor_reports
+                WHERE report_type = 'GET_VENDOR_SALES_REPORT'
+                  AND asin = ANY($2)
+                  AND report_date >= $3
+                  AND report_date <= $4
+                GROUP BY DATE_TRUNC($1, report_date)
+                ORDER BY period
+            `, [truncInterval, asinList, dateStart, dateEnd]);
+
+            const salesData = {};
+            for (const row of salesResult.rows) {
+                const date = new Date(row.period).toISOString().split('T')[0];
+                allDates.add(date);
+                salesData[date] = {
+                    soldUnits: parseInt(row.ordered_units) || 0,
+                    shippedUnits: parseInt(row.shipped_units) || 0,
+                    revenue: parseFloat(row.revenue) || 0
+                };
+            }
+
+            for (const metric of salesMetrics) {
+                const config = metricConfigs[metric];
+                series.push({
+                    metric,
+                    label: config.label,
+                    color: config.color,
+                    yAxisID: config.yAxisID,
+                    dataMap: salesData,
+                    valueKey: metric
+                });
+            }
+        }
+
+        // Fetch ranking data if needed
+        if (metricList.includes('ranking')) {
+            const rankingResult = await pool.query(`
+                SELECT
+                    DATE_TRUNC($1, check_date)::DATE as period,
+                    AVG(NULLIF(REGEXP_REPLACE(ranking, '[^0-9]', '', 'g'), '')::INTEGER) as avg_ranking
+                FROM daily_reports
+                WHERE asin = ANY($2)
+                  AND check_date >= $3
+                  AND check_date <= $4
+                  AND ranking IS NOT NULL
+                  AND ranking != ''
+                GROUP BY DATE_TRUNC($1, check_date)
+                ORDER BY period
+            `, [truncInterval, asinList, dateStart, dateEnd]);
+
+            const rankingData = {};
+            for (const row of rankingResult.rows) {
+                const date = new Date(row.period).toISOString().split('T')[0];
+                allDates.add(date);
+                rankingData[date] = { ranking: Math.round(parseFloat(row.avg_ranking)) || null };
+            }
+
+            series.push({
+                metric: 'ranking',
+                label: metricConfigs.ranking.label,
+                color: metricConfigs.ranking.color,
+                yAxisID: metricConfigs.ranking.yAxisID,
+                dataMap: rankingData,
+                valueKey: 'ranking'
+            });
+        }
+
+        // Sort dates and build final series data
+        const dates = Array.from(allDates).sort();
+
+        const finalSeries = series.map(s => ({
+            metric: s.metric,
+            label: s.label,
+            color: s.color,
+            yAxisID: s.yAxisID,
+            values: dates.map(date => s.dataMap[date]?.[s.valueKey] ?? null)
+        }));
+
+        res.json({
+            success: true,
+            dates,
+            series: finalSeries,
+            period,
+            aggregation,
+            dateRange: { start: dateStart.toISOString().split('T')[0], end: dateEnd.toISOString().split('T')[0] }
+        });
+    } catch (err) {
+        console.error('Multi-series chart error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API: Get POs for a specific ASIN
 app.get('/api/purchase-orders/by-asin/:asin', async (req, res) => {
     try {
