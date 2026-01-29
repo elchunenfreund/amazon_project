@@ -2344,23 +2344,25 @@ app.get('/vendor-analytics', async (req, res) => {
             asinTrackerData[row.asin] = row;
         });
 
-        // Get last ordered date AND PO count per ASIN from purchase_orders
+        // Get last ordered date AND PO count per ASIN from po_line_items
         const lastOrderResult = await pool.query(`
             SELECT
-                item->>'amazonProductIdentifier' as asin,
-                MAX(po_date) as last_ordered,
-                COUNT(DISTINCT po_number) as po_count
-            FROM purchase_orders,
-                 jsonb_array_elements(items) as item
-            WHERE item->>'amazonProductIdentifier' IS NOT NULL
-            GROUP BY item->>'amazonProductIdentifier'
+                pli.asin,
+                MAX(po.po_date) as last_ordered,
+                COUNT(DISTINCT pli.po_number) as po_count,
+                SUM(pli.ordered_quantity) as total_ordered
+            FROM po_line_items pli
+            JOIN purchase_orders po ON pli.po_number = po.po_number
+            WHERE pli.asin IS NOT NULL
+            GROUP BY pli.asin
         `);
         const lastOrderedByAsin = {};
         lastOrderResult.rows.forEach(row => {
             if (row.asin) {
                 lastOrderedByAsin[row.asin] = {
                     date: row.last_ordered,
-                    poCount: parseInt(row.po_count) || 0
+                    poCount: parseInt(row.po_count) || 0,
+                    totalOrdered: parseInt(row.total_ordered) || 0
                 };
             }
         });
