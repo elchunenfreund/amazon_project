@@ -468,17 +468,18 @@
                 </div>
             </div>
 
-            <!-- ASIN Selector -->
+            <!-- ASIN Selector Dropdown -->
             <div class="mb-4">
-                <div class="text-sm font-medium text-slate-700 mb-2">Select ASINs to chart:</div>
-                <div id="chartAsinSelector" class="flex flex-wrap gap-2 max-h-24 overflow-auto p-2 bg-slate-50 rounded-lg">
-                    <% asins.forEach(asin => { %>
-                    <label class="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded cursor-pointer hover:bg-blue-50">
-                        <input type="checkbox" class="chart-asin-checkbox w-3 h-3" value="<%= asin %>">
-                        <span class="text-xs font-mono"><%= asin %></span>
-                    </label>
+                <div class="text-sm font-medium text-slate-700 mb-2">Select ASIN to chart:</div>
+                <select id="chartAsinSelect" onchange="updateChart()" class="w-full max-w-md px-4 py-2 rounded-lg border border-slate-300 text-sm font-mono bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-200">
+                    <option value="">-- Select an ASIN --</option>
+                    <% asins.forEach(asin => {
+                        const title = productTitles[asin] || '';
+                        const displayTitle = title ? ` - ${title.substring(0, 50)}${title.length > 50 ? '...' : ''}` : '';
+                    %>
+                    <option value="<%= asin %>"><%= asin %><%= displayTitle %></option>
                     <% }); %>
-                </div>
+                </select>
             </div>
 
             <!-- Chart Container -->
@@ -486,8 +487,8 @@
                 <canvas id="analyticsChart"></canvas>
                 <div id="chartPlaceholder" class="absolute inset-0 flex items-center justify-center bg-slate-50 rounded-lg">
                     <div class="text-center text-slate-500">
-                        <p class="text-lg font-medium">Select ASINs to display chart</p>
-                        <p class="text-sm">Use checkboxes above to select ASINs</p>
+                        <p class="text-lg font-medium">Select an ASIN to display chart</p>
+                        <p class="text-sm">Use the dropdown above to choose a product</p>
                         <p class="text-xs mt-2 text-slate-400">Tip: Click and drag on the chart to zoom into a date range</p>
                     </div>
                 </div>
@@ -1094,27 +1095,16 @@
                                 type: 'linear',
                                 display: true,
                                 position: 'left',
-                                title: { display: true, text: 'Units', font: { weight: 'bold' } },
+                                title: { display: true, text: 'Units / Revenue', font: { weight: 'bold' } },
                                 beginAtZero: true,
                                 grid: { color: '#e2e8f0' }
                             },
                             y1: {
                                 type: 'linear',
-                                display: hasRevenue,
-                                position: 'right',
-                                title: { display: hasRevenue, text: 'Revenue ($)', font: { weight: 'bold' } },
-                                beginAtZero: true,
-                                grid: { drawOnChartArea: false },
-                                ticks: {
-                                    callback: (value) => '$' + value.toLocaleString()
-                                }
-                            },
-                            y2: {
-                                type: 'linear',
                                 display: hasRanking,
                                 position: 'right',
-                                title: { display: hasRanking, text: 'Ranking (lower is better)', font: { weight: 'bold' } },
-                                reverse: true,
+                                title: { display: hasRanking, text: 'Ranking (#1 = Best)', font: { weight: 'bold' } },
+                                beginAtZero: false,
                                 grid: { drawOnChartArea: false },
                                 ticks: {
                                     callback: (value) => '#' + value.toLocaleString()
@@ -1135,21 +1125,24 @@
         }
 
         function getSelectedChartAsins() {
-            // First check the main table checkboxes
-            const tableChecked = document.querySelectorAll('.asin-checkbox:checked');
-            if (tableChecked.length > 0) {
-                return Array.from(tableChecked).map(cb => cb.value);
-            }
-            // Fall back to chart ASIN selector
-            const chartChecked = document.querySelectorAll('.chart-asin-checkbox:checked');
-            return Array.from(chartChecked).map(cb => cb.value);
+            // Use the dropdown to get selected ASIN
+            const dropdown = document.getElementById('chartAsinSelect');
+            const selectedAsin = dropdown?.value;
+            return selectedAsin ? [selectedAsin] : [];
         }
 
-        // Sync table checkboxes with chart ASIN selector
+        // Allow clicking on ASIN in table to select it in chart dropdown
         document.querySelectorAll('.asin-checkbox').forEach(cb => {
             cb.addEventListener('change', () => {
-                const chartCb = document.querySelector(`.chart-asin-checkbox[value="${cb.value}"]`);
-                if (chartCb) chartCb.checked = cb.checked;
+                // If only one ASIN is checked, select it in the dropdown
+                const checked = document.querySelectorAll('.asin-checkbox:checked');
+                if (checked.length === 1) {
+                    const dropdown = document.getElementById('chartAsinSelect');
+                    if (dropdown) {
+                        dropdown.value = checked[0].value;
+                        updateChart();
+                    }
+                }
             });
         });
 

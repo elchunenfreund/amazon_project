@@ -2986,8 +2986,8 @@ app.get('/api/charts/multi-series', async (req, res) => {
             poAccepted: { label: 'PO Accepted', color: '#10b981', yAxisID: 'y', source: 'po' },
             soldUnits: { label: 'Units Sold', color: '#f59e0b', yAxisID: 'y', source: 'sales', field: 'orderedUnits' },
             shippedUnits: { label: 'Units Shipped', color: '#06b6d4', yAxisID: 'y', source: 'sales', field: 'shippedUnits' },
-            revenue: { label: 'Revenue ($)', color: '#ef4444', yAxisID: 'y1', source: 'sales', field: 'orderedRevenue', isAmount: true },
-            ranking: { label: 'Ranking', color: '#8b5cf6', yAxisID: 'y2', source: 'ranking' }
+            revenue: { label: 'Revenue ($)', color: '#ef4444', yAxisID: 'y', source: 'sales', field: 'orderedRevenue', isAmount: true },
+            ranking: { label: 'Ranking', color: '#8b5cf6', yAxisID: 'y1', source: 'ranking' }
         };
 
         // Determine PostgreSQL date_trunc interval
