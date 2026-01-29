@@ -86,6 +86,20 @@ async function fetchPurchaseOrders(accessToken, createdAfter, nextToken = null) 
 }
 
 async function savePurchaseOrder(order) {
+    // Data is nested in orderDetails
+    const details = order.orderDetails || {};
+    const items = details.items || [];
+
+    // Parse deliveryWindow string format: "2026-01-26T08:00:00Z--2026-01-30T10:00:00Z"
+    let deliveryStart = null, deliveryEnd = null;
+    if (details.deliveryWindow && typeof details.deliveryWindow === 'string') {
+        const parts = details.deliveryWindow.split('--');
+        if (parts.length === 2) {
+            deliveryStart = parts[0];
+            deliveryEnd = parts[1];
+        }
+    }
+
     // Save to purchase_orders
     await pool.query(
         `INSERT INTO purchase_orders (
@@ -97,55 +111,54 @@ async function savePurchaseOrder(order) {
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
         ON CONFLICT (po_number) DO UPDATE SET
             po_status = EXCLUDED.po_status,
+            po_date = COALESCE(EXCLUDED.po_date, purchase_orders.po_date),
             items = EXCLUDED.items,
             raw_data = EXCLUDED.raw_data,
             updated_at = CURRENT_TIMESTAMP`,
         [
             order.purchaseOrderNumber,
-            order.purchaseOrderDate,
+            details.purchaseOrderDate || null,
             order.purchaseOrderState,
-            order.shipWindow?.start,
-            order.shipWindow?.end,
-            order.deliveryWindow?.start,
-            order.deliveryWindow?.end,
-            JSON.stringify(order.buyingParty),
-            JSON.stringify(order.sellingParty),
-            JSON.stringify(order.shipToParty),
-            JSON.stringify(order.billToParty),
-            JSON.stringify(order.items),
+            null, // shipWindow not in this format
+            null,
+            deliveryStart,
+            deliveryEnd,
+            JSON.stringify(details.buyingParty),
+            JSON.stringify(details.sellingParty),
+            JSON.stringify(details.shipToParty),
+            JSON.stringify(details.billToParty),
+            JSON.stringify(items),
             JSON.stringify(order)
         ]
     );
 
     // Save to po_line_items for faster ASIN queries
     let lineItemCount = 0;
-    if (order.items && Array.isArray(order.items)) {
-        for (const item of order.items) {
-            const asin = item.amazonProductIdentifier;
-            if (asin) {
-                await pool.query(
-                    `INSERT INTO po_line_items (
-                        po_number, asin, vendor_sku, ordered_quantity,
-                        acknowledged_quantity, net_cost_amount, net_cost_currency
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    ON CONFLICT (po_number, asin) DO UPDATE SET
-                        vendor_sku = EXCLUDED.vendor_sku,
-                        ordered_quantity = EXCLUDED.ordered_quantity,
-                        acknowledged_quantity = EXCLUDED.acknowledged_quantity,
-                        net_cost_amount = EXCLUDED.net_cost_amount,
-                        net_cost_currency = EXCLUDED.net_cost_currency`,
-                    [
-                        order.purchaseOrderNumber,
-                        asin,
-                        item.vendorProductIdentifier || null,
-                        item.orderedQuantity?.amount ? parseInt(item.orderedQuantity.amount) : null,
-                        item.acknowledgedQuantity?.amount ? parseInt(item.acknowledgedQuantity.amount) : null,
-                        item.netCost?.amount ? parseFloat(item.netCost.amount) : null,
-                        item.netCost?.currencyCode || null
-                    ]
-                );
-                lineItemCount++;
-            }
+    for (const item of items) {
+        const asin = item.amazonProductIdentifier;
+        if (asin) {
+            await pool.query(
+                `INSERT INTO po_line_items (
+                    po_number, asin, vendor_sku, ordered_quantity,
+                    acknowledged_quantity, net_cost_amount, net_cost_currency
+                ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                ON CONFLICT (po_number, asin) DO UPDATE SET
+                    vendor_sku = EXCLUDED.vendor_sku,
+                    ordered_quantity = EXCLUDED.ordered_quantity,
+                    acknowledged_quantity = EXCLUDED.acknowledged_quantity,
+                    net_cost_amount = EXCLUDED.net_cost_amount,
+                    net_cost_currency = EXCLUDED.net_cost_currency`,
+                [
+                    order.purchaseOrderNumber,
+                    asin,
+                    item.vendorProductIdentifier || null,
+                    item.orderedQuantity?.amount ? parseInt(item.orderedQuantity.amount) : null,
+                    item.acknowledgedQuantity?.amount ? parseInt(item.acknowledgedQuantity.amount) : null,
+                    item.netCost?.amount ? parseFloat(item.netCost.amount) : null,
+                    item.netCost?.currencyCode || null
+                ]
+            );
+            lineItemCount++;
         }
     }
 
