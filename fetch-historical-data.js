@@ -296,6 +296,9 @@ async function fetchHistoricalData() {
             console.log(`${progress} ${start.toDateString()} - ${end.toDateString()}`);
 
             let retries = 0;
+            let skippedFatal = false;
+            let success = false;
+
             while (retries < MAX_RETRIES) {
                 try {
                     const accessToken = await getAccessToken();
@@ -315,6 +318,7 @@ async function fetchHistoricalData() {
 
                     typeFetched++;
                     totalFetched++;
+                    success = true;
                     break;
 
                 } catch (err) {
@@ -326,6 +330,7 @@ async function fetchHistoricalData() {
                     if (err.isFatal) {
                         console.log(`  Skipping - Amazon returned FATAL (likely no data for this period)`);
                         totalErrors++;
+                        skippedFatal = true;
                         break;
                     }
 
@@ -341,10 +346,13 @@ async function fetchHistoricalData() {
                 }
             }
 
-            // Rate limit delay
-            if (i < dateRanges.length - 1) {
+            // Only wait if we successfully fetched data (not after FATAL skip)
+            if (success && i < dateRanges.length - 1) {
                 console.log(`  Waiting ${DELAY_BETWEEN_REQUESTS / 1000}s for rate limit...`);
                 await sleep(DELAY_BETWEEN_REQUESTS);
+            } else if (skippedFatal) {
+                // Short delay after FATAL to avoid hammering API
+                await sleep(5000);
             }
         }
 
