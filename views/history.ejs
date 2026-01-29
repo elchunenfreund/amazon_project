@@ -121,28 +121,36 @@
                             <span>Units Sold</span>
                         </label>
                         <label class="inline-flex items-center gap-1 text-sm bg-slate-100 px-3 py-1 rounded-full cursor-pointer">
-                            <input type="checkbox" id="chk-revenue" class="metric-checkbox" onchange="updateAnalyticsChart()">
+                            <input type="checkbox" id="chk-revenue" checked class="metric-checkbox" onchange="updateAnalyticsChart()">
                             <span>Revenue ($)</span>
                         </label>
                         <label class="inline-flex items-center gap-1 text-sm bg-slate-100 px-3 py-1 rounded-full cursor-pointer">
-                            <input type="checkbox" id="chk-ranking" class="metric-checkbox" onchange="updateAnalyticsChart()">
+                            <input type="checkbox" id="chk-ranking" checked class="metric-checkbox" onchange="updateAnalyticsChart()">
                             <span>Ranking</span>
                         </label>
                     </div>
                 </div>
                 <!-- Period and Aggregation -->
-                <div class="flex flex-wrap gap-4 mb-6">
+                <div class="flex flex-wrap gap-4 mb-4">
                     <div class="flex gap-1 bg-slate-100 rounded-lg p-1">
                         <button class="period-btn px-3 py-1 text-sm rounded-md" data-period="30d" onclick="setPeriod('30d')">30D</button>
-                        <button class="period-btn px-3 py-1 text-sm rounded-md bg-white shadow" data-period="90d" onclick="setPeriod('90d')">90D</button>
+                        <button class="period-btn px-3 py-1 text-sm rounded-md" data-period="90d" onclick="setPeriod('90d')">90D</button>
                         <button class="period-btn px-3 py-1 text-sm rounded-md" data-period="1y" onclick="setPeriod('1y')">1Y</button>
                         <button class="period-btn px-3 py-1 text-sm rounded-md" data-period="all" onclick="setPeriod('all')">All</button>
+                        <button class="period-btn px-3 py-1 text-sm rounded-md bg-white shadow" data-period="custom" onclick="setPeriod('custom')">Custom</button>
                     </div>
                     <div class="flex gap-1 bg-slate-100 rounded-lg p-1">
                         <button class="agg-btn px-3 py-1 text-sm rounded-md bg-white shadow" data-agg="day" onclick="setAggregation('day')">Daily</button>
                         <button class="agg-btn px-3 py-1 text-sm rounded-md" data-agg="week" onclick="setAggregation('week')">Weekly</button>
                     </div>
                     <button onclick="resetAnalyticsZoom()" class="px-3 py-1 text-sm bg-slate-200 rounded-md hover:bg-slate-300">Reset Zoom</button>
+                </div>
+                <!-- Custom Date Range -->
+                <div id="customDateRange" class="flex flex-wrap items-center gap-3 mb-6 p-3 bg-slate-50 rounded-lg">
+                    <label class="text-sm font-medium text-slate-600">From:</label>
+                    <input type="date" id="startDate" class="px-3 py-1.5 text-sm border border-slate-300 rounded-md" onchange="loadAnalyticsData()">
+                    <label class="text-sm font-medium text-slate-600">To:</label>
+                    <input type="date" id="endDate" class="px-3 py-1.5 text-sm border border-slate-300 rounded-md" onchange="loadAnalyticsData()">
                 </div>
                 <!-- Chart -->
                 <div class="bg-slate-50 rounded-lg p-4" style="height: 400px;">
@@ -175,11 +183,22 @@
         const currentAsin = '<%= asin %>';
         let analyticsChart = null;
         let chartData = null;
-        let chartSettings = { period: '90d', aggregation: 'day' };
+        let chartSettings = { period: 'custom', aggregation: 'day' };
+
+        // Initialize date inputs with defaults (1 year ago to today)
+        function initDates() {
+            const today = new Date();
+            const oneYearAgo = new Date();
+            oneYearAgo.setFullYear(today.getFullYear() - 1);
+
+            document.getElementById('endDate').value = today.toISOString().split('T')[0];
+            document.getElementById('startDate').value = oneYearAgo.toISOString().split('T')[0];
+        }
 
         function openAnalyticsModal() {
             document.getElementById('analyticsModal').classList.add('active');
             document.body.style.overflow = 'hidden';
+            initDates();
             loadAnalyticsData();
         }
 
@@ -194,6 +213,31 @@
                 btn.classList.toggle('bg-white', btn.dataset.period === period);
                 btn.classList.toggle('shadow', btn.dataset.period === period);
             });
+
+            // Update date inputs based on preset period
+            const today = new Date();
+            const endDate = today.toISOString().split('T')[0];
+            let startDate;
+
+            if (period === '30d') {
+                const d = new Date(); d.setDate(d.getDate() - 30);
+                startDate = d.toISOString().split('T')[0];
+            } else if (period === '90d') {
+                const d = new Date(); d.setDate(d.getDate() - 90);
+                startDate = d.toISOString().split('T')[0];
+            } else if (period === '1y') {
+                const d = new Date(); d.setFullYear(d.getFullYear() - 1);
+                startDate = d.toISOString().split('T')[0];
+            } else if (period === 'all') {
+                const d = new Date(); d.setFullYear(d.getFullYear() - 3);
+                startDate = d.toISOString().split('T')[0];
+            }
+
+            if (startDate && period !== 'custom') {
+                document.getElementById('startDate').value = startDate;
+                document.getElementById('endDate').value = endDate;
+            }
+
             loadAnalyticsData();
         }
 
@@ -208,7 +252,17 @@
 
         async function loadAnalyticsData() {
             const metrics = ['poOrdered', 'poAccepted', 'soldUnits', 'revenue', 'ranking'];
-            const url = `/api/charts/multi-series?asins=${currentAsin}&metrics=${metrics.join(',')}&period=${chartSettings.period}&aggregation=${chartSettings.aggregation}`;
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+
+            let url = `/api/charts/multi-series?asins=${currentAsin}&metrics=${metrics.join(',')}&aggregation=${chartSettings.aggregation}`;
+
+            // Always use custom dates from the date inputs
+            if (startDate && endDate) {
+                url += `&startDate=${startDate}&endDate=${endDate}`;
+            } else {
+                url += `&period=${chartSettings.period}`;
+            }
 
             try {
                 const response = await fetch(url);
