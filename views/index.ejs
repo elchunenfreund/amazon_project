@@ -757,14 +757,41 @@
 
             <!-- Chart Section -->
             <div class="mb-6">
-                <div class="flex items-center justify-between mb-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
                     <h4 class="font-bold text-slate-800">Performance Over Time</h4>
-                    <select id="vaChartMetric" onchange="updateVendorAnalyticsChart()" class="px-3 py-1 border border-slate-300 rounded text-sm">
-                        <option value="orderedUnits">Ordered Units</option>
-                        <option value="orderedRevenue">Revenue</option>
-                        <option value="glanceViews">Glance Views</option>
-                        <option value="sellableOnHandInventoryUnits">Inventory</option>
-                    </select>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="flex flex-wrap gap-1">
+                            <label class="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs cursor-pointer hover:bg-blue-100">
+                                <input type="checkbox" class="va-metric-cb" value="orderedUnits" checked onchange="updateVendorAnalyticsChart()">
+                                <span>Units</span>
+                            </label>
+                            <label class="flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 rounded text-xs cursor-pointer hover:bg-green-100">
+                                <input type="checkbox" class="va-metric-cb" value="orderedRevenue" onchange="updateVendorAnalyticsChart()">
+                                <span>Revenue</span>
+                            </label>
+                            <label class="flex items-center gap-1 px-2 py-1 bg-orange-50 border border-orange-200 rounded text-xs cursor-pointer hover:bg-orange-100">
+                                <input type="checkbox" class="va-metric-cb" value="glanceViews" onchange="updateVendorAnalyticsChart()">
+                                <span>Views</span>
+                            </label>
+                            <label class="flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded text-xs cursor-pointer hover:bg-purple-100">
+                                <input type="checkbox" class="va-metric-cb" value="sellableOnHandInventoryUnits" onchange="updateVendorAnalyticsChart()">
+                                <span>Inventory</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <!-- Compare with other ASINs -->
+                <div class="mb-3">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-xs text-slate-500">Compare with:</span>
+                        <select id="vaCompareAsin" class="px-2 py-1 border border-slate-300 rounded text-xs" onchange="updateVendorAnalyticsChart()">
+                            <option value="">None (single ASIN)</option>
+                        </select>
+                        <label class="flex items-center gap-1 text-xs cursor-pointer">
+                            <input type="checkbox" id="vaMergeAsins" onchange="updateVendorAnalyticsChart()">
+                            <span>Combine totals</span>
+                        </label>
+                    </div>
                 </div>
                 <div id="vaChartContainer" style="height: 250px; position: relative;">
                     <canvas id="vaChart"></canvas>
@@ -2069,12 +2096,29 @@
         let vaChart = null;
         let currentVaAsin = null;
 
+        // All ASINs for comparison dropdown
+        const allAsins = <%- JSON.stringify(allAsins || []) %>;
+
         async function showVendorAnalyticsPopup(asin) {
             currentVaAsin = asin;
             document.getElementById('vaAsinDisplay').textContent = asin;
             document.getElementById('vaFullAnalyticsLink').href = `/vendor-analytics`;
             document.getElementById('vendorAnalyticsModal').style.display = 'block';
             document.getElementById('vaChartLoading').classList.remove('hidden');
+
+            // Populate compare dropdown (excluding current ASIN)
+            const compareSelect = document.getElementById('vaCompareAsin');
+            compareSelect.innerHTML = '<option value="">None (single ASIN)</option>';
+            allAsins.filter(a => a !== asin).forEach(a => {
+                const opt = document.createElement('option');
+                opt.value = a;
+                opt.textContent = a;
+                compareSelect.appendChild(opt);
+            });
+
+            // Reset checkboxes
+            document.querySelectorAll('.va-metric-cb').forEach((cb, i) => cb.checked = i === 0);
+            document.getElementById('vaMergeAsins').checked = false;
 
             // Reset display
             document.getElementById('vaProductTitle').textContent = 'Loading...';
@@ -2173,20 +2217,79 @@
         async function updateVendorAnalyticsChart() {
             if (!currentVaAsin) return;
 
-            const metric = document.getElementById('vaChartMetric').value;
+            // Get selected metrics from checkboxes
+            const selectedMetrics = Array.from(document.querySelectorAll('.va-metric-cb:checked')).map(cb => cb.value);
+            if (selectedMetrics.length === 0) {
+                document.getElementById('vaChartLoading').classList.remove('hidden');
+                document.getElementById('vaChartLoading').innerHTML = '<div class="text-slate-500">Select at least one metric</div>';
+                if (vaChart) { vaChart.destroy(); vaChart = null; }
+                return;
+            }
+
             const days = parseInt(document.getElementById('vaDateRange').value);
             const endDate = new Date().toISOString().split('T')[0];
             const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+            // Get comparison ASIN if selected
+            const compareAsinEl = document.getElementById('vaCompareAsin');
+            const compareAsin = compareAsinEl ? compareAsinEl.value : '';
+            const mergeAsins = document.getElementById('vaMergeAsins')?.checked || false;
+
+            // Build ASINs list
+            let asins = [currentVaAsin];
+            if (compareAsin && compareAsin !== currentVaAsin) {
+                asins.push(compareAsin);
+            }
+
             document.getElementById('vaChartLoading').classList.remove('hidden');
+            document.getElementById('vaChartLoading').innerHTML = '<div class="text-slate-500">Loading chart data...</div>';
 
             try {
-                const response = await fetch(`/api/vendor-analytics/chart-data?asins=${currentVaAsin}&metric=${metric}&startDate=${startDate}&endDate=${endDate}`);
-                const data = await response.json();
+                // Fetch data for each metric and combine
+                const allDatasets = [];
+                const chartColors = {
+                    orderedUnits: '#3b82f6',
+                    orderedRevenue: '#10b981',
+                    glanceViews: '#f59e0b',
+                    sellableOnHandInventoryUnits: '#8b5cf6'
+                };
+                const metricLabels = {
+                    orderedUnits: 'Units',
+                    orderedRevenue: 'Revenue',
+                    glanceViews: 'Views',
+                    sellableOnHandInventoryUnits: 'Inventory'
+                };
+
+                let allDates = [];
+
+                for (const metric of selectedMetrics) {
+                    const response = await fetch(`/api/vendor-analytics/chart-data?asins=${asins.join(',')}&metric=${metric}&startDate=${startDate}&endDate=${endDate}&merge=${mergeAsins}`);
+                    const data = await response.json();
+
+                    if (data.success && data.dates.length > 0) {
+                        if (allDates.length === 0) allDates = data.dates;
+
+                        data.series.forEach((s, idx) => {
+                            const label = asins.length > 1 && !mergeAsins
+                                ? `${metricLabels[metric]} (${s.label})`
+                                : metricLabels[metric];
+
+                            allDatasets.push({
+                                label: label,
+                                data: s.values,
+                                borderColor: chartColors[metric],
+                                backgroundColor: chartColors[metric] + '20',
+                                tension: 0.3,
+                                fill: selectedMetrics.length === 1,
+                                yAxisID: metric.includes('Revenue') ? 'yRevenue' : 'y'
+                            });
+                        });
+                    }
+                }
 
                 document.getElementById('vaChartLoading').classList.add('hidden');
 
-                if (!data.success || data.dates.length === 0) {
+                if (allDatasets.length === 0) {
                     document.getElementById('vaChartLoading').classList.remove('hidden');
                     document.getElementById('vaChartLoading').innerHTML = '<div class="text-slate-500">No chart data available for this period</div>';
                     return;
@@ -2195,40 +2298,49 @@
                 if (vaChart) vaChart.destroy();
 
                 const ctx = document.getElementById('vaChart').getContext('2d');
-                const chartColors = { orderedUnits: '#3b82f6', orderedRevenue: '#10b981', glanceViews: '#f59e0b', sellableOnHandInventoryUnits: '#8b5cf6' };
+                const hasRevenue = selectedMetrics.includes('orderedRevenue');
+                const hasOtherMetrics = selectedMetrics.some(m => m !== 'orderedRevenue');
 
                 vaChart = new Chart(ctx, {
                     type: 'line',
                     data: {
-                        labels: data.dates,
-                        datasets: [{
-                            label: metric.replace(/([A-Z])/g, ' $1').trim(),
-                            data: data.series[0]?.values || [],
-                            borderColor: chartColors[metric] || '#3b82f6',
-                            backgroundColor: (chartColors[metric] || '#3b82f6') + '20',
-                            tension: 0.3,
-                            fill: true
-                        }]
+                        labels: allDates,
+                        datasets: allDatasets
                     },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        interaction: { mode: 'index', intersect: false },
                         plugins: {
-                            legend: { display: false },
+                            legend: { display: allDatasets.length > 1, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } },
                             tooltip: {
                                 callbacks: {
                                     label: (ctx) => {
                                         let value = ctx.raw;
-                                        if (metric.includes('Revenue')) value = '$' + value.toFixed(2);
+                                        if (ctx.dataset.label.includes('Revenue')) value = '$' + value.toFixed(2);
                                         else value = value.toLocaleString();
-                                        return value;
+                                        return ctx.dataset.label + ': ' + value;
                                     }
                                 }
                             }
                         },
                         scales: {
                             x: { title: { display: false } },
-                            y: { beginAtZero: true, title: { display: false } }
+                            y: {
+                                type: 'linear',
+                                display: hasOtherMetrics,
+                                position: 'left',
+                                beginAtZero: true,
+                                title: { display: false }
+                            },
+                            yRevenue: {
+                                type: 'linear',
+                                display: hasRevenue && hasOtherMetrics,
+                                position: 'right',
+                                beginAtZero: true,
+                                grid: { drawOnChartArea: false },
+                                title: { display: false }
+                            }
                         }
                     }
                 });

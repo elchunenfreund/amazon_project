@@ -275,7 +275,10 @@ app.get('/', async (req, res) => {
             return (b.hasChanged - a.hasChanged) || a.asin.localeCompare(b.asin);
         });
 
-        res.render('index', { reports: dashboardData, lastSyncTime: lastSync });
+        // Get list of all ASINs for comparison dropdown
+        const allAsins = productMeta.rows.map(row => row.asin).sort();
+
+        res.render('index', { reports: dashboardData, lastSyncTime: lastSync, allAsins });
     } catch (err) {
         res.status(500).send(err.message);
     }
