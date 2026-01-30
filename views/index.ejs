@@ -470,9 +470,19 @@
                             <tr id="history-row-<%= item.asin %>" class="history-row hidden bg-slate-50">
                                 <td colspan="11" class="p-6">
                                     <div class="bg-white rounded-lg border-2 border-slate-300 shadow-sm p-4">
-                                        <div class="mb-4 pb-4 border-b border-slate-300">
-                                            <h2 class="text-xl font-bold text-slate-900 mb-2"><%= item.header %></h2>
-                                            <h3 class="text-lg font-semibold text-slate-600">History for <span class="font-mono text-blue-600"><%= item.asin %></span> (<%= item.history.length %> entries)</h3>
+                                        <div class="mb-4 pb-4 border-b border-slate-300 flex flex-wrap justify-between items-start gap-4">
+                                            <div>
+                                                <h2 class="text-xl font-bold text-slate-900 mb-2"><%= item.header %></h2>
+                                                <h3 class="text-lg font-semibold text-slate-600">History for <span class="font-mono text-blue-600"><%= item.asin %></span> (<%= item.history.length %> entries)</h3>
+                                            </div>
+                                            <div class="flex gap-2">
+                                                <button onclick="showVendorAnalyticsPopup('<%= item.asin %>')" class="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-all flex items-center gap-2">
+                                                    <span>📊</span> Vendor Analytics
+                                                </button>
+                                                <a href="/catalog/<%= item.asin %>" class="px-4 py-2 bg-slate-600 text-white text-xs font-bold rounded-lg hover:bg-slate-700 transition-all">
+                                                    Catalog Info
+                                                </a>
+                                            </div>
                                         </div>
                                         <div class="overflow-x-auto">
                                             <table class="w-full text-left text-sm">
@@ -706,6 +716,84 @@
         </div>
     </div>
 
+    <!-- Vendor Analytics Popup Modal -->
+    <div id="vendorAnalyticsModal" class="modal">
+        <div class="modal-content" style="max-width: 1000px;">
+            <span class="modal-close" onclick="closeVendorAnalyticsModal()">&times;</span>
+            <div class="modal-header flex items-center justify-between">
+                <div>
+                    <span>Vendor Analytics for </span>
+                    <span id="vaAsinDisplay" class="font-mono text-blue-600"></span>
+                </div>
+                <div class="flex gap-2">
+                    <select id="vaDateRange" onchange="updateVendorAnalyticsChart()" class="px-3 py-1 border border-slate-300 rounded text-sm">
+                        <option value="7">Last 7 Days</option>
+                        <option value="30" selected>Last 30 Days</option>
+                        <option value="90">Last 90 Days</option>
+                    </select>
+                </div>
+            </div>
+            <div id="vaProductTitle" class="text-sm text-slate-500 mb-4"></div>
+
+            <!-- Metrics Summary Cards -->
+            <div id="vaMetricsSummary" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                <div class="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <div class="text-xs text-blue-600 font-medium">Ordered Units</div>
+                    <div id="vaOrderedUnits" class="text-xl font-black text-blue-700">-</div>
+                </div>
+                <div class="p-3 bg-green-50 rounded-lg border border-green-200">
+                    <div class="text-xs text-green-600 font-medium">Revenue</div>
+                    <div id="vaRevenue" class="text-xl font-black text-green-700">-</div>
+                </div>
+                <div class="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                    <div class="text-xs text-orange-600 font-medium">Glance Views</div>
+                    <div id="vaGlanceViews" class="text-xl font-black text-orange-700">-</div>
+                </div>
+                <div class="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                    <div class="text-xs text-purple-600 font-medium">Inventory</div>
+                    <div id="vaInventory" class="text-xl font-black text-purple-700">-</div>
+                </div>
+            </div>
+
+            <!-- Chart Section -->
+            <div class="mb-6">
+                <div class="flex items-center justify-between mb-3">
+                    <h4 class="font-bold text-slate-800">Performance Over Time</h4>
+                    <select id="vaChartMetric" onchange="updateVendorAnalyticsChart()" class="px-3 py-1 border border-slate-300 rounded text-sm">
+                        <option value="orderedUnits">Ordered Units</option>
+                        <option value="orderedRevenue">Revenue</option>
+                        <option value="glanceViews">Glance Views</option>
+                        <option value="sellableOnHandInventoryUnits">Inventory</option>
+                    </select>
+                </div>
+                <div id="vaChartContainer" style="height: 250px; position: relative;">
+                    <canvas id="vaChart"></canvas>
+                    <div id="vaChartLoading" class="absolute inset-0 flex items-center justify-center bg-slate-50 rounded-lg">
+                        <div class="text-slate-500">Loading chart data...</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Purchase Orders for this ASIN -->
+            <div class="mb-4">
+                <h4 class="font-bold text-slate-800 mb-3">Purchase Orders</h4>
+                <div id="vaPurchaseOrders" class="max-h-48 overflow-auto">
+                    <div class="text-slate-500 text-sm">Loading...</div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2 mt-4">
+                <a id="vaFullAnalyticsLink" href="/vendor-analytics" class="px-4 py-2 bg-slate-200 text-slate-700 rounded-lg font-bold hover:bg-slate-300 transition-all text-sm">
+                    View Full Analytics
+                </a>
+                <button onclick="closeVendorAnalyticsModal()" class="px-4 py-2 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition-all text-sm">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
@@ -1977,16 +2065,195 @@
             }
         });
 
+        // Vendor Analytics Popup Functions
+        let vaChart = null;
+        let currentVaAsin = null;
+
+        async function showVendorAnalyticsPopup(asin) {
+            currentVaAsin = asin;
+            document.getElementById('vaAsinDisplay').textContent = asin;
+            document.getElementById('vaFullAnalyticsLink').href = `/vendor-analytics`;
+            document.getElementById('vendorAnalyticsModal').style.display = 'block';
+            document.getElementById('vaChartLoading').classList.remove('hidden');
+
+            // Reset display
+            document.getElementById('vaProductTitle').textContent = 'Loading...';
+            document.getElementById('vaOrderedUnits').textContent = '-';
+            document.getElementById('vaRevenue').textContent = '-';
+            document.getElementById('vaGlanceViews').textContent = '-';
+            document.getElementById('vaInventory').textContent = '-';
+            document.getElementById('vaPurchaseOrders').innerHTML = '<div class="text-slate-500 text-sm">Loading...</div>';
+
+            // Fetch data
+            await Promise.all([
+                loadVendorAnalyticsSummary(asin),
+                loadAsinPurchaseOrders(asin),
+                updateVendorAnalyticsChart()
+            ]);
+        }
+
+        function closeVendorAnalyticsModal() {
+            document.getElementById('vendorAnalyticsModal').style.display = 'none';
+            if (vaChart) {
+                vaChart.destroy();
+                vaChart = null;
+            }
+        }
+
+        async function loadVendorAnalyticsSummary(asin) {
+            try {
+                const days = document.getElementById('vaDateRange').value;
+                const endDate = new Date().toISOString().split('T')[0];
+                const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+                const response = await fetch(`/api/vendor-analytics/data?asin=${asin}&startDate=${startDate}&endDate=${endDate}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('vaProductTitle').textContent = data.title || '';
+                    document.getElementById('vaOrderedUnits').textContent = data.orderedUnits !== undefined ? data.orderedUnits.toLocaleString() : '-';
+                    document.getElementById('vaRevenue').textContent = data.revenue !== undefined ? '$' + data.revenue.toFixed(2) : '-';
+                    document.getElementById('vaGlanceViews').textContent = data.glanceViews !== undefined ? data.glanceViews.toLocaleString() : '-';
+                    document.getElementById('vaInventory').textContent = data.inventory !== undefined ? data.inventory.toLocaleString() : '-';
+                } else {
+                    document.getElementById('vaProductTitle').textContent = 'No data available';
+                }
+            } catch (err) {
+                console.error('Error loading vendor analytics summary:', err);
+            }
+        }
+
+        async function loadAsinPurchaseOrders(asin) {
+            try {
+                const response = await fetch(`/api/purchase-orders/by-asin/${asin}`);
+                const data = await response.json();
+
+                if (data.success && data.purchaseOrders.length > 0) {
+                    const rows = data.purchaseOrders.map(po => `
+                        <tr class="hover:bg-slate-50 text-xs">
+                            <td class="px-2 py-1 font-mono font-bold text-blue-600">${po.po_number}</td>
+                            <td class="px-2 py-1">${new Date(po.po_date).toLocaleDateString('en-CA')}</td>
+                            <td class="px-2 py-1"><span class="px-2 py-0.5 rounded text-xs font-medium ${
+                                po.po_status === 'Shipped' || po.po_status === 'Closed' ? 'bg-green-100 text-green-700' :
+                                po.po_status === 'Acknowledged' ? 'bg-amber-100 text-amber-700' :
+                                po.po_status === 'Cancelled' ? 'bg-red-100 text-red-700' :
+                                'bg-blue-100 text-blue-700'
+                            }">${po.po_status}</span></td>
+                            <td class="px-2 py-1 text-right">${po.ordered_quantity || '-'}</td>
+                            <td class="px-2 py-1 text-right">${po.acknowledged_quantity || '-'}</td>
+                            <td class="px-2 py-1 text-right">${po.net_cost_amount ? '$' + parseFloat(po.net_cost_amount).toFixed(2) : '-'}</td>
+                        </tr>
+                    `).join('');
+
+                    document.getElementById('vaPurchaseOrders').innerHTML = `
+                        <table class="w-full text-left border border-slate-200 rounded">
+                            <thead class="bg-slate-100">
+                                <tr>
+                                    <th class="px-2 py-1 text-xs font-bold">PO#</th>
+                                    <th class="px-2 py-1 text-xs font-bold">Date</th>
+                                    <th class="px-2 py-1 text-xs font-bold">Status</th>
+                                    <th class="px-2 py-1 text-xs font-bold text-right">Ordered</th>
+                                    <th class="px-2 py-1 text-xs font-bold text-right">Accepted</th>
+                                    <th class="px-2 py-1 text-xs font-bold text-right">Cost</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-200">${rows}</tbody>
+                        </table>
+                        <div class="text-xs text-slate-500 mt-2">${data.purchaseOrders.length} purchase order${data.purchaseOrders.length !== 1 ? 's' : ''}</div>
+                    `;
+                } else {
+                    document.getElementById('vaPurchaseOrders').innerHTML = '<div class="text-slate-400 text-sm">No purchase orders found for this ASIN</div>';
+                }
+            } catch (err) {
+                console.error('Error loading purchase orders:', err);
+                document.getElementById('vaPurchaseOrders').innerHTML = '<div class="text-red-500 text-sm">Error loading purchase orders</div>';
+            }
+        }
+
+        async function updateVendorAnalyticsChart() {
+            if (!currentVaAsin) return;
+
+            const metric = document.getElementById('vaChartMetric').value;
+            const days = parseInt(document.getElementById('vaDateRange').value);
+            const endDate = new Date().toISOString().split('T')[0];
+            const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+            document.getElementById('vaChartLoading').classList.remove('hidden');
+
+            try {
+                const response = await fetch(`/api/vendor-analytics/chart-data?asins=${currentVaAsin}&metric=${metric}&startDate=${startDate}&endDate=${endDate}`);
+                const data = await response.json();
+
+                document.getElementById('vaChartLoading').classList.add('hidden');
+
+                if (!data.success || data.dates.length === 0) {
+                    document.getElementById('vaChartLoading').classList.remove('hidden');
+                    document.getElementById('vaChartLoading').innerHTML = '<div class="text-slate-500">No chart data available for this period</div>';
+                    return;
+                }
+
+                if (vaChart) vaChart.destroy();
+
+                const ctx = document.getElementById('vaChart').getContext('2d');
+                const chartColors = { orderedUnits: '#3b82f6', orderedRevenue: '#10b981', glanceViews: '#f59e0b', sellableOnHandInventoryUnits: '#8b5cf6' };
+
+                vaChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.dates,
+                        datasets: [{
+                            label: metric.replace(/([A-Z])/g, ' $1').trim(),
+                            data: data.series[0]?.values || [],
+                            borderColor: chartColors[metric] || '#3b82f6',
+                            backgroundColor: (chartColors[metric] || '#3b82f6') + '20',
+                            tension: 0.3,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    label: (ctx) => {
+                                        let value = ctx.raw;
+                                        if (metric.includes('Revenue')) value = '$' + value.toFixed(2);
+                                        else value = value.toLocaleString();
+                                        return value;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: { title: { display: false } },
+                            y: { beginAtZero: true, title: { display: false } }
+                        }
+                    }
+                });
+
+                // Also reload summary when date range changes
+                loadVendorAnalyticsSummary(currentVaAsin);
+            } catch (err) {
+                console.error('Error updating chart:', err);
+                document.getElementById('vaChartLoading').classList.remove('hidden');
+                document.getElementById('vaChartLoading').innerHTML = '<div class="text-red-500">Error loading chart</div>';
+            }
+        }
+
         // Close modals when clicking outside
         window.onclick = function(event) {
             const addModal = document.getElementById('addAsinModal');
             const commentModal = document.getElementById('commentModal');
             const dateModal = document.getElementById('datePickerModal');
             const excelModal = document.getElementById('excelUploadModal');
+            const vaModal = document.getElementById('vendorAnalyticsModal');
             if (event.target === addModal) closeAddAsinModal();
             if (event.target === commentModal) closeCommentModal();
             if (event.target === dateModal) closeDatePickerModal();
             if (event.target === excelModal) closeExcelUploadModal();
+            if (event.target === vaModal) closeVendorAnalyticsModal();
         }
     </script>
 </body>

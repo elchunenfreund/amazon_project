@@ -7,7 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .report-cell { min-width: 120px; }
@@ -281,13 +280,9 @@
                                         <div class="metric-item">
                                             <div class="metric-label">Revenue</div>
                                             <div class="metric-value text-green-600">
-                                                <% const rtRev = data.orderedRevenue?.amount !== undefined ? data.orderedRevenue.amount : (typeof data.orderedRevenue === 'number' ? data.orderedRevenue : null); %>
-                                                <% if (rtRev !== null) { %>$<%= parseFloat(rtRev).toFixed(0) %><% } else { %>-<% } %>
+                                                <% if (data.orderedRevenue?.amount !== undefined) { %>$<%= parseFloat(data.orderedRevenue.amount).toFixed(0) %><% } else { %>-<% } %>
                                             </div>
                                         </div>
-                                    </div>
-                                    <div class="text-[10px] text-slate-400 mt-1" title="Data from <%= data.startTime %> to <%= data.endTime %>">
-                                        <%= data.startTime ? new Date(data.startTime).toLocaleDateString('en-CA') : '' %>
                                     </div>
                                 <% } else { %>
                                     <span class="text-slate-400">-</span>
@@ -403,62 +398,6 @@
                                     <a href="/catalog/<%= asin %>" class="bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs font-medium hover:bg-slate-200" title="View catalog info">
                                         Catalog
                                     </a>
-                                    <button onclick="toggleInlineChart('<%= asin %>')" class="bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-medium hover:bg-purple-200 chart-toggle-btn" data-asin="<%= asin %>" title="View performance chart">
-                                        Chart
-                                    </button>
-                                </div>
-                            </td>
-                        </tr>
-                        <!-- Inline Chart Row (hidden by default) -->
-                        <tr id="chart-row-<%= asin %>" class="hidden chart-row">
-                            <td colspan="11" class="p-0">
-                                <div class="bg-slate-50 border-t border-b border-slate-200 p-4">
-                                    <div class="flex flex-wrap gap-4 mb-3">
-                                        <!-- Metrics -->
-                                        <div class="flex flex-wrap gap-2">
-                                            <label class="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs cursor-pointer">
-                                                <input type="checkbox" class="inline-metric-cb w-3 h-3" data-asin="<%= asin %>" value="poOrdered" checked>
-                                                <span class="text-blue-800">PO Ordered</span>
-                                            </label>
-                                            <label class="flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 rounded text-xs cursor-pointer">
-                                                <input type="checkbox" class="inline-metric-cb w-3 h-3" data-asin="<%= asin %>" value="poAccepted" checked>
-                                                <span class="text-green-800">PO Accepted</span>
-                                            </label>
-                                            <label class="flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs cursor-pointer">
-                                                <input type="checkbox" class="inline-metric-cb w-3 h-3" data-asin="<%= asin %>" value="soldUnits">
-                                                <span class="text-amber-800">Units Sold</span>
-                                            </label>
-                                            <label class="flex items-center gap-1 px-2 py-1 bg-red-50 border border-red-200 rounded text-xs cursor-pointer">
-                                                <input type="checkbox" class="inline-metric-cb w-3 h-3" data-asin="<%= asin %>" value="revenue">
-                                                <span class="text-red-800">Revenue</span>
-                                            </label>
-                                            <label class="flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded text-xs cursor-pointer">
-                                                <input type="checkbox" class="inline-metric-cb w-3 h-3" data-asin="<%= asin %>" value="ranking">
-                                                <span class="text-purple-800">Ranking</span>
-                                            </label>
-                                        </div>
-                                        <!-- Period buttons -->
-                                        <div class="flex gap-1">
-                                            <button class="inline-period-btn px-2 py-1 text-xs font-medium rounded bg-slate-200 text-slate-600" data-asin="<%= asin %>" data-period="30d">30D</button>
-                                            <button class="inline-period-btn px-2 py-1 text-xs font-medium rounded bg-blue-600 text-white" data-asin="<%= asin %>" data-period="90d">90D</button>
-                                            <button class="inline-period-btn px-2 py-1 text-xs font-medium rounded bg-slate-200 text-slate-600" data-asin="<%= asin %>" data-period="1y">1Y</button>
-                                            <button class="inline-period-btn px-2 py-1 text-xs font-medium rounded bg-slate-200 text-slate-600" data-asin="<%= asin %>" data-period="all">All</button>
-                                        </div>
-                                        <!-- Aggregation -->
-                                        <div class="flex gap-1">
-                                            <button class="inline-agg-btn px-2 py-1 text-xs font-medium rounded bg-slate-200 text-slate-600" data-asin="<%= asin %>" data-agg="day">Daily</button>
-                                            <button class="inline-agg-btn px-2 py-1 text-xs font-medium rounded bg-blue-600 text-white" data-asin="<%= asin %>" data-agg="week">Weekly</button>
-                                        </div>
-                                        <!-- Reset zoom -->
-                                        <button onclick="resetInlineChartZoom('<%= asin %>')" class="px-2 py-1 text-xs font-medium rounded bg-slate-200 text-slate-600 hover:bg-slate-300">Reset Zoom</button>
-                                    </div>
-                                    <div class="relative" style="height: 250px;">
-                                        <canvas id="inline-chart-<%= asin %>"></canvas>
-                                        <div id="inline-chart-loading-<%= asin %>" class="absolute inset-0 flex items-center justify-center bg-slate-50">
-                                            <div class="loading-spinner"></div>
-                                            <span class="ml-2 text-slate-500 text-sm">Loading chart...</span>
-                                        </div>
-                                    </div>
                                 </div>
                             </td>
                         </tr>
@@ -466,6 +405,55 @@
                         <% } %>
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <!-- Performance Charts Section -->
+        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-6 mt-8">
+            <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
+                <div>
+                    <h3 class="text-xl font-bold text-slate-900">Performance Charts</h3>
+                    <p class="text-sm text-slate-500">Visualize metrics over time for selected ASINs</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <select id="chartMetric" onchange="updateChart()" class="px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                        <option value="orderedUnits">Ordered Units (Weekly)</option>
+                        <option value="shippedUnits">Shipped Units (Weekly)</option>
+                        <option value="orderedRevenue">Revenue (Weekly)</option>
+                        <option value="glanceViews">Traffic / Views (Weekly)</option>
+                        <option value="sellableOnHandInventoryUnits">Inventory Units (Weekly)</option>
+                        <option value="netPureProductMargin">Margin % (Weekly)</option>
+                        <option value="rtOrderedUnits">RT Ordered Units</option>
+                        <option value="rtOrderedRevenue">RT Revenue</option>
+                    </select>
+                    <label class="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg cursor-pointer">
+                        <input type="checkbox" id="mergeAsins" onchange="updateChart()" class="w-4 h-4">
+                        <span class="text-sm font-medium text-slate-700">Merge ASINs</span>
+                    </label>
+                    <button onclick="updateChart()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700">
+                        Refresh Chart
+                    </button>
+                </div>
+            </div>
+            <div class="mb-4">
+                <div class="text-sm font-medium text-slate-700 mb-2">Select ASINs to chart (check boxes in the table above, or select here):</div>
+                <div id="chartAsinSelector" class="flex flex-wrap gap-2 max-h-24 overflow-auto p-2 bg-slate-50 rounded-lg">
+                    <% asins.forEach(asin => { %>
+                    <label class="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded cursor-pointer hover:bg-blue-50">
+                        <input type="checkbox" class="chart-asin-checkbox w-3 h-3" value="<%= asin %>">
+                        <span class="text-xs font-mono"><%= asin %></span>
+                    </label>
+                    <% }); %>
+                </div>
+            </div>
+            <div id="chartContainer" class="relative" style="height: 350px;">
+                <canvas id="analyticsChart"></canvas>
+                <div id="chartPlaceholder" class="absolute inset-0 flex items-center justify-center bg-slate-50 rounded-lg">
+                    <div class="text-center text-slate-500">
+                        <p class="text-lg font-medium">Select ASINs to display chart</p>
+                        <p class="text-sm">Use checkboxes in the table or the selector above</p>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -901,210 +889,126 @@
             return '<span class="text-slate-400">No data available for this period</span>';
         }
 
-        // Inline chart functionality
+        // Chart functionality
+        let chart = null;
+        const chartColors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
-        // Inline chart state per ASIN
-        const inlineCharts = {};
-        const inlineChartSettings = {};
+        async function updateChart() {
+            const selectedAsins = getSelectedChartAsins();
 
-        // Toggle inline chart for an ASIN
-        function toggleInlineChart(asin) {
-            const chartRow = document.getElementById(`chart-row-${asin}`);
-            const toggleBtn = document.querySelector(`.chart-toggle-btn[data-asin="${asin}"]`);
-
-            if (chartRow.classList.contains('hidden')) {
-                // Close all other open charts first
-                document.querySelectorAll('.chart-row').forEach(row => {
-                    if (!row.classList.contains('hidden')) {
-                        row.classList.add('hidden');
-                        const otherAsin = row.id.replace('chart-row-', '');
-                        const otherBtn = document.querySelector(`.chart-toggle-btn[data-asin="${otherAsin}"]`);
-                        if (otherBtn) otherBtn.textContent = 'Chart';
-                    }
-                });
-
-                // Show this chart
-                chartRow.classList.remove('hidden');
-                toggleBtn.textContent = 'Hide';
-
-                // Initialize settings if not exists
-                if (!inlineChartSettings[asin]) {
-                    inlineChartSettings[asin] = { period: '90d', aggregation: 'week' };
+            // If no ASINs selected, destroy chart and show placeholder
+            if (selectedAsins.length === 0) {
+                if (chart) {
+                    chart.destroy();
+                    chart = null;
                 }
-
-                // Load chart data
-                loadInlineChart(asin);
-
-                // Setup event listeners for this chart's controls
-                setupInlineChartListeners(asin);
-            } else {
-                // Hide the chart
-                chartRow.classList.add('hidden');
-                toggleBtn.textContent = 'Chart';
-            }
-        }
-
-        function setupInlineChartListeners(asin) {
-            // Period buttons
-            document.querySelectorAll(`.inline-period-btn[data-asin="${asin}"]`).forEach(btn => {
-                btn.onclick = () => {
-                    document.querySelectorAll(`.inline-period-btn[data-asin="${asin}"]`).forEach(b => {
-                        b.classList.remove('bg-blue-600', 'text-white');
-                        b.classList.add('bg-slate-200', 'text-slate-600');
-                    });
-                    btn.classList.remove('bg-slate-200', 'text-slate-600');
-                    btn.classList.add('bg-blue-600', 'text-white');
-                    inlineChartSettings[asin].period = btn.dataset.period;
-                    loadInlineChart(asin);
-                };
-            });
-
-            // Aggregation buttons
-            document.querySelectorAll(`.inline-agg-btn[data-asin="${asin}"]`).forEach(btn => {
-                btn.onclick = () => {
-                    document.querySelectorAll(`.inline-agg-btn[data-asin="${asin}"]`).forEach(b => {
-                        b.classList.remove('bg-blue-600', 'text-white');
-                        b.classList.add('bg-slate-200', 'text-slate-600');
-                    });
-                    btn.classList.remove('bg-slate-200', 'text-slate-600');
-                    btn.classList.add('bg-blue-600', 'text-white');
-                    inlineChartSettings[asin].aggregation = btn.dataset.agg;
-                    loadInlineChart(asin);
-                };
-            });
-
-            // Metric checkboxes
-            document.querySelectorAll(`.inline-metric-cb[data-asin="${asin}"]`).forEach(cb => {
-                cb.onchange = () => loadInlineChart(asin);
-            });
-        }
-
-        async function loadInlineChart(asin) {
-            const loadingEl = document.getElementById(`inline-chart-loading-${asin}`);
-            if (loadingEl) loadingEl.classList.remove('hidden');
-
-            const metrics = Array.from(document.querySelectorAll(`.inline-metric-cb[data-asin="${asin}"]:checked`)).map(cb => cb.value);
-            if (metrics.length === 0) {
-                if (loadingEl) loadingEl.classList.add('hidden');
+                document.getElementById('chartPlaceholder').classList.remove('hidden');
                 return;
             }
 
-            const settings = inlineChartSettings[asin] || { period: '90d', aggregation: 'week' };
+            document.getElementById('chartPlaceholder').classList.add('hidden');
+
+            const metric = document.getElementById('chartMetric').value;
+            const mergeAsins = document.getElementById('mergeAsins').checked;
 
             try {
-                const params = new URLSearchParams({
-                    asins: asin,
-                    metrics: metrics.join(','),
-                    period: settings.period,
-                    aggregation: settings.aggregation
-                });
-
-                const response = await fetch(`/api/charts/multi-series?${params}`);
+                const response = await fetch(`/api/vendor-analytics/chart-data?asins=${selectedAsins.join(',')}&metric=${metric}&startDate=${startDate}&endDate=${endDate}&merge=${mergeAsins}`);
                 const data = await response.json();
-
-                if (loadingEl) loadingEl.classList.add('hidden');
 
                 if (!data.success) {
                     console.error('Chart data error:', data.error);
                     return;
                 }
 
-                // Destroy existing chart if any
-                if (inlineCharts[asin]) {
-                    inlineCharts[asin].destroy();
-                }
+                if (chart) chart.destroy();
 
-                const ctx = document.getElementById(`inline-chart-${asin}`).getContext('2d');
-
-                const datasets = data.series.map(s => ({
-                    label: s.label,
-                    data: s.values,
-                    borderColor: s.color,
-                    backgroundColor: s.color + '20',
-                    tension: 0.3,
-                    fill: false,
-                    yAxisID: s.yAxisID,
-                    pointRadius: settings.aggregation === 'day' ? 1 : 3,
-                    borderWidth: 2
-                }));
-
-                const hasRanking = metrics.includes('ranking');
-
-                inlineCharts[asin] = new Chart(ctx, {
+                const ctx = document.getElementById('analyticsChart').getContext('2d');
+                chart = new Chart(ctx, {
                     type: 'line',
-                    data: { labels: data.dates, datasets: datasets },
+                    data: {
+                        labels: data.dates,
+                        datasets: data.series.map((s, i) => ({
+                            label: s.label,
+                            data: s.values,
+                            borderColor: chartColors[i % chartColors.length],
+                            backgroundColor: chartColors[i % chartColors.length] + '20',
+                            tension: 0.3,
+                            fill: true
+                        }))
+                    },
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
-                        interaction: { mode: 'index', intersect: false },
                         plugins: {
-                            legend: { position: 'bottom', labels: { usePointStyle: true, padding: 10, font: { size: 10 } } },
+                            legend: { position: 'bottom' },
                             tooltip: {
                                 callbacks: {
                                     label: (ctx) => {
                                         let value = ctx.raw;
-                                        if (value === null || value === undefined) return ctx.dataset.label + ': N/A';
-                                        const metric = data.series[ctx.datasetIndex]?.metric || '';
-                                        if (metric === 'revenue') value = '$' + value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-                                        else if (metric === 'ranking') value = '#' + value.toLocaleString();
+                                        if (metric.includes('Revenue')) value = '$' + value.toFixed(2);
+                                        else if (metric.includes('Margin')) value = (value * 100).toFixed(1) + '%';
                                         else value = value.toLocaleString();
                                         return ctx.dataset.label + ': ' + value;
                                     }
                                 }
-                            },
-                            zoom: {
-                                zoom: {
-                                    wheel: { enabled: true },
-                                    drag: { enabled: true, backgroundColor: 'rgba(59, 130, 246, 0.2)' },
-                                    mode: 'x'
-                                },
-                                pan: { enabled: true, mode: 'x' }
                             }
                         },
                         scales: {
-                            x: { type: 'category', ticks: { maxRotation: 45, font: { size: 9 } } },
-                            y: { type: 'linear', display: true, position: 'left', beginAtZero: true, grid: { color: '#e2e8f0' } },
-                            y1: {
-                                type: 'linear',
-                                display: hasRanking,
-                                position: 'right',
-                                beginAtZero: false,
-                                grid: { drawOnChartArea: false },
-                                ticks: { callback: (v) => '#' + v.toLocaleString() }
+                            x: {
+                                type: 'category',
+                                title: { display: true, text: 'Date' }
+                            },
+                            y: {
+                                beginAtZero: !metric.includes('Margin'),
+                                title: { display: true, text: metric }
                             }
                         }
                     }
                 });
             } catch (err) {
-                console.error('Chart load error:', err);
-                if (loadingEl) loadingEl.classList.add('hidden');
+                console.error('Chart update error:', err);
             }
         }
 
-        function resetInlineChartZoom(asin) {
-            if (inlineCharts[asin]) {
-                inlineCharts[asin].resetZoom();
-            }
+        function getSelectedChartAsins() {
+            // Use chart ASIN selector as the source of truth (they're synced with table)
+            const chartChecked = document.querySelectorAll('.chart-asin-checkbox:checked');
+            return Array.from(chartChecked).map(cb => cb.value);
         }
 
-        // Legacy functions (keep for compatibility)
-        function resetChartZoom() {}
-        function getSelectedChartAsins() { return []; }
-
-        // ASIN checkbox handler - open chart when single ASIN selected
+        // Sync table checkboxes with chart ASIN selector (bidirectional)
         document.querySelectorAll('.asin-checkbox').forEach(cb => {
             cb.addEventListener('change', () => {
-                const checked = document.querySelectorAll('.asin-checkbox:checked');
-                if (checked.length === 1) {
-                    // Auto-open inline chart for selected ASIN
-                    const asin = checked[0].value;
-                    const chartRow = document.getElementById(`chart-row-${asin}`);
-                    if (chartRow && chartRow.classList.contains('hidden')) {
-                        toggleInlineChart(asin);
-                    }
-                }
+                const chartCb = document.querySelector(`.chart-asin-checkbox[value="${cb.value}"]`);
+                if (chartCb) chartCb.checked = cb.checked;
+                updateChart(); // Auto-update chart when selection changes
             });
         });
+
+        // Sync chart ASIN selector with table checkboxes
+        document.querySelectorAll('.chart-asin-checkbox').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const tableCb = document.querySelector(`.asin-checkbox[value="${cb.value}"]`);
+                if (tableCb) tableCb.checked = cb.checked;
+                updateSelectAllState();
+                updateChart(); // Auto-update chart when selection changes
+            });
+        });
+
+        // Initialize: Select all ASINs by default and load chart
+        function initializeChart() {
+            // Select all checkboxes in both table and chart selector
+            document.querySelectorAll('.asin-checkbox').forEach(cb => cb.checked = true);
+            document.querySelectorAll('.chart-asin-checkbox').forEach(cb => cb.checked = true);
+            document.getElementById('selectAll').checked = true;
+            updateSyncSelectedButton();
+
+            // Load chart with all ASINs selected
+            updateChart();
+        }
+
+        // Run initialization when page loads
+        document.addEventListener('DOMContentLoaded', initializeChart);
 
         // ASIN POs Modal
         async function showAsinPOs(asin) {

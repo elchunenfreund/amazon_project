@@ -2444,9 +2444,16 @@ app.get('/vendor-analytics', async (req, res) => {
 // Purchase Orders Page
 app.get('/purchase-orders', async (req, res) => {
     try {
-        // Get POs from database
+        // Get date range from query params or default to last 90 days
+        const endDate = req.query.endDate || new Date().toISOString().split('T')[0];
+        const startDate = req.query.startDate || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        // Get POs from database filtered by date
         const posResult = await pool.query(
-            `SELECT * FROM purchase_orders ORDER BY po_date DESC LIMIT 100`
+            `SELECT * FROM purchase_orders
+             WHERE po_date >= $1 AND po_date <= $2
+             ORDER BY po_date DESC`,
+            [startDate, endDate]
         );
 
         // Get all unique ASINs from POs
@@ -2537,7 +2544,9 @@ app.get('/purchase-orders', async (req, res) => {
             purchaseOrders: posResult.rows,
             productTitles,
             vendorSkus,
-            inventoryByAsin
+            inventoryByAsin,
+            startDate,
+            endDate
         });
     } catch (err) {
         console.error('Purchase orders error:', err);
@@ -2899,11 +2908,9 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
 
         // Process data into chart format
         const dateMap = {};
-        const allDates = new Set();
 
         for (const row of result.rows) {
             const date = new Date(row.report_date).toISOString().split('T')[0];
-            allDates.add(date);
             const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
 
             let value = data[config.field];
@@ -2919,7 +2926,15 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
             dateMap[date][row.asin] = value;
         }
 
-        const dates = Array.from(allDates).sort();
+        // Generate all dates in the range (not just dates with data)
+        // This ensures continuous lines in the chart without gaps
+        const dates = [];
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+            dates.push(d.toISOString().split('T')[0]);
+        }
+
         let series = [];
 
         if (shouldMerge) {
@@ -3374,8 +3389,67 @@ app.post('/api/catalog/fetch/:asin', async (req, res) => {
 // API: Get stored vendor report data for analytics page
 app.get('/api/vendor-analytics/data', async (req, res) => {
     try {
-        const { startDate, endDate, asins } = req.query;
+        const { startDate, endDate, asins, asin } = req.query;
 
+        // If single ASIN is provided, return summary data
+        if (asin) {
+            // Get aggregated data for single ASIN
+            const result = await pool.query(`
+                SELECT report_type, data, report_date
+                FROM vendor_reports
+                WHERE asin = $1 AND report_date >= $2 AND report_date <= $3
+                ORDER BY report_date DESC
+            `, [asin, startDate, endDate]);
+
+            // Get product title
+            const titleResult = await pool.query(`
+                SELECT title FROM catalog_details WHERE asin = $1
+                UNION ALL
+                SELECT header as title FROM daily_reports WHERE asin = $1 ORDER BY check_date DESC LIMIT 1
+            `, [asin]);
+
+            // Aggregate data by report type
+            let orderedUnits = 0;
+            let revenue = 0;
+            let glanceViews = 0;
+            let inventory = null;
+
+            const seenDates = { sales: new Set(), traffic: new Set() };
+
+            for (const row of result.rows) {
+                const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                const dateKey = new Date(row.report_date).toISOString().split('T')[0];
+
+                if (row.report_type === 'GET_VENDOR_SALES_REPORT') {
+                    if (!seenDates.sales.has(dateKey)) {
+                        seenDates.sales.add(dateKey);
+                        orderedUnits += data.orderedUnits || 0;
+                        if (data.orderedRevenue?.amount) {
+                            revenue += parseFloat(data.orderedRevenue.amount);
+                        }
+                    }
+                } else if (row.report_type === 'GET_VENDOR_TRAFFIC_REPORT') {
+                    if (!seenDates.traffic.has(dateKey)) {
+                        seenDates.traffic.add(dateKey);
+                        glanceViews += data.glanceViews || 0;
+                    }
+                } else if (row.report_type === 'GET_VENDOR_INVENTORY_REPORT' && inventory === null) {
+                    inventory = data.sellableOnHandInventoryUnits;
+                }
+            }
+
+            return res.json({
+                success: true,
+                asin,
+                title: titleResult.rows[0]?.title || '',
+                orderedUnits,
+                revenue,
+                glanceViews,
+                inventory
+            });
+        }
+
+        // Original logic for multiple ASINs
         let query = `
             SELECT asin, report_type, report_date, data
             FROM vendor_reports
