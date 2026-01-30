@@ -720,18 +720,9 @@
     <div id="vendorAnalyticsModal" class="modal">
         <div class="modal-content" style="max-width: 1000px;">
             <span class="modal-close" onclick="closeVendorAnalyticsModal()">&times;</span>
-            <div class="modal-header flex items-center justify-between">
-                <div>
-                    <span>Vendor Analytics for </span>
-                    <span id="vaAsinDisplay" class="font-mono text-blue-600"></span>
-                </div>
-                <div class="flex gap-2">
-                    <select id="vaDateRange" onchange="updateVendorAnalyticsChart()" class="px-3 py-1 border border-slate-300 rounded text-sm">
-                        <option value="7">Last 7 Days</option>
-                        <option value="30" selected>Last 30 Days</option>
-                        <option value="90">Last 90 Days</option>
-                    </select>
-                </div>
+            <div class="modal-header">
+                <span>Vendor Analytics for </span>
+                <span id="vaAsinDisplay" class="font-mono text-blue-600"></span>
             </div>
             <div id="vaProductTitle" class="text-sm text-slate-500 mb-4"></div>
 
@@ -757,48 +748,55 @@
 
             <!-- Chart Section -->
             <div class="mb-6">
-                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
-                    <h4 class="font-bold text-slate-800">Performance Over Time</h4>
-                    <div class="flex flex-wrap items-center gap-2">
-                        <div class="flex flex-wrap gap-1">
-                            <label class="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs cursor-pointer hover:bg-blue-100">
-                                <input type="checkbox" class="va-metric-cb" value="orderedUnits" checked onchange="updateVendorAnalyticsChart()">
-                                <span>Units</span>
-                            </label>
-                            <label class="flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 rounded text-xs cursor-pointer hover:bg-green-100">
-                                <input type="checkbox" class="va-metric-cb" value="orderedRevenue" onchange="updateVendorAnalyticsChart()">
-                                <span>Revenue</span>
-                            </label>
-                            <label class="flex items-center gap-1 px-2 py-1 bg-orange-50 border border-orange-200 rounded text-xs cursor-pointer hover:bg-orange-100">
-                                <input type="checkbox" class="va-metric-cb" value="glanceViews" onchange="updateVendorAnalyticsChart()">
-                                <span>Views</span>
-                            </label>
-                            <label class="flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded text-xs cursor-pointer hover:bg-purple-100">
-                                <input type="checkbox" class="va-metric-cb" value="sellableOnHandInventoryUnits" onchange="updateVendorAnalyticsChart()">
-                                <span>Inventory</span>
-                            </label>
-                        </div>
+                <!-- Time Range Selection -->
+                <div class="flex flex-wrap items-center gap-2 mb-3">
+                    <span class="text-xs text-slate-500 font-medium">Period:</span>
+                    <div class="flex flex-wrap gap-1">
+                        <button class="va-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600 hover:bg-blue-100" data-days="1">1D</button>
+                        <button class="va-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600 hover:bg-blue-100" data-days="7">1W</button>
+                        <button class="va-period-btn px-2 py-1 text-xs rounded bg-blue-600 text-white" data-days="30">30D</button>
+                        <button class="va-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600 hover:bg-blue-100" data-days="90">90D</button>
+                        <button class="va-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600 hover:bg-blue-100" data-days="365">1Y</button>
+                        <button class="va-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600 hover:bg-blue-100" data-days="1095">All</button>
+                        <button class="va-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600 hover:bg-blue-100" data-days="custom">Custom</button>
+                    </div>
+                    <div id="vaCustomDates" class="hidden flex items-center gap-1 ml-2">
+                        <input type="date" id="vaStartDate" class="px-2 py-1 text-xs border border-slate-300 rounded" onchange="updateVendorAnalyticsChart()">
+                        <span class="text-xs text-slate-400">to</span>
+                        <input type="date" id="vaEndDate" class="px-2 py-1 text-xs border border-slate-300 rounded" onchange="updateVendorAnalyticsChart()">
                     </div>
                 </div>
-                <!-- Compare with other ASINs -->
-                <div class="mb-3">
-                    <div class="flex items-center gap-2 mb-2">
-                        <span class="text-xs text-slate-500">Compare with:</span>
-                        <select id="vaCompareAsin" class="px-2 py-1 border border-slate-300 rounded text-xs" onchange="updateVendorAnalyticsChart()">
-                            <option value="">None (single ASIN)</option>
-                        </select>
-                        <label class="flex items-center gap-1 text-xs cursor-pointer">
-                            <input type="checkbox" id="vaMergeAsins" onchange="updateVendorAnalyticsChart()">
-                            <span>Combine totals</span>
+
+                <!-- Metric Selection -->
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+                    <div class="flex flex-wrap gap-1">
+                        <label class="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs cursor-pointer hover:bg-blue-100">
+                            <input type="checkbox" class="va-metric-cb" value="orderedUnits" checked onchange="updateVendorAnalyticsChart()">
+                            <span>Units</span>
+                        </label>
+                        <label class="flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 rounded text-xs cursor-pointer hover:bg-green-100">
+                            <input type="checkbox" class="va-metric-cb" value="orderedRevenue" checked onchange="updateVendorAnalyticsChart()">
+                            <span>Revenue</span>
+                        </label>
+                        <label class="flex items-center gap-1 px-2 py-1 bg-orange-50 border border-orange-200 rounded text-xs cursor-pointer hover:bg-orange-100">
+                            <input type="checkbox" class="va-metric-cb" value="glanceViews" checked onchange="updateVendorAnalyticsChart()">
+                            <span>Views</span>
+                        </label>
+                        <label class="flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded text-xs cursor-pointer hover:bg-purple-100">
+                            <input type="checkbox" class="va-metric-cb" value="sellableOnHandInventoryUnits" checked onchange="updateVendorAnalyticsChart()">
+                            <span>Inventory</span>
                         </label>
                     </div>
+                    <button onclick="resetVaChartZoom()" class="px-2 py-1 text-xs bg-slate-200 text-slate-600 rounded hover:bg-slate-300">Reset Zoom</button>
                 </div>
-                <div id="vaChartContainer" style="height: 250px; position: relative;">
+
+                <div id="vaChartContainer" style="height: 280px; position: relative;">
                     <canvas id="vaChart"></canvas>
                     <div id="vaChartLoading" class="absolute inset-0 flex items-center justify-center bg-slate-50 rounded-lg">
                         <div class="text-slate-500">Loading chart data...</div>
                     </div>
                 </div>
+                <div class="text-xs text-slate-400 mt-1 text-center">Click and drag to zoom, double-click to reset</div>
             </div>
 
             <!-- Purchase Orders for this ASIN -->
@@ -821,6 +819,8 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
@@ -2095,30 +2095,29 @@
         // Vendor Analytics Popup Functions
         let vaChart = null;
         let currentVaAsin = null;
-
-        // All ASINs for comparison dropdown
-        const allAsins = <%- JSON.stringify(allAsins || []) %>;
+        let vaSelectedDays = 30; // Default 30 days
 
         async function showVendorAnalyticsPopup(asin) {
             currentVaAsin = asin;
+            vaSelectedDays = 30; // Reset to default
             document.getElementById('vaAsinDisplay').textContent = asin;
             document.getElementById('vaFullAnalyticsLink').href = `/vendor-analytics`;
             document.getElementById('vendorAnalyticsModal').style.display = 'block';
             document.getElementById('vaChartLoading').classList.remove('hidden');
 
-            // Populate compare dropdown (excluding current ASIN)
-            const compareSelect = document.getElementById('vaCompareAsin');
-            compareSelect.innerHTML = '<option value="">None (single ASIN)</option>';
-            allAsins.filter(a => a !== asin).forEach(a => {
-                const opt = document.createElement('option');
-                opt.value = a;
-                opt.textContent = a;
-                compareSelect.appendChild(opt);
+            // Reset period buttons
+            document.querySelectorAll('.va-period-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white');
+                btn.classList.add('bg-slate-200', 'text-slate-600');
+                if (btn.dataset.days === '30') {
+                    btn.classList.remove('bg-slate-200', 'text-slate-600');
+                    btn.classList.add('bg-blue-600', 'text-white');
+                }
             });
+            document.getElementById('vaCustomDates').classList.add('hidden');
 
-            // Reset checkboxes
-            document.querySelectorAll('.va-metric-cb').forEach((cb, i) => cb.checked = i === 0);
-            document.getElementById('vaMergeAsins').checked = false;
+            // Check all metric checkboxes by default
+            document.querySelectorAll('.va-metric-cb').forEach(cb => cb.checked = true);
 
             // Reset display
             document.getElementById('vaProductTitle').textContent = 'Loading...';
@@ -2128,12 +2127,48 @@
             document.getElementById('vaInventory').textContent = '-';
             document.getElementById('vaPurchaseOrders').innerHTML = '<div class="text-slate-500 text-sm">Loading...</div>';
 
+            // Setup period button handlers
+            setupVaPeriodButtons();
+
             // Fetch data
             await Promise.all([
                 loadVendorAnalyticsSummary(asin),
                 loadAsinPurchaseOrders(asin),
                 updateVendorAnalyticsChart()
             ]);
+        }
+
+        function setupVaPeriodButtons() {
+            document.querySelectorAll('.va-period-btn').forEach(btn => {
+                btn.onclick = () => {
+                    // Update button styles
+                    document.querySelectorAll('.va-period-btn').forEach(b => {
+                        b.classList.remove('bg-blue-600', 'text-white');
+                        b.classList.add('bg-slate-200', 'text-slate-600');
+                    });
+                    btn.classList.remove('bg-slate-200', 'text-slate-600');
+                    btn.classList.add('bg-blue-600', 'text-white');
+
+                    // Handle custom date range
+                    if (btn.dataset.days === 'custom') {
+                        document.getElementById('vaCustomDates').classList.remove('hidden');
+                        // Set default custom dates
+                        const end = new Date();
+                        const start = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+                        document.getElementById('vaEndDate').value = end.toISOString().split('T')[0];
+                        document.getElementById('vaStartDate').value = start.toISOString().split('T')[0];
+                        vaSelectedDays = 'custom';
+                    } else {
+                        document.getElementById('vaCustomDates').classList.add('hidden');
+                        vaSelectedDays = parseInt(btn.dataset.days);
+                    }
+                    updateVendorAnalyticsChart();
+                };
+            });
+        }
+
+        function resetVaChartZoom() {
+            if (vaChart) vaChart.resetZoom();
         }
 
         function closeVendorAnalyticsModal() {
@@ -2146,9 +2181,14 @@
 
         async function loadVendorAnalyticsSummary(asin) {
             try {
-                const days = document.getElementById('vaDateRange').value;
-                const endDate = new Date().toISOString().split('T')[0];
-                const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                let startDate, endDate;
+                if (vaSelectedDays === 'custom') {
+                    startDate = document.getElementById('vaStartDate').value;
+                    endDate = document.getElementById('vaEndDate').value;
+                } else {
+                    endDate = new Date().toISOString().split('T')[0];
+                    startDate = new Date(Date.now() - vaSelectedDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                }
 
                 const response = await fetch(`/api/vendor-analytics/data?asin=${asin}&startDate=${startDate}&endDate=${endDate}`);
                 const data = await response.json();
@@ -2226,26 +2266,22 @@
                 return;
             }
 
-            const days = parseInt(document.getElementById('vaDateRange').value);
-            const endDate = new Date().toISOString().split('T')[0];
-            const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-            // Get comparison ASIN if selected
-            const compareAsinEl = document.getElementById('vaCompareAsin');
-            const compareAsin = compareAsinEl ? compareAsinEl.value : '';
-            const mergeAsins = document.getElementById('vaMergeAsins')?.checked || false;
-
-            // Build ASINs list
-            let asins = [currentVaAsin];
-            if (compareAsin && compareAsin !== currentVaAsin) {
-                asins.push(compareAsin);
+            // Calculate date range based on selected period
+            let startDate, endDate;
+            if (vaSelectedDays === 'custom') {
+                startDate = document.getElementById('vaStartDate').value;
+                endDate = document.getElementById('vaEndDate').value;
+                if (!startDate || !endDate) return;
+            } else {
+                endDate = new Date().toISOString().split('T')[0];
+                startDate = new Date(Date.now() - vaSelectedDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
             }
 
             document.getElementById('vaChartLoading').classList.remove('hidden');
             document.getElementById('vaChartLoading').innerHTML = '<div class="text-slate-500">Loading chart data...</div>';
 
             try {
-                // Fetch data for each metric and combine
+                // Fetch data for each metric
                 const allDatasets = [];
                 const chartColors = {
                     orderedUnits: '#3b82f6',
@@ -2263,26 +2299,20 @@
                 let allDates = [];
 
                 for (const metric of selectedMetrics) {
-                    const response = await fetch(`/api/vendor-analytics/chart-data?asins=${asins.join(',')}&metric=${metric}&startDate=${startDate}&endDate=${endDate}&merge=${mergeAsins}`);
+                    const response = await fetch(`/api/vendor-analytics/chart-data?asins=${currentVaAsin}&metric=${metric}&startDate=${startDate}&endDate=${endDate}`);
                     const data = await response.json();
 
                     if (data.success && data.dates.length > 0) {
                         if (allDates.length === 0) allDates = data.dates;
 
-                        data.series.forEach((s, idx) => {
-                            const label = asins.length > 1 && !mergeAsins
-                                ? `${metricLabels[metric]} (${s.label})`
-                                : metricLabels[metric];
-
-                            allDatasets.push({
-                                label: label,
-                                data: s.values,
-                                borderColor: chartColors[metric],
-                                backgroundColor: chartColors[metric] + '20',
-                                tension: 0.3,
-                                fill: selectedMetrics.length === 1,
-                                yAxisID: metric.includes('Revenue') ? 'yRevenue' : 'y'
-                            });
+                        allDatasets.push({
+                            label: metricLabels[metric],
+                            data: data.series[0]?.values || [],
+                            borderColor: chartColors[metric],
+                            backgroundColor: chartColors[metric] + '20',
+                            tension: 0.3,
+                            fill: selectedMetrics.length === 1,
+                            yAxisID: metric.includes('Revenue') ? 'yRevenue' : 'y'
                         });
                     }
                 }
@@ -2322,6 +2352,15 @@
                                         return ctx.dataset.label + ': ' + value;
                                     }
                                 }
+                            },
+                            zoom: {
+                                zoom: {
+                                    wheel: { enabled: true },
+                                    pinch: { enabled: true },
+                                    drag: { enabled: true, backgroundColor: 'rgba(59, 130, 246, 0.1)', borderColor: '#3b82f6', borderWidth: 1 },
+                                    mode: 'x'
+                                },
+                                pan: { enabled: true, mode: 'x' }
                             }
                         },
                         scales: {
