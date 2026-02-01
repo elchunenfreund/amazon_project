@@ -3514,6 +3514,37 @@ app.get('/api/charts/multi-series', async (req, res) => {
     }
 });
 
+// API: Diagnostic - see raw PO data structure
+app.get('/api/purchase-orders/raw-sample', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT po_number, raw_data
+            FROM purchase_orders
+            ORDER BY updated_at DESC
+            LIMIT 3
+        `);
+
+        const samples = result.rows.map(row => {
+            const raw = typeof row.raw_data === 'string' ? JSON.parse(row.raw_data) : row.raw_data;
+            const details = raw.orderDetails || {};
+            return {
+                poNumber: row.po_number,
+                hasShipWindow: !!details.shipWindow,
+                hasDeliveryWindow: !!details.deliveryWindow,
+                hasShipToParty: !!details.shipToParty,
+                shipWindow: details.shipWindow,
+                deliveryWindow: details.deliveryWindow,
+                shipToParty: details.shipToParty,
+                allDetailKeys: Object.keys(details)
+            };
+        });
+
+        res.json({ success: true, samples });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API: Get POs for a specific ASIN
 app.get('/api/purchase-orders/by-asin/:asin', async (req, res) => {
     try {
