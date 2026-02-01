@@ -2880,47 +2880,70 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
         if (multiMetric === 'true') {
             const asin = asins.split(',')[0]; // Only use first ASIN
 
+            // Query both weekly and real-time reports, then merge
             const metricConfigs = {
-                orderedUnits: { reportType: 'GET_VENDOR_SALES_REPORT', field: 'orderedUnits' },
-                orderedRevenue: { reportType: 'GET_VENDOR_SALES_REPORT', field: 'orderedRevenue', isAmount: true },
-                glanceViews: { reportType: 'GET_VENDOR_TRAFFIC_REPORT', field: 'glanceViews' },
-                sellableOnHandInventoryUnits: { reportType: 'GET_VENDOR_INVENTORY_REPORT', field: 'sellableOnHandInventoryUnits' }
+                orderedUnits: [
+                    { reportType: 'GET_VENDOR_REAL_TIME_SALES_REPORT', field: 'orderedUnits' },
+                    { reportType: 'GET_VENDOR_SALES_REPORT', field: 'orderedUnits' }
+                ],
+                orderedRevenue: [
+                    { reportType: 'GET_VENDOR_REAL_TIME_SALES_REPORT', field: 'orderedRevenue' },
+                    { reportType: 'GET_VENDOR_SALES_REPORT', field: 'orderedRevenue', isAmount: true }
+                ],
+                glanceViews: [
+                    { reportType: 'GET_VENDOR_TRAFFIC_REPORT', field: 'glanceViews' }
+                ],
+                sellableOnHandInventoryUnits: [
+                    { reportType: 'GET_VENDOR_REAL_TIME_INVENTORY_REPORT', field: 'highlyAvailableInventory' },
+                    { reportType: 'GET_VENDOR_INVENTORY_REPORT', field: 'sellableOnHandInventoryUnits' }
+                ]
             };
 
             // Collect all dates that have data (not empty dates)
             const allDatesSet = new Set();
             const metricDataMaps = {};
 
-            // Query each metric type and collect dates with data
-            for (const [metricName, config] of Object.entries(metricConfigs)) {
-                const result = await pool.query(
-                    `SELECT report_date, data
-                     FROM vendor_reports
-                     WHERE report_type = $1
-                       AND asin = $2
-                       AND report_date >= $3
-                       AND report_date <= $4
-                     ORDER BY report_date ASC`,
-                    [config.reportType, asin, startDate, endDate]
-                );
-
+            // Query each metric type (potentially from multiple report types) and collect dates with data
+            for (const [metricName, configs] of Object.entries(metricConfigs)) {
                 const dateValueMap = {};
-                for (const row of result.rows) {
-                    const date = new Date(row.report_date).toISOString().split('T')[0];
-                    const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
 
-                    let value = data[config.field];
-                    if (config.isAmount && value?.amount !== undefined) {
-                        value = parseFloat(value.amount);
-                    } else if (typeof value === 'number') {
-                        value = value;
-                    } else {
-                        value = null;
-                    }
+                for (const config of configs) {
+                    const result = await pool.query(
+                        `SELECT report_date, data
+                         FROM vendor_reports
+                         WHERE report_type = $1
+                           AND asin = $2
+                           AND report_date >= $3
+                           AND report_date <= $4
+                         ORDER BY report_date ASC`,
+                        [config.reportType, asin, startDate, endDate]
+                    );
 
-                    if (value !== null) {
-                        dateValueMap[date] = value;
-                        allDatesSet.add(date);
+                    for (const row of result.rows) {
+                        const date = new Date(row.report_date).toISOString().split('T')[0];
+
+                        // Skip if we already have data for this date (prefer RT over weekly)
+                        if (dateValueMap[date] !== undefined) continue;
+
+                        const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+
+                        let value = data[config.field];
+                        // Handle both formats: direct number OR {amount: "..."} object
+                        if (value?.amount !== undefined) {
+                            value = parseFloat(value.amount);
+                        } else if (typeof value === 'number') {
+                            value = value;
+                        } else if (typeof value === 'boolean') {
+                            // For highlyAvailableInventory which is boolean
+                            value = value ? 1 : 0;
+                        } else {
+                            value = null;
+                        }
+
+                        if (value !== null) {
+                            dateValueMap[date] = value;
+                            allDatesSet.add(date);
+                        }
                     }
                 }
                 metricDataMaps[metricName] = dateValueMap;
