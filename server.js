@@ -2663,6 +2663,15 @@ app.post('/api/vendor-reports/create', async (req, res) => {
 
         // Create report request
         const createUrl = 'https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports';
+
+        // Log the full request for debugging
+        console.log(`Report API request:`, {
+            url: createUrl,
+            method: 'POST',
+            headers: { 'x-amz-access-token': accessToken ? 'present' : 'MISSING' },
+            body: reportSpec
+        });
+
         const response = await fetch(createUrl, {
             method: 'POST',
             headers: {
@@ -2671,6 +2680,8 @@ app.post('/api/vendor-reports/create', async (req, res) => {
             },
             body: JSON.stringify(reportSpec)
         });
+
+        console.log(`Report API response: HTTP ${response.status}, Content-Type: ${response.headers.get('content-type')}`);
 
         // Check content type to handle HTML error pages
         const contentType = response.headers.get('content-type') || '';
@@ -2681,11 +2692,24 @@ app.post('/api/vendor-reports/create', async (req, res) => {
         } else {
             // Amazon returned HTML (usually an error page)
             const text = await response.text();
-            console.error(`Report API returned non-JSON (${response.status}):`, text.substring(0, 500));
-            return res.status(response.status).json({
+            console.error(`Report API returned non-JSON (HTTP ${response.status}):`, text.substring(0, 1000));
+
+            // Check for common error patterns
+            let errorHint = 'Unknown error';
+            if (response.status === 503) {
+                errorHint = 'Amazon service temporarily unavailable. Try again in a few minutes.';
+            } else if (response.status === 403) {
+                errorHint = 'Access denied. Check that your app has the Reports role enabled.';
+            } else if (response.status === 401) {
+                errorHint = 'Authentication failed. The access token may be invalid.';
+            } else if (text.includes('Rate exceeded')) {
+                errorHint = 'Rate limit exceeded. Wait a moment and try again.';
+            }
+
+            return res.status(response.status || 500).json({
                 success: false,
-                error: `Amazon returned non-JSON response (HTTP ${response.status})`,
-                hint: 'This may indicate a permissions issue with the Reports API. Check your app role in Seller Central.',
+                error: `Amazon returned HTTP ${response.status}`,
+                hint: errorHint,
                 statusCode: response.status
             });
         }
