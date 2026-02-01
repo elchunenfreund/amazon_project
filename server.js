@@ -2663,6 +2663,15 @@ app.post('/api/vendor-reports/create', async (req, res) => {
 
         // Create report request
         const createUrl = 'https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports';
+
+        // Log the full request for debugging
+        console.log(`Report API request:`, {
+            url: createUrl,
+            method: 'POST',
+            headers: { 'x-amz-access-token': accessToken ? 'present' : 'MISSING' },
+            body: reportSpec
+        });
+
         const response = await fetch(createUrl, {
             method: 'POST',
             headers: {
@@ -2672,24 +2681,36 @@ app.post('/api/vendor-reports/create', async (req, res) => {
             body: JSON.stringify(reportSpec)
         });
 
-        // Check if response is JSON before parsing
+        console.log(`Report API response: HTTP ${response.status}, Content-Type: ${response.headers.get('content-type')}`);
+
+        // Check content type to handle HTML error pages
         const contentType = response.headers.get('content-type') || '';
         let data;
 
         if (contentType.includes('application/json')) {
             data = await response.json();
         } else {
+            // Amazon returned HTML (usually an error page)
             const text = await response.text();
-            console.error(`Report API returned non-JSON (HTTP ${response.status}):`, text.substring(0, 500));
-            return res.status(response.status).json({
+            console.error(`Report API returned non-JSON (HTTP ${response.status}):`, text.substring(0, 1000));
+
+            // Check for common error patterns
+            let errorHint = 'Unknown error';
+            if (response.status === 503) {
+                errorHint = 'Amazon service temporarily unavailable. Try again in a few minutes.';
+            } else if (response.status === 403) {
+                errorHint = 'Access denied. Check that your app has the Reports role enabled.';
+            } else if (response.status === 401) {
+                errorHint = 'Authentication failed. The access token may be invalid.';
+            } else if (text.includes('Rate exceeded')) {
+                errorHint = 'Rate limit exceeded. Wait a moment and try again.';
+            }
+
+            return res.status(response.status || 500).json({
                 success: false,
-                error: 'Amazon API returned an error page instead of JSON',
-                httpStatus: response.status,
-                contentType: contentType,
-                responsePreview: text.substring(0, 200),
-                hint: response.status === 403 ? 'Access denied - check API permissions or token' :
-                      response.status === 401 ? 'Unauthorized - token may be expired or invalid' :
-                      'Check the response preview for details'
+                error: `Amazon returned HTTP ${response.status}`,
+                hint: errorHint,
+                statusCode: response.status
             });
         }
 
@@ -3855,12 +3876,18 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                 const createResp = await fetch('https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json',
                         'x-amz-access-token': accessToken
                     },
                     body: JSON.stringify(reportSpec)
                 });
+
+                // Check for non-JSON responses (HTML error pages)
+                const contentType = createResp.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    const text = await createResp.text();
+                    throw new Error(`API returned non-JSON (HTTP ${createResp.status}): Check Reports API permissions`);
+                }
 
                 const createData = await createResp.json();
                 if (!createData.reportId) {
@@ -3984,6 +4011,71 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
 
     } catch (err) {
         console.error('Backfill error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Test Reports API with a simple request
+app.get('/api/vendor-reports/test-api', async (req, res) => {
+    try {
+        const accessToken = await getValidAccessToken();
+        const marketplaceId = 'A2EUQ1WTGCTBG2'; // Canada
+
+        // Try a simple report creation request
+        const endDate = new Date();
+        const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const reportSpec = {
+            reportType: 'GET_VENDOR_REAL_TIME_SALES_REPORT',
+            marketplaceIds: [marketplaceId],
+            dataStartTime: startDate.toISOString(),
+            dataEndTime: endDate.toISOString()
+        };
+
+        console.log('Testing Reports API with:', JSON.stringify(reportSpec, null, 2));
+
+        const response = await fetch('https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports', {
+            method: 'POST',
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(reportSpec)
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        const responseText = await response.text();
+
+        console.log('Reports API Test Response:', {
+            status: response.status,
+            contentType: contentType,
+            body: responseText.substring(0, 500)
+        });
+
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (e) {
+            data = { rawText: responseText.substring(0, 1000) };
+        }
+
+        res.json({
+            success: response.ok,
+            status: response.status,
+            contentType: contentType,
+            isJson: contentType.includes('application/json'),
+            requestSpec: reportSpec,
+            response: data,
+            accessTokenPresent: !!accessToken,
+            hint: response.ok ? 'Reports API is working' :
+                  response.status === 403 ? 'Check app permissions in Seller Central' :
+                  response.status === 401 ? 'Token may be invalid' :
+                  response.status === 503 ? 'Amazon service unavailable - try later' :
+                  'Unknown error'
+        });
+
+    } catch (err) {
+        console.error('Reports API test error:', err);
         res.status(500).json({ error: err.message });
     }
 });
