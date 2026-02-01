@@ -3793,6 +3793,71 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
     }
 });
 
+// API: Test Reports API with a simple request
+app.get('/api/vendor-reports/test-api', async (req, res) => {
+    try {
+        const accessToken = await getValidAccessToken();
+        const marketplaceId = 'A2EUQ1WTGCTBG2'; // Canada
+
+        // Try a simple report creation request
+        const endDate = new Date();
+        const startDate = new Date(endDate.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+        const reportSpec = {
+            reportType: 'GET_VENDOR_REAL_TIME_SALES_REPORT',
+            marketplaceIds: [marketplaceId],
+            dataStartTime: startDate.toISOString(),
+            dataEndTime: endDate.toISOString()
+        };
+
+        console.log('Testing Reports API with:', JSON.stringify(reportSpec, null, 2));
+
+        const response = await fetch('https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports', {
+            method: 'POST',
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(reportSpec)
+        });
+
+        const contentType = response.headers.get('content-type') || '';
+        const responseText = await response.text();
+
+        console.log('Reports API Test Response:', {
+            status: response.status,
+            contentType: contentType,
+            body: responseText.substring(0, 500)
+        });
+
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (e) {
+            data = { rawText: responseText.substring(0, 1000) };
+        }
+
+        res.json({
+            success: response.ok,
+            status: response.status,
+            contentType: contentType,
+            isJson: contentType.includes('application/json'),
+            requestSpec: reportSpec,
+            response: data,
+            accessTokenPresent: !!accessToken,
+            hint: response.ok ? 'Reports API is working' :
+                  response.status === 403 ? 'Check app permissions in Seller Central' :
+                  response.status === 401 ? 'Token may be invalid' :
+                  response.status === 503 ? 'Amazon service unavailable - try later' :
+                  'Unknown error'
+        });
+
+    } catch (err) {
+        console.error('Reports API test error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API: Check actual data structure of a report type (diagnostic)
 app.get('/api/vendor-analytics/sample-data/:reportType', async (req, res) => {
     try {
