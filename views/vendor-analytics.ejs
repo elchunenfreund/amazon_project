@@ -7,6 +7,8 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@2.0.1/dist/chartjs-plugin-zoom.min.js"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .report-cell { min-width: 120px; }
@@ -392,12 +394,53 @@
                             <!-- Actions Column -->
                             <td class="px-4 py-3 text-center">
                                 <div class="flex gap-1 justify-center">
+                                    <button onclick="toggleInlineChart('<%= asin %>')" class="chart-toggle-btn bg-purple-100 text-purple-700 px-2 py-1 rounded text-xs font-medium hover:bg-purple-200" data-asin="<%= asin %>" title="View chart">
+                                        Chart
+                                    </button>
                                     <button onclick="showAsinDetail('<%= asin %>')" class="bg-blue-100 text-blue-700 px-2 py-1 rounded text-xs font-medium hover:bg-blue-200" title="View detailed report">
                                         Details
                                     </button>
                                     <a href="/catalog/<%= asin %>" class="bg-slate-100 text-slate-700 px-2 py-1 rounded text-xs font-medium hover:bg-slate-200" title="View catalog info">
                                         Catalog
                                     </a>
+                                </div>
+                            </td>
+                        </tr>
+                        <!-- Inline Chart Row (hidden by default) -->
+                        <tr id="chart-row-<%= asin %>" class="chart-row hidden bg-slate-50">
+                            <td colspan="12" class="p-4">
+                                <div class="bg-white rounded-lg border border-slate-200 p-4">
+                                    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                                        <div class="flex flex-wrap gap-1">
+                                            <button class="inline-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600" data-asin="<%= asin %>" data-period="7d">1W</button>
+                                            <button class="inline-period-btn px-2 py-1 text-xs rounded bg-blue-600 text-white" data-asin="<%= asin %>" data-period="30d">30D</button>
+                                            <button class="inline-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600" data-asin="<%= asin %>" data-period="90d">90D</button>
+                                            <button class="inline-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600" data-asin="<%= asin %>" data-period="365d">1Y</button>
+                                            <button class="inline-period-btn px-2 py-1 text-xs rounded bg-slate-200 text-slate-600" data-asin="<%= asin %>" data-period="all">All</button>
+                                        </div>
+                                        <div class="flex flex-wrap gap-1">
+                                            <label class="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs cursor-pointer">
+                                                <input type="checkbox" class="inline-metric-cb" data-asin="<%= asin %>" value="orderedUnits" checked> Units
+                                            </label>
+                                            <label class="flex items-center gap-1 px-2 py-1 bg-green-50 border border-green-200 rounded text-xs cursor-pointer">
+                                                <input type="checkbox" class="inline-metric-cb" data-asin="<%= asin %>" value="orderedRevenue" checked> Revenue
+                                            </label>
+                                            <label class="flex items-center gap-1 px-2 py-1 bg-orange-50 border border-orange-200 rounded text-xs cursor-pointer">
+                                                <input type="checkbox" class="inline-metric-cb" data-asin="<%= asin %>" value="glanceViews" checked> Views
+                                            </label>
+                                            <label class="flex items-center gap-1 px-2 py-1 bg-purple-50 border border-purple-200 rounded text-xs cursor-pointer">
+                                                <input type="checkbox" class="inline-metric-cb" data-asin="<%= asin %>" value="sellableOnHandInventoryUnits" checked> Inventory
+                                            </label>
+                                        </div>
+                                        <button onclick="resetInlineChartZoom('<%= asin %>')" class="px-2 py-1 text-xs bg-slate-200 text-slate-600 rounded hover:bg-slate-300">Reset Zoom</button>
+                                    </div>
+                                    <div class="relative" style="height: 250px;">
+                                        <canvas id="inline-chart-<%= asin %>"></canvas>
+                                        <div id="inline-chart-loading-<%= asin %>" class="absolute inset-0 flex items-center justify-center bg-slate-50 rounded-lg">
+                                            <div class="text-slate-500">Loading...</div>
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-slate-400 mt-1 text-center">Click and drag to zoom, double-click to reset</div>
                                 </div>
                             </td>
                         </tr>
@@ -408,51 +451,66 @@
             </div>
         </div>
 
-        <!-- Performance Charts Section -->
-        <div class="bg-white rounded-2xl shadow-xl border border-slate-200 p-6 mt-8">
-            <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
-                <div>
-                    <h3 class="text-xl font-bold text-slate-900">Performance Charts</h3>
-                    <p class="text-sm text-slate-500">Visualize metrics over time for selected ASINs</p>
-                </div>
-                <div class="flex flex-wrap items-center gap-3">
-                    <select id="chartMetric" onchange="updateChart()" class="px-3 py-2 rounded-lg border border-slate-300 text-sm">
-                        <option value="orderedUnits">Ordered Units (Weekly)</option>
-                        <option value="shippedUnits">Shipped Units (Weekly)</option>
-                        <option value="orderedRevenue">Revenue (Weekly)</option>
-                        <option value="glanceViews">Traffic / Views (Weekly)</option>
-                        <option value="sellableOnHandInventoryUnits">Inventory Units (Weekly)</option>
-                        <option value="netPureProductMargin">Margin % (Weekly)</option>
-                        <option value="rtOrderedUnits">RT Ordered Units</option>
-                        <option value="rtOrderedRevenue">RT Revenue</option>
-                    </select>
-                    <label class="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg cursor-pointer">
-                        <input type="checkbox" id="mergeAsins" onchange="updateChart()" class="w-4 h-4">
-                        <span class="text-sm font-medium text-slate-700">Merge ASINs</span>
-                    </label>
-                    <button onclick="updateChart()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700">
-                        Refresh Chart
-                    </button>
-                </div>
-            </div>
-            <div class="mb-4">
-                <div class="text-sm font-medium text-slate-700 mb-2">Select ASINs to chart (check boxes in the table above, or select here):</div>
-                <div id="chartAsinSelector" class="flex flex-wrap gap-2 max-h-24 overflow-auto p-2 bg-slate-50 rounded-lg">
-                    <% asins.forEach(asin => { %>
-                    <label class="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded cursor-pointer hover:bg-blue-50">
-                        <input type="checkbox" class="chart-asin-checkbox w-3 h-3" value="<%= asin %>">
-                        <span class="text-xs font-mono"><%= asin %></span>
-                    </label>
-                    <% }); %>
-                </div>
-            </div>
-            <div id="chartContainer" class="relative" style="height: 350px;">
-                <canvas id="analyticsChart"></canvas>
-                <div id="chartPlaceholder" class="absolute inset-0 flex items-center justify-center bg-slate-50 rounded-lg">
-                    <div class="text-center text-slate-500">
-                        <p class="text-lg font-medium">Select ASINs to display chart</p>
-                        <p class="text-sm">Use checkboxes in the table or the selector above</p>
+        <!-- Combined Chart Button -->
+        <div class="mt-8 text-center">
+            <button onclick="openCombinedChartModal()" class="bg-purple-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-purple-700 transition-all inline-flex items-center gap-2">
+                <span>📊</span> Open Combined ASIN Chart
+            </button>
+            <p class="text-sm text-slate-500 mt-2">Compare and merge data from multiple ASINs</p>
+        </div>
+
+        <!-- Combined Chart Modal -->
+        <div id="combinedChartModal" class="fixed inset-0 bg-black/50 hidden items-center justify-center z-50">
+            <div class="bg-white rounded-2xl shadow-2xl max-w-5xl w-full mx-4 max-h-[90vh] overflow-auto">
+                <div class="sticky top-0 bg-white border-b border-slate-200 p-4 flex justify-between items-center">
+                    <div>
+                        <h3 class="text-xl font-bold text-slate-900">Combined ASIN Chart</h3>
+                        <p class="text-sm text-slate-500">Visualize metrics over time for selected ASINs</p>
                     </div>
+                    <button onclick="closeCombinedChartModal()" class="text-slate-400 hover:text-slate-600 text-2xl">&times;</button>
+                </div>
+                <div class="p-6">
+                    <div class="flex flex-wrap items-center gap-3 mb-4">
+                        <select id="chartMetric" onchange="updateChart()" class="px-3 py-2 rounded-lg border border-slate-300 text-sm">
+                            <option value="orderedUnits">Ordered Units (Weekly)</option>
+                            <option value="shippedUnits">Shipped Units (Weekly)</option>
+                            <option value="orderedRevenue">Revenue (Weekly)</option>
+                            <option value="glanceViews">Traffic / Views (Weekly)</option>
+                            <option value="sellableOnHandInventoryUnits">Inventory Units (Weekly)</option>
+                            <option value="netPureProductMargin">Margin % (Weekly)</option>
+                            <option value="rtOrderedUnits">RT Ordered Units</option>
+                            <option value="rtOrderedRevenue">RT Revenue</option>
+                        </select>
+                        <label class="flex items-center gap-2 px-3 py-2 bg-slate-100 rounded-lg cursor-pointer">
+                            <input type="checkbox" id="mergeAsins" onchange="updateChart()" class="w-4 h-4">
+                            <span class="text-sm font-medium text-slate-700">Merge ASINs</span>
+                        </label>
+                        <button onclick="updateChart()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700">
+                            Refresh Chart
+                        </button>
+                        <button onclick="resetCombinedChartZoom()" class="px-3 py-2 text-sm bg-slate-200 text-slate-600 rounded-lg hover:bg-slate-300">Reset Zoom</button>
+                    </div>
+                    <div class="mb-4">
+                        <div class="text-sm font-medium text-slate-700 mb-2">Select ASINs to chart:</div>
+                        <div id="chartAsinSelector" class="flex flex-wrap gap-2 max-h-32 overflow-auto p-2 bg-slate-50 rounded-lg">
+                            <% asins.forEach(asin => { %>
+                            <label class="flex items-center gap-1 px-2 py-1 bg-white border border-slate-200 rounded cursor-pointer hover:bg-blue-50">
+                                <input type="checkbox" class="chart-asin-checkbox w-3 h-3" value="<%= asin %>">
+                                <span class="text-xs font-mono"><%= asin %></span>
+                            </label>
+                            <% }); %>
+                        </div>
+                    </div>
+                    <div id="chartContainer" class="relative" style="height: 400px;">
+                        <canvas id="analyticsChart"></canvas>
+                        <div id="chartPlaceholder" class="absolute inset-0 flex items-center justify-center bg-slate-50 rounded-lg">
+                            <div class="text-center text-slate-500">
+                                <p class="text-lg font-medium">Select ASINs to display chart</p>
+                                <p class="text-sm">Use checkboxes above</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-xs text-slate-400 mt-2 text-center">Click and drag to zoom, double-click to reset</div>
                 </div>
             </div>
         </div>
@@ -939,6 +997,10 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        interaction: {
+                            mode: 'index',
+                            intersect: false
+                        },
                         plugins: {
                             legend: { position: 'bottom' },
                             tooltip: {
@@ -950,6 +1012,23 @@
                                         else value = value.toLocaleString();
                                         return ctx.dataset.label + ': ' + value;
                                     }
+                                }
+                            },
+                            zoom: {
+                                zoom: {
+                                    wheel: { enabled: true },
+                                    pinch: { enabled: true },
+                                    drag: {
+                                        enabled: true,
+                                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                        borderColor: '#3b82f6',
+                                        borderWidth: 1
+                                    },
+                                    mode: 'x'
+                                },
+                                pan: {
+                                    enabled: true,
+                                    mode: 'x'
                                 }
                             }
                         },
@@ -1079,6 +1158,243 @@
             document.getElementById('asinPOsModal').classList.add('hidden');
             document.getElementById('asinPOsModal').classList.remove('flex');
         }
+
+        // ===== INLINE CHART FUNCTIONS =====
+        const inlineCharts = {}; // Store chart instances by ASIN
+        const inlineChartData = {}; // Store chart data by ASIN
+
+        function toggleInlineChart(asin) {
+            const chartRow = document.getElementById(`chart-row-${asin}`);
+            const btn = document.querySelector(`.chart-toggle-btn[data-asin="${asin}"]`);
+
+            if (chartRow.classList.contains('hidden')) {
+                chartRow.classList.remove('hidden');
+                btn.classList.add('bg-purple-600', 'text-white');
+                btn.classList.remove('bg-purple-100', 'text-purple-700');
+                loadInlineChart(asin);
+            } else {
+                chartRow.classList.add('hidden');
+                btn.classList.remove('bg-purple-600', 'text-white');
+                btn.classList.add('bg-purple-100', 'text-purple-700');
+            }
+        }
+
+        async function loadInlineChart(asin, period = '30d') {
+            const loadingEl = document.getElementById(`inline-chart-loading-${asin}`);
+            loadingEl.classList.remove('hidden');
+
+            // Calculate date range based on period
+            const endDate = new Date();
+            let startDate = new Date();
+
+            switch(period) {
+                case '7d': startDate.setDate(endDate.getDate() - 7); break;
+                case '30d': startDate.setDate(endDate.getDate() - 30); break;
+                case '90d': startDate.setDate(endDate.getDate() - 90); break;
+                case '365d': startDate.setDate(endDate.getDate() - 365); break;
+                case 'all': startDate = new Date('2020-01-01'); break;
+                default: startDate.setDate(endDate.getDate() - 30);
+            }
+
+            const startStr = startDate.toISOString().split('T')[0];
+            const endStr = endDate.toISOString().split('T')[0];
+
+            // Get selected metrics
+            const metricCheckboxes = document.querySelectorAll(`.inline-metric-cb[data-asin="${asin}"]:checked`);
+            const metrics = Array.from(metricCheckboxes).map(cb => cb.value);
+
+            if (metrics.length === 0) {
+                loadingEl.innerHTML = '<div class="text-slate-500">Select at least one metric</div>';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/vendor-analytics/chart-data?asins=${asin}&startDate=${startStr}&endDate=${endStr}&multiMetric=true`);
+                const data = await response.json();
+
+                if (!data.success) {
+                    loadingEl.innerHTML = '<div class="text-red-500">Error loading data</div>';
+                    return;
+                }
+
+                inlineChartData[asin] = data;
+                renderInlineChart(asin, metrics);
+                loadingEl.classList.add('hidden');
+
+            } catch (err) {
+                console.error('Error loading inline chart:', err);
+                loadingEl.innerHTML = '<div class="text-red-500">Error loading data</div>';
+            }
+        }
+
+        function renderInlineChart(asin, metrics) {
+            const data = inlineChartData[asin];
+            if (!data) return;
+
+            const ctx = document.getElementById(`inline-chart-${asin}`).getContext('2d');
+
+            // Destroy existing chart
+            if (inlineCharts[asin]) {
+                inlineCharts[asin].destroy();
+            }
+
+            const metricColors = {
+                orderedUnits: '#3b82f6',
+                orderedRevenue: '#10b981',
+                glanceViews: '#f59e0b',
+                sellableOnHandInventoryUnits: '#8b5cf6'
+            };
+
+            const metricLabels = {
+                orderedUnits: 'Ordered Units',
+                orderedRevenue: 'Revenue ($)',
+                glanceViews: 'Glance Views',
+                sellableOnHandInventoryUnits: 'Inventory Units'
+            };
+
+            // Build datasets from selected metrics
+            const datasets = [];
+            let hasRevenue = false;
+
+            metrics.forEach(metric => {
+                if (data.metricData && data.metricData[metric]) {
+                    const isRevenue = metric === 'orderedRevenue';
+                    if (isRevenue) hasRevenue = true;
+
+                    datasets.push({
+                        label: metricLabels[metric] || metric,
+                        data: data.metricData[metric],
+                        borderColor: metricColors[metric] || '#6b7280',
+                        backgroundColor: (metricColors[metric] || '#6b7280') + '20',
+                        tension: 0.3,
+                        fill: false,
+                        yAxisID: isRevenue ? 'y1' : 'y'
+                    });
+                }
+            });
+
+            // Create chart with zoom plugin
+            inlineCharts[asin] = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.dates,
+                    datasets: datasets
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: { position: 'bottom' },
+                        zoom: {
+                            zoom: {
+                                wheel: { enabled: true },
+                                pinch: { enabled: true },
+                                drag: {
+                                    enabled: true,
+                                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                                    borderColor: '#3b82f6',
+                                    borderWidth: 1
+                                },
+                                mode: 'x'
+                            },
+                            pan: {
+                                enabled: true,
+                                mode: 'x'
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'category',
+                            title: { display: true, text: 'Date' }
+                        },
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            beginAtZero: true,
+                            title: { display: true, text: 'Units / Views' }
+                        },
+                        y1: hasRevenue ? {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            beginAtZero: true,
+                            title: { display: true, text: 'Revenue ($)' },
+                            grid: { drawOnChartArea: false }
+                        } : undefined
+                    }
+                }
+            });
+        }
+
+        function resetInlineChartZoom(asin) {
+            if (inlineCharts[asin]) {
+                inlineCharts[asin].resetZoom();
+            }
+        }
+
+        // Event handlers for inline chart period buttons
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('inline-period-btn')) {
+                const asin = e.target.dataset.asin;
+                const period = e.target.dataset.period;
+
+                // Update active button styling
+                document.querySelectorAll(`.inline-period-btn[data-asin="${asin}"]`).forEach(btn => {
+                    btn.classList.remove('bg-blue-600', 'text-white');
+                    btn.classList.add('bg-slate-200', 'text-slate-600');
+                });
+                e.target.classList.remove('bg-slate-200', 'text-slate-600');
+                e.target.classList.add('bg-blue-600', 'text-white');
+
+                loadInlineChart(asin, period);
+            }
+        });
+
+        // Event handlers for inline chart metric checkboxes
+        document.querySelectorAll('.inline-metric-cb').forEach(cb => {
+            cb.addEventListener('change', function() {
+                const asin = this.dataset.asin;
+                const metricCheckboxes = document.querySelectorAll(`.inline-metric-cb[data-asin="${asin}"]:checked`);
+                const metrics = Array.from(metricCheckboxes).map(cb => cb.value);
+
+                if (inlineChartData[asin]) {
+                    renderInlineChart(asin, metrics);
+                }
+            });
+        });
+
+        // ===== COMBINED CHART MODAL FUNCTIONS =====
+        let combinedChart = null;
+
+        function openCombinedChartModal() {
+            document.getElementById('combinedChartModal').classList.remove('hidden');
+            document.getElementById('combinedChartModal').classList.add('flex');
+            updateChart(); // Load chart data
+        }
+
+        function closeCombinedChartModal() {
+            document.getElementById('combinedChartModal').classList.add('hidden');
+            document.getElementById('combinedChartModal').classList.remove('flex');
+        }
+
+        function resetCombinedChartZoom() {
+            if (chart) {
+                chart.resetZoom();
+            }
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('combinedChartModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeCombinedChartModal();
+            }
+        });
 
     </script>
 </body>

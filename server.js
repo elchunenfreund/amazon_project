@@ -2870,10 +2870,75 @@ app.get('/api/vendor-reports/fetch', async (req, res) => {
 // API: Get chart data for time-series visualization
 app.get('/api/vendor-analytics/chart-data', async (req, res) => {
     try {
-        const { asins, metric, startDate, endDate, merge } = req.query;
+        const { asins, metric, startDate, endDate, merge, multiMetric } = req.query;
 
-        if (!asins || !metric) {
-            return res.status(400).json({ error: 'Missing required parameters: asins and metric' });
+        if (!asins) {
+            return res.status(400).json({ error: 'Missing required parameter: asins' });
+        }
+
+        // Multi-metric mode: return data for all metrics for a single ASIN
+        if (multiMetric === 'true') {
+            const asin = asins.split(',')[0]; // Only use first ASIN
+
+            const metricConfigs = {
+                orderedUnits: { reportType: 'GET_VENDOR_SALES_REPORT', field: 'orderedUnits' },
+                orderedRevenue: { reportType: 'GET_VENDOR_SALES_REPORT', field: 'orderedRevenue', isAmount: true },
+                glanceViews: { reportType: 'GET_VENDOR_TRAFFIC_REPORT', field: 'glanceViews' },
+                sellableOnHandInventoryUnits: { reportType: 'GET_VENDOR_INVENTORY_REPORT', field: 'sellableOnHandInventoryUnits' }
+            };
+
+            // Generate all dates in range
+            const dates = [];
+            const start = new Date(startDate);
+            const end = new Date(endDate);
+            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+                dates.push(d.toISOString().split('T')[0]);
+            }
+
+            const metricData = {};
+
+            // Query each metric type
+            for (const [metricName, config] of Object.entries(metricConfigs)) {
+                const result = await pool.query(
+                    `SELECT report_date, data
+                     FROM vendor_reports
+                     WHERE report_type = $1
+                       AND asin = $2
+                       AND report_date >= $3
+                       AND report_date <= $4
+                     ORDER BY report_date ASC`,
+                    [config.reportType, asin, startDate, endDate]
+                );
+
+                const dateValueMap = {};
+                for (const row of result.rows) {
+                    const date = new Date(row.report_date).toISOString().split('T')[0];
+                    const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+
+                    let value = data[config.field];
+                    if (config.isAmount && value?.amount !== undefined) {
+                        value = parseFloat(value.amount);
+                    } else if (typeof value === 'number') {
+                        value = value;
+                    } else {
+                        value = null;
+                    }
+                    dateValueMap[date] = value;
+                }
+
+                metricData[metricName] = dates.map(date => dateValueMap[date] ?? null);
+            }
+
+            return res.json({
+                success: true,
+                dates,
+                metricData,
+                asin
+            });
+        }
+
+        if (!metric) {
+            return res.status(400).json({ error: 'Missing required parameter: metric' });
         }
 
         const asinList = asins.split(',').map(a => a.trim());
