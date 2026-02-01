@@ -2846,25 +2846,57 @@ app.get('/api/vendor-reports/download/:reportDocumentId', async (req, res) => {
 
             console.log(`[${reportType}] Found ${asinData.length} items to save`);
 
+            // Prepare batch data
+            const itemsToSave = [];
             for (const item of asinData) {
                 if (item.asin) {
-                    // Extract actual data period for better tracking
                     const dataStartDate = item.startDate || null;
                     const dataEndDate = item.endDate || null;
-                    // Use endDate as reportDate if available, otherwise startDate, then today
                     const reportDate = item.endDate || item.startDate || item.date || new Date().toISOString().split('T')[0];
+                    itemsToSave.push({
+                        asin: item.asin,
+                        reportDate,
+                        data: JSON.stringify(item),
+                        dataStartDate,
+                        dataEndDate
+                    });
+                }
+            }
 
-                    // Delete existing and insert new (simpler than UPSERT without constraint)
-                    await pool.query(
-                        `DELETE FROM vendor_reports WHERE report_type = $1 AND asin = $2 AND report_date = $3`,
-                        [reportType, item.asin, reportDate]
-                    );
+            if (itemsToSave.length > 0) {
+                // Get unique report dates for batch delete
+                const uniqueDates = [...new Set(itemsToSave.map(i => i.reportDate))];
+
+                // Batch delete existing records for this report type and dates
+                await pool.query(
+                    `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = ANY($2)`,
+                    [reportType, uniqueDates]
+                );
+
+                // Batch insert in chunks of 500 to avoid query size limits
+                const chunkSize = 500;
+                for (let i = 0; i < itemsToSave.length; i += chunkSize) {
+                    const chunk = itemsToSave.slice(i, i + chunkSize);
+
+                    // Build multi-row INSERT
+                    const values = [];
+                    const params = [];
+                    let paramIndex = 1;
+
+                    for (const item of chunk) {
+                        values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, CURRENT_TIMESTAMP)`);
+                        params.push(reportType, item.asin, item.reportDate, item.data, item.dataStartDate, item.dataEndDate);
+                        paramIndex += 6;
+                    }
+
                     await pool.query(
                         `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
-                         VALUES ($1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP)`,
-                        [reportType, item.asin, reportDate, JSON.stringify(item), dataStartDate, dataEndDate]
+                         VALUES ${values.join(', ')}`,
+                        params
                     );
                 }
+
+                console.log(`[${reportType}] Saved ${itemsToSave.length} items in batches`);
             }
         }
 
