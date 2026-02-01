@@ -2634,10 +2634,21 @@ app.post('/api/vendor-reports/create', async (req, res) => {
                 reportSpec.reportOptions.reportPeriod = 'WEEK';
 
                 // For WEEK reports, align dates to week boundaries (Sunday-Saturday)
-                const endDateObj = endDate ? new Date(endDate) : new Date();
+                // IMPORTANT: Amazon has a ~3 day processing lag for weekly data
+                // We must use dates at least 3 days in the past
+                const now = new Date();
+                const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+
+                // Use the earlier of: user's end date or 3 days ago
+                let endDateObj = endDate ? new Date(endDate) : now;
+                if (endDateObj > threeDaysAgo) {
+                    endDateObj = threeDaysAgo;
+                }
+
                 // Go back to last Saturday (end of complete week)
                 const dayOfWeek = endDateObj.getUTCDay();
                 const lastSaturday = new Date(endDateObj);
+                // If today is Sunday (0), go back 1 day; if Saturday (6), use today; etc.
                 lastSaturday.setUTCDate(lastSaturday.getUTCDate() - (dayOfWeek + 1));
                 lastSaturday.setUTCHours(23, 59, 59, 0);
 
