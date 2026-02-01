@@ -412,6 +412,16 @@ async function syncPurchaseOrders(daysBack = 30) {
                 const details = order.orderDetails || {};
                 const items = details.items || [];
 
+                // Parse window string format: "2026-01-26T08:00:00Z--2026-01-30T10:00:00Z"
+                let shipStart = null, shipEnd = null;
+                if (details.shipWindow && typeof details.shipWindow === 'string') {
+                    const parts = details.shipWindow.split('--');
+                    if (parts.length === 2) {
+                        shipStart = parts[0];
+                        shipEnd = parts[1];
+                    }
+                }
+
                 let deliveryStart = null, deliveryEnd = null;
                 if (details.deliveryWindow && typeof details.deliveryWindow === 'string') {
                     const parts = details.deliveryWindow.split('--');
@@ -432,6 +442,14 @@ async function syncPurchaseOrders(daysBack = 30) {
                     ON CONFLICT (po_number) DO UPDATE SET
                         po_status = EXCLUDED.po_status,
                         po_date = COALESCE(EXCLUDED.po_date, purchase_orders.po_date),
+                        ship_window_start = EXCLUDED.ship_window_start,
+                        ship_window_end = EXCLUDED.ship_window_end,
+                        delivery_window_start = EXCLUDED.delivery_window_start,
+                        delivery_window_end = EXCLUDED.delivery_window_end,
+                        buying_party = EXCLUDED.buying_party,
+                        selling_party = EXCLUDED.selling_party,
+                        ship_to_party = EXCLUDED.ship_to_party,
+                        bill_to_party = EXCLUDED.bill_to_party,
                         items = EXCLUDED.items,
                         raw_data = EXCLUDED.raw_data,
                         updated_at = CURRENT_TIMESTAMP`,
@@ -439,7 +457,7 @@ async function syncPurchaseOrders(daysBack = 30) {
                         order.purchaseOrderNumber,
                         details.purchaseOrderDate || null,
                         order.purchaseOrderState,
-                        null, null,
+                        shipStart, shipEnd,
                         deliveryStart, deliveryEnd,
                         JSON.stringify(details.buyingParty),
                         JSON.stringify(details.sellingParty),
