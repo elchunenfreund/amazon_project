@@ -2672,7 +2672,26 @@ app.post('/api/vendor-reports/create', async (req, res) => {
             body: JSON.stringify(reportSpec)
         });
 
-        const data = await response.json();
+        // Check if response is JSON before parsing
+        const contentType = response.headers.get('content-type') || '';
+        let data;
+
+        if (contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            console.error(`Report API returned non-JSON (HTTP ${response.status}):`, text.substring(0, 500));
+            return res.status(response.status).json({
+                success: false,
+                error: 'Amazon API returned an error page instead of JSON',
+                httpStatus: response.status,
+                contentType: contentType,
+                responsePreview: text.substring(0, 200),
+                hint: response.status === 403 ? 'Access denied - check API permissions or token' :
+                      response.status === 401 ? 'Unauthorized - token may be expired or invalid' :
+                      'Check the response preview for details'
+            });
+        }
 
         if (!response.ok) {
             console.error(`Report creation failed for ${reportType}:`, data);
@@ -2708,7 +2727,22 @@ app.get('/api/vendor-reports/status/:reportId', async (req, res) => {
             }
         });
 
-        const data = await response.json();
+        // Check if response is JSON before parsing
+        const contentType = response.headers.get('content-type') || '';
+        let data;
+
+        if (contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            console.error(`Status API returned non-JSON (HTTP ${response.status}):`, text.substring(0, 500));
+            return res.status(response.status).json({
+                success: false,
+                error: 'Amazon API returned non-JSON response',
+                httpStatus: response.status,
+                responsePreview: text.substring(0, 200)
+            });
+        }
 
         res.json({
             success: response.ok,
@@ -2738,7 +2772,22 @@ app.get('/api/vendor-reports/download/:reportDocumentId', async (req, res) => {
             }
         });
 
-        const docData = await docResponse.json();
+        // Check if response is JSON before parsing
+        const docContentType = docResponse.headers.get('content-type') || '';
+        let docData;
+
+        if (docContentType.includes('application/json')) {
+            docData = await docResponse.json();
+        } else {
+            const text = await docResponse.text();
+            console.error(`Document API returned non-JSON (HTTP ${docResponse.status}):`, text.substring(0, 500));
+            return res.status(docResponse.status).json({
+                success: false,
+                error: 'Amazon API returned non-JSON response when fetching document',
+                httpStatus: docResponse.status,
+                responsePreview: text.substring(0, 200)
+            });
+        }
 
         if (!docResponse.ok) {
             return res.status(docResponse.status).json({
@@ -2855,7 +2904,22 @@ app.get('/api/vendor-reports/fetch', async (req, res) => {
             }
         });
 
-        const data = await response.json();
+        // Check if response is JSON before parsing
+        const contentType = response.headers.get('content-type') || '';
+        let data;
+
+        if (contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            const text = await response.text();
+            console.error(`Fetch reports API returned non-JSON (HTTP ${response.status}):`, text.substring(0, 500));
+            return res.status(response.status).json({
+                success: false,
+                error: 'Amazon API returned non-JSON response',
+                httpStatus: response.status,
+                responsePreview: text.substring(0, 200)
+            });
+        }
 
         res.json({
             success: response.ok,
@@ -2863,6 +2927,151 @@ app.get('/api/vendor-reports/fetch', async (req, res) => {
         });
     } catch (err) {
         console.error('Fetch reports error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Test endpoint to diagnose Reports API connectivity
+app.get('/api/vendor-reports/test-api', async (req, res) => {
+    try {
+        const diagnostics = {
+            timestamp: new Date().toISOString(),
+            tests: []
+        };
+
+        // Test 1: Token retrieval
+        let accessToken;
+        try {
+            accessToken = await getValidAccessToken();
+            diagnostics.tests.push({
+                name: 'Access Token',
+                status: 'pass',
+                message: 'Token retrieved successfully',
+                tokenPreview: accessToken ? accessToken.substring(0, 20) + '...' : 'null'
+            });
+        } catch (tokenErr) {
+            diagnostics.tests.push({
+                name: 'Access Token',
+                status: 'fail',
+                message: tokenErr.message
+            });
+            return res.json({ success: false, diagnostics });
+        }
+
+        // Test 2: List existing reports (read-only API call)
+        const listUrl = 'https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports?pageSize=1';
+        try {
+            const listResponse = await fetch(listUrl, {
+                headers: {
+                    'x-amz-access-token': accessToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const contentType = listResponse.headers.get('content-type') || '';
+            const responseText = await listResponse.text();
+
+            if (contentType.includes('application/json')) {
+                const data = JSON.parse(responseText);
+                diagnostics.tests.push({
+                    name: 'List Reports API',
+                    status: listResponse.ok ? 'pass' : 'fail',
+                    httpStatus: listResponse.status,
+                    contentType: contentType,
+                    reportCount: data.reports?.length || 0,
+                    response: listResponse.ok ? 'Success' : data
+                });
+            } else {
+                diagnostics.tests.push({
+                    name: 'List Reports API',
+                    status: 'fail',
+                    httpStatus: listResponse.status,
+                    contentType: contentType,
+                    message: 'Received non-JSON response (HTML error page)',
+                    responsePreview: responseText.substring(0, 300)
+                });
+            }
+        } catch (listErr) {
+            diagnostics.tests.push({
+                name: 'List Reports API',
+                status: 'fail',
+                message: listErr.message
+            });
+        }
+
+        // Test 3: Try creating a simple report
+        const testReportSpec = {
+            reportType: 'GET_VENDOR_SALES_REPORT',
+            marketplaceIds: ['A2EUQ1WTGCTBG2'],
+            reportOptions: {
+                reportPeriod: 'WEEK',
+                distributorView: 'MANUFACTURING',
+                sellingProgram: 'RETAIL'
+            }
+        };
+
+        // Set date range to last complete week
+        const now = new Date();
+        const dayOfWeek = now.getUTCDay();
+        const lastSaturday = new Date(now);
+        lastSaturday.setUTCDate(lastSaturday.getUTCDate() - (dayOfWeek + 1));
+        const lastSunday = new Date(lastSaturday);
+        lastSunday.setUTCDate(lastSunday.getUTCDate() - 6);
+
+        testReportSpec.dataStartTime = lastSunday.toISOString();
+        testReportSpec.dataEndTime = lastSaturday.toISOString();
+
+        try {
+            const createUrl = 'https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports';
+            const createResponse = await fetch(createUrl, {
+                method: 'POST',
+                headers: {
+                    'x-amz-access-token': accessToken,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(testReportSpec)
+            });
+
+            const createContentType = createResponse.headers.get('content-type') || '';
+            const createText = await createResponse.text();
+
+            if (createContentType.includes('application/json')) {
+                const createData = JSON.parse(createText);
+                diagnostics.tests.push({
+                    name: 'Create Report API',
+                    status: createResponse.ok ? 'pass' : 'fail',
+                    httpStatus: createResponse.status,
+                    reportSpec: testReportSpec,
+                    response: createData
+                });
+            } else {
+                diagnostics.tests.push({
+                    name: 'Create Report API',
+                    status: 'fail',
+                    httpStatus: createResponse.status,
+                    contentType: createContentType,
+                    message: 'Received non-JSON response',
+                    responsePreview: createText.substring(0, 300),
+                    reportSpec: testReportSpec
+                });
+            }
+        } catch (createErr) {
+            diagnostics.tests.push({
+                name: 'Create Report API',
+                status: 'fail',
+                message: createErr.message,
+                reportSpec: testReportSpec
+            });
+        }
+
+        // Overall success
+        const allPassed = diagnostics.tests.every(t => t.status === 'pass');
+        res.json({
+            success: allPassed,
+            diagnostics
+        });
+    } catch (err) {
+        console.error('Test API error:', err);
         res.status(500).json({ error: err.message });
     }
 });
