@@ -2670,19 +2670,8 @@ app.post('/api/vendor-reports/create', async (req, res) => {
             }
         }
 
-        console.log(`Creating report ${reportType}:`, JSON.stringify(reportSpec, null, 2));
-
         // Create report request
         const createUrl = 'https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports';
-
-        // Log the full request for debugging
-        console.log(`Report API request:`, {
-            url: createUrl,
-            method: 'POST',
-            headers: { 'x-amz-access-token': accessToken ? 'present' : 'MISSING' },
-            body: reportSpec
-        });
-
         const response = await fetch(createUrl, {
             method: 'POST',
             headers: {
@@ -2691,8 +2680,6 @@ app.post('/api/vendor-reports/create', async (req, res) => {
             },
             body: JSON.stringify(reportSpec)
         });
-
-        console.log(`Report API response: HTTP ${response.status}, Content-Type: ${response.headers.get('content-type')}`);
 
         // Check content type to handle HTML error pages
         const contentType = response.headers.get('content-type') || '';
