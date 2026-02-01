@@ -276,6 +276,17 @@
                             <td class="report-cell px-3 py-3 col-rt-sales">
                                 <% if (rtSales) {
                                     const data = typeof rtSales === 'string' ? JSON.parse(rtSales) : rtSales;
+                                    // Handle revenue - could be object {amount, currencyCode} or direct number
+                                    let revenueValue = null;
+                                    if (data.orderedRevenue !== undefined && data.orderedRevenue !== null) {
+                                        if (typeof data.orderedRevenue === 'object' && data.orderedRevenue.amount !== undefined) {
+                                            revenueValue = parseFloat(data.orderedRevenue.amount);
+                                        } else if (typeof data.orderedRevenue === 'number') {
+                                            revenueValue = data.orderedRevenue;
+                                        } else if (typeof data.orderedRevenue === 'string') {
+                                            revenueValue = parseFloat(data.orderedRevenue);
+                                        }
+                                    }
                                 %>
                                     <div class="metric-group">
                                         <div class="metric-item">
@@ -285,7 +296,7 @@
                                         <div class="metric-item">
                                             <div class="metric-label">Revenue</div>
                                             <div class="metric-value text-green-600">
-                                                <% if (data.orderedRevenue?.amount !== undefined) { %>$<%= parseFloat(data.orderedRevenue.amount).toFixed(0) %><% } else { %>-<% } %>
+                                                <% if (revenueValue !== null && !isNaN(revenueValue)) { %>$<%= revenueValue.toFixed(0) %><% } else { %>-<% } %>
                                             </div>
                                         </div>
                                     </div>
@@ -929,10 +940,21 @@
 
             // RT Sales
             const rtSales = dataByAsin[asin]?.['GET_VENDOR_REAL_TIME_SALES_REPORT'];
+            // Handle revenue - could be object {amount, currencyCode} or direct number
+            let rtRevenueDisplay = '-';
+            if (rtSales && rtSales.orderedRevenue !== undefined && rtSales.orderedRevenue !== null) {
+                if (typeof rtSales.orderedRevenue === 'object' && rtSales.orderedRevenue.amount !== undefined) {
+                    rtRevenueDisplay = '$' + parseFloat(rtSales.orderedRevenue.amount).toFixed(2);
+                } else if (typeof rtSales.orderedRevenue === 'number') {
+                    rtRevenueDisplay = '$' + rtSales.orderedRevenue.toFixed(2);
+                } else if (typeof rtSales.orderedRevenue === 'string') {
+                    rtRevenueDisplay = '$' + parseFloat(rtSales.orderedRevenue).toFixed(2);
+                }
+            }
             document.getElementById('detailRtSales').innerHTML = rtSales
                 ? `<div class="grid grid-cols-2 gap-4">
                     ${formatMetric('Ordered Units', rtSales.orderedUnits ?? '-')}
-                    ${formatMetric('Ordered Revenue', rtSales.orderedRevenue?.amount ? '$' + parseFloat(rtSales.orderedRevenue.amount).toFixed(2) : '-')}
+                    ${formatMetric('Ordered Revenue', rtRevenueDisplay)}
                    </div>`
                 : noDataHtml();
 
