@@ -3561,4 +3561,137 @@ app.get('/api/vendor-analytics/data', async (req, res) => {
     }
 });
 
+// API: Check data gaps in vendor reports
+app.get('/api/vendor-analytics/data-gaps', async (req, res) => {
+    try {
+        // Get date range of data by report type
+        const coverageResult = await pool.query(`
+            SELECT
+                report_type,
+                MIN(report_date)::date as min_date,
+                MAX(report_date)::date as max_date,
+                COUNT(DISTINCT report_date::date) as unique_dates,
+                COUNT(*) as total_records
+            FROM vendor_reports
+            GROUP BY report_type
+            ORDER BY report_type
+        `);
+
+        const coverage = coverageResult.rows.map(row => {
+            const start = new Date(row.min_date);
+            const end = new Date(row.max_date);
+            const daysCovered = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+            const gapPct = ((1 - row.unique_dates / daysCovered) * 100).toFixed(1);
+            return {
+                reportType: row.report_type,
+                minDate: row.min_date,
+                maxDate: row.max_date,
+                daysInRange: daysCovered,
+                uniqueDates: parseInt(row.unique_dates),
+                totalRecords: parseInt(row.total_records),
+                gapPercentage: parseFloat(gapPct)
+            };
+        });
+
+        // Check gaps for GET_VENDOR_SALES_REPORT specifically
+        const gapsResult = await pool.query(`
+            WITH date_range AS (
+                SELECT MIN(report_date)::date as start_date, MAX(report_date)::date as end_date
+                FROM vendor_reports
+                WHERE report_type = 'GET_VENDOR_SALES_REPORT'
+            ),
+            date_series AS (
+                SELECT generate_series(
+                    (SELECT start_date FROM date_range),
+                    (SELECT end_date FROM date_range),
+                    '1 day'::interval
+                )::date as expected_date
+            ),
+            actual_dates AS (
+                SELECT DISTINCT report_date::date as actual_date
+                FROM vendor_reports
+                WHERE report_type = 'GET_VENDOR_SALES_REPORT'
+            )
+            SELECT expected_date
+            FROM date_series
+            WHERE expected_date NOT IN (SELECT actual_date FROM actual_dates)
+            ORDER BY expected_date
+        `);
+
+        // Group consecutive gaps into ranges
+        const gapRanges = [];
+        let currentStart = null;
+        let currentEnd = null;
+        let prevDate = null;
+
+        for (const row of gapsResult.rows) {
+            const date = new Date(row.expected_date);
+            if (!currentStart) {
+                currentStart = date;
+                currentEnd = date;
+            } else {
+                const daysDiff = Math.ceil((date - prevDate) / (1000*60*60*24));
+                if (daysDiff <= 1) {
+                    currentEnd = date;
+                } else {
+                    gapRanges.push({
+                        start: currentStart.toISOString().split('T')[0],
+                        end: currentEnd.toISOString().split('T')[0],
+                        days: Math.ceil((currentEnd - currentStart) / (1000*60*60*24)) + 1
+                    });
+                    currentStart = date;
+                    currentEnd = date;
+                }
+            }
+            prevDate = date;
+        }
+        if (currentStart) {
+            gapRanges.push({
+                start: currentStart.toISOString().split('T')[0],
+                end: currentEnd.toISOString().split('T')[0],
+                days: Math.ceil((currentEnd - currentStart) / (1000*60*60*24)) + 1
+            });
+        }
+
+        // 3-year coverage check
+        const threeYearsAgo = new Date();
+        threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
+
+        const recentResult = await pool.query(`
+            SELECT
+                COUNT(DISTINCT report_date::date) as days_with_data,
+                MIN(report_date)::date as earliest,
+                MAX(report_date)::date as latest
+            FROM vendor_reports
+            WHERE report_type = 'GET_VENDOR_SALES_REPORT'
+              AND report_date >= $1
+        `, [threeYearsAgo.toISOString().split('T')[0]]);
+
+        const expectedDays = Math.ceil((new Date() - threeYearsAgo) / (1000*60*60*24));
+        const threeYearCoverage = {
+            lookingBackFrom: threeYearsAgo.toISOString().split('T')[0],
+            expectedDays,
+            daysWithData: parseInt(recentResult.rows[0].days_with_data),
+            earliest: recentResult.rows[0].earliest,
+            latest: recentResult.rows[0].latest,
+            coveragePercent: ((recentResult.rows[0].days_with_data / expectedDays) * 100).toFixed(1)
+        };
+
+        res.json({
+            success: true,
+            coverage,
+            salesReportGaps: {
+                totalMissingDates: gapsResult.rows.length,
+                gapRanges: gapRanges.slice(0, 50), // Limit to first 50 ranges
+                totalGapRanges: gapRanges.length
+            },
+            threeYearCoverage
+        });
+
+    } catch (err) {
+        console.error('Data gaps check error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 server.listen(port, () => console.log(`Active on ${port}`));
