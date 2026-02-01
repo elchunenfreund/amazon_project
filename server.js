@@ -2543,11 +2543,32 @@ app.get('/purchase-orders', async (req, res) => {
             });
         }
 
+        // Get receiving data from po_line_items
+        const receivingData = {};
+        const poNumbers = posResult.rows.map(po => po.po_number);
+        if (poNumbers.length > 0) {
+            const receivingResult = await pool.query(
+                `SELECT po_number, asin, received_quantity, receiving_status, last_receiving_date
+                 FROM po_line_items
+                 WHERE po_number = ANY($1) AND received_quantity IS NOT NULL`,
+                [poNumbers]
+            );
+            receivingResult.rows.forEach(row => {
+                const key = `${row.po_number}|${row.asin}`;
+                receivingData[key] = {
+                    receivedQuantity: row.received_quantity,
+                    receivingStatus: row.receiving_status,
+                    lastReceivingDate: row.last_receiving_date
+                };
+            });
+        }
+
         res.render('purchase-orders', {
             purchaseOrders: posResult.rows,
             productTitles,
             vendorSkus,
             inventoryByAsin,
+            receivingData,
             startDate,
             endDate
         });
@@ -3726,6 +3747,136 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
         });
     } catch (err) {
         console.error('Sync POs error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Sync Purchase Order Status (receiving data) from SP-API
+app.post('/api/purchase-orders/sync-status', async (req, res) => {
+    try {
+        const { purchaseOrderNumbers, updatedAfter } = req.body;
+        const accessToken = await getValidAccessToken();
+
+        let allStatuses = [];
+        let nextToken = null;
+        let pageCount = 0;
+        const maxPages = 50;
+
+        // Fetch all pages of PO statuses
+        do {
+            let url = 'https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrdersStatus?limit=100';
+
+            // Filter by specific PO numbers if provided
+            if (purchaseOrderNumbers && purchaseOrderNumbers.length > 0) {
+                // API accepts comma-separated PO numbers
+                url += `&purchaseOrderNumber=${purchaseOrderNumbers.slice(0, 100).join(',')}`;
+            }
+
+            // Filter by updated date if provided
+            if (updatedAfter) {
+                url += `&updatedAfter=${encodeURIComponent(updatedAfter)}`;
+            }
+
+            if (nextToken) {
+                url += `&nextToken=${encodeURIComponent(nextToken)}`;
+            }
+
+            console.log(`[PO Status Sync] Fetching page ${pageCount + 1}...`);
+
+            const response = await fetch(url, {
+                headers: {
+                    'x-amz-access-token': accessToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (!response.ok) {
+                console.error('[PO Status Sync] API Error:', data);
+                return res.status(response.status).json({
+                    success: false,
+                    error: 'Failed to fetch purchase order status',
+                    details: data,
+                    pagesFetched: pageCount,
+                    statusesFetchedSoFar: allStatuses.length
+                });
+            }
+
+            const statuses = data.payload?.ordersStatus || [];
+            allStatuses = allStatuses.concat(statuses);
+            nextToken = data.payload?.pagination?.nextToken;
+            pageCount++;
+
+            console.log(`[PO Status Sync] Page ${pageCount}: fetched ${statuses.length} statuses, total: ${allStatuses.length}`);
+
+        } while (nextToken && pageCount < maxPages);
+
+        // Update database with receiving data
+        let updatedCount = 0;
+        let itemsUpdated = 0;
+
+        for (const orderStatus of allStatuses) {
+            try {
+                const poNumber = orderStatus.purchaseOrderNumber;
+                const itemStatuses = orderStatus.purchaseOrderStatus?.itemStatus || [];
+
+                for (const itemStatus of itemStatuses) {
+                    const asin = itemStatus.buyerProductIdentifier; // This is the ASIN
+
+                    // Get receiving status from itemStatus
+                    const receivingStatus = itemStatus.receivingStatus;
+                    let receivedQty = null;
+                    let lastReceivingDate = null;
+
+                    if (receivingStatus) {
+                        receivedQty = receivingStatus.receivedQuantity?.amount
+                            ? parseInt(receivingStatus.receivedQuantity.amount)
+                            : null;
+                        lastReceivingDate = receivingStatus.lastReceiveDate || null;
+                    }
+
+                    // Also check for acknowledged quantity in netCost section
+                    const acknowledgedQty = itemStatus.acknowledgedStatus?.acceptedQuantity?.amount
+                        ? parseInt(itemStatus.acknowledgedStatus.acceptedQuantity.amount)
+                        : null;
+
+                    if (asin && (receivedQty !== null || acknowledgedQty !== null)) {
+                        await pool.query(
+                            `UPDATE po_line_items
+                             SET received_quantity = COALESCE($1, received_quantity),
+                                 acknowledged_quantity = COALESCE($2, acknowledged_quantity),
+                                 receiving_status = $3,
+                                 last_receiving_date = $4
+                             WHERE po_number = $5 AND asin = $6`,
+                            [
+                                receivedQty,
+                                acknowledgedQty,
+                                receivingStatus?.receiveStatus || null,
+                                lastReceivingDate,
+                                poNumber,
+                                asin
+                            ]
+                        );
+                        itemsUpdated++;
+                    }
+                }
+                updatedCount++;
+            } catch (dbErr) {
+                console.error('[PO Status Sync] Error updating:', orderStatus.purchaseOrderNumber, dbErr.message);
+            }
+        }
+
+        res.json({
+            success: true,
+            totalFetched: allStatuses.length,
+            ordersProcessed: updatedCount,
+            itemsUpdated,
+            pagesFetched: pageCount,
+            hasMore: !!nextToken && pageCount >= maxPages
+        });
+    } catch (err) {
+        console.error('[PO Status Sync] Error:', err);
         res.status(500).json({ error: err.message });
     }
 });

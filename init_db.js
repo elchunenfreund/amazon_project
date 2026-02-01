@@ -169,6 +169,21 @@ const client = new Client({
         await client.query(`
             CREATE UNIQUE INDEX IF NOT EXISTS idx_po_line_items_unique ON po_line_items(po_number, asin);
         `);
+        // Add received_quantity column if it doesn't exist
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='po_line_items' AND column_name='received_quantity') THEN
+                    ALTER TABLE po_line_items ADD COLUMN received_quantity INTEGER;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='po_line_items' AND column_name='receiving_status') THEN
+                    ALTER TABLE po_line_items ADD COLUMN receiving_status TEXT;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='po_line_items' AND column_name='last_receiving_date') THEN
+                    ALTER TABLE po_line_items ADD COLUMN last_receiving_date TIMESTAMP;
+                END IF;
+            END $$;
+        `);
         console.log("✅ Table 'po_line_items' is ready.");
 
         // 6. Create OAuth Tokens table (if not exists)
