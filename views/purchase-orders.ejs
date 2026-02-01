@@ -118,7 +118,6 @@
                             <th class="px-4 py-3 text-left font-bold">PO Number</th>
                             <th class="px-4 py-3 text-left font-bold">Date</th>
                             <th class="px-4 py-3 text-center font-bold">Status</th>
-                            <th class="px-4 py-3 text-left font-bold">Ship Window</th>
                             <th class="px-4 py-3 text-left font-bold">Delivery Window</th>
                             <th class="px-4 py-3 text-center font-bold">Items</th>
                             <th class="px-4 py-3 text-left font-bold">Ship To</th>
@@ -128,7 +127,7 @@
                     <tbody class="divide-y divide-slate-200">
                         <% if (purchaseOrders.length === 0) { %>
                         <tr>
-                            <td colspan="8" class="px-4 py-12 text-center text-slate-500">
+                            <td colspan="7" class="px-4 py-12 text-center text-slate-500">
                                 <p class="text-4xl mb-4">No Purchase Orders</p>
                                 <p class="font-medium">No purchase orders synced yet</p>
                                 <p class="text-sm">Click "Sync from SP-API" to fetch your vendor purchase orders</p>
@@ -156,14 +155,6 @@
                                     'Cancelled': 'status-cancelled'
                                 }[po.po_status] || 'status-new'; %>
                                 <span class="status-badge <%= statusClass %>"><%= po.po_status || 'Unknown' %></span>
-                            </td>
-                            <td class="px-4 py-3 text-xs text-slate-600">
-                                <% if (po.ship_window_start && po.ship_window_end) { %>
-                                <div><%= new Date(po.ship_window_start).toLocaleDateString('en-CA') %></div>
-                                <div class="text-slate-400">to <%= new Date(po.ship_window_end).toLocaleDateString('en-CA') %></div>
-                                <% } else { %>
-                                <span class="text-slate-400" title="Not provided by Amazon API">N/A</span>
-                                <% } %>
                             </td>
                             <td class="px-4 py-3 text-xs text-slate-600">
                                 <% if (po.delivery_window_start && po.delivery_window_end) { %>
@@ -439,14 +430,8 @@
                 </div>
                 ` : ''}
 
-                <div class="grid grid-cols-2 gap-4 mb-6">
-                    <div class="border border-slate-200 rounded-lg p-3">
-                        <div class="text-xs text-slate-500 mb-1">Ship Window</div>
-                        ${po.ship_window_start && po.ship_window_end ? `
-                            <div class="font-medium">${new Date(po.ship_window_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(po.ship_window_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
-                        ` : '<span class="text-slate-400">Not specified</span>'}
-                    </div>
-                    <div class="border border-slate-200 rounded-lg p-3">
+                <div class="mb-6">
+                    <div class="border border-slate-200 rounded-lg p-3 inline-block">
                         <div class="text-xs text-slate-500 mb-1">Delivery Window</div>
                         ${po.delivery_window_start && po.delivery_window_end ? `
                             <div class="font-medium">${new Date(po.delivery_window_start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${new Date(po.delivery_window_end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>

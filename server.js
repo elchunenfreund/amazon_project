@@ -2398,13 +2398,13 @@ app.get('/vendor-analytics', async (req, res) => {
             }
         });
 
-        // Get vendor SKUs from po_line_items
+        // Get SKUs from products table (user-entered SKUs)
         const vendorSkus = {};
         const skuResult = await pool.query(`
-            SELECT DISTINCT ON (asin) asin, vendor_sku FROM po_line_items WHERE vendor_sku IS NOT NULL
+            SELECT asin, sku FROM products WHERE sku IS NOT NULL
         `);
         skuResult.rows.forEach(row => {
-            if (row.vendor_sku) vendorSkus[row.asin] = row.vendor_sku;
+            if (row.sku) vendorSkus[row.asin] = row.sku;
         });
 
         // Get data source metadata (report dates) for each report type
@@ -2511,14 +2511,14 @@ app.get('/purchase-orders', async (req, res) => {
                 }
             });
 
-            // Get vendor SKUs from po_line_items
+            // Get SKUs from products table (user-entered SKUs)
             const skuResult = await pool.query(
-                `SELECT DISTINCT ON (asin) asin, vendor_sku FROM po_line_items
-                 WHERE asin = ANY($1) AND vendor_sku IS NOT NULL`,
+                `SELECT asin, sku FROM products
+                 WHERE asin = ANY($1) AND sku IS NOT NULL`,
                 [asinArray]
             );
             skuResult.rows.forEach(row => {
-                if (row.vendor_sku) vendorSkus[row.asin] = row.vendor_sku;
+                if (row.sku) vendorSkus[row.asin] = row.sku;
             });
         }
 
