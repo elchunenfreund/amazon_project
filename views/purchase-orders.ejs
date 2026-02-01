@@ -162,7 +162,7 @@
                                 <div><%= new Date(po.ship_window_start).toLocaleDateString('en-CA') %></div>
                                 <div class="text-slate-400">to <%= new Date(po.ship_window_end).toLocaleDateString('en-CA') %></div>
                                 <% } else { %>
-                                -
+                                <span class="text-slate-400" title="Not provided by Amazon API">N/A</span>
                                 <% } %>
                             </td>
                             <td class="px-4 py-3 text-xs text-slate-600">
@@ -187,6 +187,9 @@
                                 <% if (shipTo?.address) { %>
                                 <div class="text-slate-700"><%= shipTo.address.city || '' %></div>
                                 <div class="text-slate-400"><%= shipTo.address.stateOrRegion || '' %>, <%= shipTo.address.countryCode || '' %></div>
+                                <% } else if (shipTo?.partyId) { %>
+                                <div class="text-slate-700 font-medium"><%= shipTo.partyId %></div>
+                                <div class="text-slate-400 text-[10px]">Amazon FC</div>
                                 <% } else { %>
                                 -
                                 <% } %>
