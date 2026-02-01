@@ -2887,17 +2887,11 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
                 sellableOnHandInventoryUnits: { reportType: 'GET_VENDOR_INVENTORY_REPORT', field: 'sellableOnHandInventoryUnits' }
             };
 
-            // Generate all dates in range
-            const dates = [];
-            const start = new Date(startDate);
-            const end = new Date(endDate);
-            for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-                dates.push(d.toISOString().split('T')[0]);
-            }
+            // Collect all dates that have data (not empty dates)
+            const allDatesSet = new Set();
+            const metricDataMaps = {};
 
-            const metricData = {};
-
-            // Query each metric type
+            // Query each metric type and collect dates with data
             for (const [metricName, config] of Object.entries(metricConfigs)) {
                 const result = await pool.query(
                     `SELECT report_date, data
@@ -2923,10 +2917,21 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
                     } else {
                         value = null;
                     }
-                    dateValueMap[date] = value;
-                }
 
-                metricData[metricName] = dates.map(date => dateValueMap[date] ?? null);
+                    if (value !== null) {
+                        dateValueMap[date] = value;
+                        allDatesSet.add(date);
+                    }
+                }
+                metricDataMaps[metricName] = dateValueMap;
+            }
+
+            // Sort dates and build final arrays (only dates with at least some data)
+            const dates = Array.from(allDatesSet).sort();
+
+            const metricData = {};
+            for (const metricName of Object.keys(metricConfigs)) {
+                metricData[metricName] = dates.map(date => metricDataMaps[metricName][date] ?? null);
             }
 
             return res.json({
@@ -2994,14 +2999,8 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
             dateMap[date][row.asin] = value;
         }
 
-        // Generate all dates in the range (not just dates with data)
-        // This ensures continuous lines in the chart without gaps
-        const dates = [];
-        const start = new Date(startDate);
-        const end = new Date(endDate);
-        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-            dates.push(d.toISOString().split('T')[0]);
-        }
+        // Only include dates that have actual data (no empty spots)
+        const dates = Object.keys(dateMap).sort();
 
         let series = [];
 
@@ -3014,7 +3013,7 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
         } else {
             // Separate series per ASIN
             for (const asin of asinList) {
-                const values = dates.map(date => dateMap[date]?.[asin] || 0);
+                const values = dates.map(date => dateMap[date]?.[asin] ?? null);
                 series.push({ label: asin, values });
             }
         }

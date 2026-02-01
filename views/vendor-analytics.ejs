@@ -1037,7 +1037,8 @@
                             borderColor: chartColors[i % chartColors.length],
                             backgroundColor: chartColors[i % chartColors.length] + '20',
                             tension: 0.3,
-                            fill: true
+                            fill: true,
+                            spanGaps: true  // Connect lines across null values
                         }))
                     },
                     options: {
@@ -1314,7 +1315,8 @@
                         backgroundColor: (metricColors[metric] || '#6b7280') + '20',
                         tension: 0.3,
                         fill: false,
-                        yAxisID: isRevenue ? 'y1' : 'y'
+                        yAxisID: isRevenue ? 'y1' : 'y',
+                        spanGaps: true  // Connect lines across null values
                     });
                 }
             });
