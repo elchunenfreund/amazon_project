@@ -2672,7 +2672,23 @@ app.post('/api/vendor-reports/create', async (req, res) => {
             body: JSON.stringify(reportSpec)
         });
 
-        const data = await response.json();
+        // Check content type to handle HTML error pages
+        const contentType = response.headers.get('content-type') || '';
+        let data;
+
+        if (contentType.includes('application/json')) {
+            data = await response.json();
+        } else {
+            // Amazon returned HTML (usually an error page)
+            const text = await response.text();
+            console.error(`Report API returned non-JSON (${response.status}):`, text.substring(0, 500));
+            return res.status(response.status).json({
+                success: false,
+                error: `Amazon returned non-JSON response (HTTP ${response.status})`,
+                hint: 'This may indicate a permissions issue with the Reports API. Check your app role in Seller Central.',
+                statusCode: response.status
+            });
+        }
 
         if (!response.ok) {
             console.error(`Report creation failed for ${reportType}:`, data);
@@ -3614,12 +3630,18 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                 const createResp = await fetch('https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports', {
                     method: 'POST',
                     headers: {
-                        'Authorization': `Bearer ${accessToken}`,
                         'Content-Type': 'application/json',
                         'x-amz-access-token': accessToken
                     },
                     body: JSON.stringify(reportSpec)
                 });
+
+                // Check for non-JSON responses (HTML error pages)
+                const contentType = createResp.headers.get('content-type') || '';
+                if (!contentType.includes('application/json')) {
+                    const text = await createResp.text();
+                    throw new Error(`API returned non-JSON (HTTP ${createResp.status}): Check Reports API permissions`);
+                }
 
                 const createData = await createResp.json();
                 if (!createData.reportId) {
