@@ -3545,32 +3545,50 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
         const { createdAfter, createdBefore } = req.body;
         const accessToken = await getValidAccessToken();
 
-        let url = 'https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrders?limit=100';
-        if (createdAfter) url += `&createdAfter=${encodeURIComponent(createdAfter)}`;
-        if (createdBefore) url += `&createdBefore=${encodeURIComponent(createdBefore)}`;
+        let allOrders = [];
+        let nextToken = null;
+        let pageCount = 0;
+        const maxPages = 50; // Safety limit to prevent infinite loops
 
-        const response = await fetch(url, {
-            headers: {
-                'x-amz-access-token': accessToken,
-                'Content-Type': 'application/json'
-            }
-        });
+        // Fetch all pages of purchase orders
+        do {
+            let url = 'https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrders?limit=100';
+            if (createdAfter) url += `&createdAfter=${encodeURIComponent(createdAfter)}`;
+            if (createdBefore) url += `&createdBefore=${encodeURIComponent(createdBefore)}`;
+            if (nextToken) url += `&nextToken=${encodeURIComponent(nextToken)}`;
 
-        const data = await response.json();
-
-        if (!response.ok) {
-            return res.status(response.status).json({
-                success: false,
-                error: 'Failed to fetch purchase orders',
-                details: data
+            const response = await fetch(url, {
+                headers: {
+                    'x-amz-access-token': accessToken,
+                    'Content-Type': 'application/json'
+                }
             });
-        }
 
-        // Save POs to database
-        const orders = data.payload?.orders || [];
+            const data = await response.json();
+
+            if (!response.ok) {
+                return res.status(response.status).json({
+                    success: false,
+                    error: 'Failed to fetch purchase orders',
+                    details: data,
+                    pagesFetched: pageCount,
+                    ordersFetchedSoFar: allOrders.length
+                });
+            }
+
+            const orders = data.payload?.orders || [];
+            allOrders = allOrders.concat(orders);
+            nextToken = data.payload?.pagination?.nextToken;
+            pageCount++;
+
+            console.log(`[PO Sync] Page ${pageCount}: fetched ${orders.length} orders, total so far: ${allOrders.length}`);
+
+        } while (nextToken && pageCount < maxPages);
+
+        // Save all POs to database
         let savedCount = 0;
 
-        for (const order of orders) {
+        for (const order of allOrders) {
             try {
                 // Data is nested in orderDetails
                 const details = order.orderDetails || {};
@@ -3653,9 +3671,10 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
 
         res.json({
             success: true,
-            totalFetched: orders.length,
+            totalFetched: allOrders.length,
             savedCount,
-            nextToken: data.payload?.pagination?.nextToken
+            pagesFetched: pageCount,
+            hasMore: !!nextToken && pageCount >= maxPages
         });
     } catch (err) {
         console.error('Sync POs error:', err);

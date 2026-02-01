@@ -260,7 +260,14 @@
                 const data = await response.json();
 
                 if (data.success) {
-                    syncStatus.textContent = `Synced ${data.savedCount} of ${data.totalFetched} orders`;
+                    let message = `Synced ${data.savedCount} orders`;
+                    if (data.pagesFetched > 1) {
+                        message += ` (${data.pagesFetched} pages)`;
+                    }
+                    if (data.hasMore) {
+                        message += ' - more available, sync again';
+                    }
+                    syncStatus.textContent = message;
                     syncStatus.className = 'text-sm text-green-600 ml-4';
 
                     // Refresh page after short delay
