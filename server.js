@@ -2765,6 +2765,11 @@ app.get('/api/vendor-reports/status/:reportId', async (req, res) => {
             });
         }
 
+        // Log FATAL or CANCELLED status for debugging
+        if (data.processingStatus === 'FATAL' || data.processingStatus === 'CANCELLED') {
+            console.error(`Report ${reportId} status: ${data.processingStatus}`, JSON.stringify(data, null, 2));
+        }
+
         res.json({
             success: response.ok,
             status: data.processingStatus,
