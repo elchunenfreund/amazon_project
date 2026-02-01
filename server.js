@@ -191,6 +191,41 @@ app.get('/', async (req, res) => {
             };
         });
 
+        // Get last PO info for each ASIN
+        const lastPOResult = await pool.query(`
+            SELECT DISTINCT ON (li.asin)
+                li.asin,
+                po.po_number,
+                po.po_date,
+                po.po_status,
+                li.ordered_quantity,
+                li.acknowledged_quantity
+            FROM po_line_items li
+            JOIN purchase_orders po ON li.po_number = po.po_number
+            ORDER BY li.asin, po.po_date DESC
+        `);
+        const lastPOMap = {};
+        lastPOResult.rows.forEach(row => {
+            lastPOMap[row.asin] = {
+                po_number: row.po_number,
+                po_date: row.po_date,
+                po_status: row.po_status,
+                ordered_quantity: row.ordered_quantity,
+                acknowledged_quantity: row.acknowledged_quantity
+            };
+        });
+
+        // Get PO count by ASIN
+        const poCountResult = await pool.query(`
+            SELECT li.asin, COUNT(DISTINCT li.po_number) as po_count
+            FROM po_line_items li
+            GROUP BY li.asin
+        `);
+        const poCountMap = {};
+        poCountResult.rows.forEach(row => {
+            poCountMap[row.asin] = parseInt(row.po_count);
+        });
+
         // Create Set of valid ASINs (only those in products table)
         const validAsins = new Set(productMeta.rows.map(row => row.asin));
 
@@ -207,13 +242,30 @@ app.get('/', async (req, res) => {
             const previous = history[1];
 
             let hasChanged = false;
+            const changedFields = [];
+            let previousPrice = null;
             if (previous) {
-                if (latest.availability !== previous.availability) hasChanged = true;
-                if (latest.stock_level !== previous.stock_level) hasChanged = true;
-                if (latest.price !== previous.price) hasChanged = true;
-                if (latest.seller !== previous.seller) hasChanged = true;
+                if (latest.availability !== previous.availability) {
+                    hasChanged = true;
+                    changedFields.push('availability');
+                }
+                if (latest.stock_level !== previous.stock_level) {
+                    hasChanged = true;
+                    changedFields.push('stock');
+                }
+                if (latest.price !== previous.price) {
+                    hasChanged = true;
+                    changedFields.push('price');
+                    previousPrice = previous.price;
+                }
+                if (latest.seller !== previous.seller) {
+                    hasChanged = true;
+                    changedFields.push('seller');
+                }
             }
             latest.hasChanged = hasChanged;
+            latest.changedFields = changedFields;
+            latest.previousPrice = previousPrice;
 
             // Add metadata
             const meta = metaMap[asin] || {};
@@ -221,6 +273,10 @@ app.get('/', async (req, res) => {
             latest.snooze_until = meta.snooze_until;
             latest.isSnoozed = meta.snooze_until && new Date(meta.snooze_until) > new Date();
             latest.hasReports = true;
+
+            // Add last PO info
+            latest.lastPO = lastPOMap[asin] || null;
+            latest.poCount = poCountMap[asin] || 0;
             latest.history = history.map(row => ({
                 ...row,
                 check_date_formatted: formatMontrealDateTime(row.check_date),
@@ -256,11 +312,15 @@ app.get('/', async (req, res) => {
                     ranking: 'N/A',
                     check_date: null,
                     hasChanged: false,
+                    changedFields: [],
+                    previousPrice: null,
                     comment: meta.comment || '',
                     snooze_until: meta.snooze_until,
                     isSnoozed: meta.snooze_until && new Date(meta.snooze_until) > new Date(),
                     hasReports: false,
                     history: [],
+                    lastPO: lastPOMap[product.asin] || null,
+                    poCount: poCountMap[product.asin] || 0,
                 };
                 dashboardData.push(placeholder);
             }
@@ -2426,6 +2486,9 @@ app.get('/vendor-analytics', async (req, res) => {
             };
         });
 
+        // Get filter ASIN from query params
+        const filterAsin = req.query.asin || null;
+
         res.render('vendor-analytics', {
             asins,
             dataByAsin,
@@ -2436,7 +2499,8 @@ app.get('/vendor-analytics', async (req, res) => {
             reportMetadata,
             reportTypes: VENDOR_REPORT_TYPES,
             startDate,
-            endDate
+            endDate,
+            filterAsin
         });
     } catch (err) {
         console.error('Vendor analytics error:', err);
