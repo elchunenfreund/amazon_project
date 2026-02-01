@@ -97,6 +97,9 @@
                 <button onclick="refreshAllReports()" id="refreshBtn" class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition-all">
                     Sync All Reports
                 </button>
+                <button onclick="backfillDailyData()" id="backfillBtn" class="bg-orange-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-orange-700 transition-all" title="Fetch daily real-time data for the past 30 days">
+                    Backfill Daily Data
+                </button>
                 <div id="syncStatus" class="text-sm text-slate-500 ml-4"></div>
             </div>
         </div>
@@ -719,6 +722,49 @@
 
         // Initialize column visibility on page load
         restoreColumnVisibility();
+
+        async function backfillDailyData() {
+            if (!confirm('This will fetch real-time daily data for the past 30 days.\n\nThis may take a few minutes. Continue?')) {
+                return;
+            }
+
+            const btn = document.getElementById('backfillBtn');
+            const statusDiv = document.getElementById('syncStatus');
+
+            btn.disabled = true;
+            btn.textContent = 'Backfilling...';
+            statusDiv.innerHTML = '<span class="text-orange-600">Fetching daily data (this may take a few minutes)...</span>';
+
+            try {
+                const response = await fetch('/api/vendor-reports/backfill-daily', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ daysBack: 30 })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    const sales = data.results.salesReport;
+                    const inv = data.results.inventoryReport;
+                    statusDiv.innerHTML = `<span class="text-green-600">Backfill complete! Sales: ${sales.success} chunks, Inventory: ${inv.success} chunks</span>`;
+
+                    if (sales.errors.length > 0 || inv.errors.length > 0) {
+                        console.log('Backfill errors:', data.results);
+                    }
+
+                    // Reload page after 2 seconds to show new data
+                    setTimeout(() => window.location.reload(), 2000);
+                } else {
+                    statusDiv.innerHTML = `<span class="text-red-600">Backfill failed: ${data.error}</span>`;
+                }
+            } catch (err) {
+                statusDiv.innerHTML = `<span class="text-red-600">Backfill error: ${err.message}</span>`;
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Backfill Daily Data';
+            }
+        }
 
         function closeSyncModal() {
             document.getElementById('syncModal').classList.add('hidden');

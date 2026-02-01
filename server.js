@@ -3561,6 +3561,170 @@ app.get('/api/vendor-analytics/data', async (req, res) => {
     }
 });
 
+// API: Backfill real-time reports for daily data (up to 30 days back)
+app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
+    try {
+        const { daysBack = 30 } = req.body;
+        const maxDaysBack = Math.min(daysBack, 30); // Amazon limits to 30 days
+
+        const results = {
+            salesReport: { success: 0, failed: 0, errors: [] },
+            inventoryReport: { success: 0, failed: 0, errors: [] }
+        };
+
+        const accessToken = await getValidAccessToken();
+        const marketplaceId = 'A2EUQ1WTGCTBG2'; // Canada
+
+        // Process in chunks - 14 days for sales, 7 days for inventory
+        const today = new Date();
+
+        // Helper to create and process a report
+        async function fetchReportChunk(reportType, startDate, endDate) {
+            try {
+                // Create report request
+                const reportSpec = {
+                    reportType: reportType,
+                    marketplaceIds: [marketplaceId],
+                    dataStartTime: startDate.toISOString(),
+                    dataEndTime: endDate.toISOString()
+                };
+
+                const createResp = await fetch('https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports', {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json',
+                        'x-amz-access-token': accessToken
+                    },
+                    body: JSON.stringify(reportSpec)
+                });
+
+                const createData = await createResp.json();
+                if (!createData.reportId) {
+                    throw new Error(createData.errors?.[0]?.message || 'Failed to create report');
+                }
+
+                const reportId = createData.reportId;
+
+                // Poll for completion (max 60 seconds)
+                let reportDocumentId = null;
+                for (let i = 0; i < 30; i++) {
+                    await new Promise(r => setTimeout(r, 2000));
+
+                    const statusResp = await fetch(`https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports/${reportId}`, {
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'x-amz-access-token': accessToken
+                        }
+                    });
+                    const statusData = await statusResp.json();
+
+                    if (statusData.processingStatus === 'DONE') {
+                        reportDocumentId = statusData.reportDocumentId;
+                        break;
+                    } else if (statusData.processingStatus === 'CANCELLED' || statusData.processingStatus === 'FATAL') {
+                        throw new Error(`Report ${statusData.processingStatus}`);
+                    }
+                }
+
+                if (!reportDocumentId) {
+                    throw new Error('Report timed out');
+                }
+
+                // Download report
+                const docResp = await fetch(`https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/documents/${reportDocumentId}`, {
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'x-amz-access-token': accessToken
+                    }
+                });
+                const docData = await docResp.json();
+
+                // Fetch the actual report content
+                const contentResp = await fetch(docData.url);
+                let reportContent;
+                if (docData.compressionAlgorithm === 'GZIP') {
+                    const buffer = await contentResp.arrayBuffer();
+                    const zlib = require('zlib');
+                    const decompressed = zlib.gunzipSync(Buffer.from(buffer));
+                    reportContent = JSON.parse(decompressed.toString());
+                } else {
+                    reportContent = await contentResp.json();
+                }
+
+                // Save to database
+                const reportConfig = VENDOR_REPORT_TYPES[reportType];
+                const dataKey = reportConfig.dataKey;
+                const items = reportContent[dataKey] || [];
+
+                for (const item of items) {
+                    const asin = item.asin;
+                    if (!asin) continue;
+
+                    // For real-time reports, use the startDate as report_date
+                    const reportDate = startDate.toISOString().split('T')[0];
+
+                    await pool.query(
+                        `INSERT INTO vendor_reports (asin, report_type, report_date, data, created_at)
+                         VALUES ($1, $2, $3, $4, NOW())
+                         ON CONFLICT (asin, report_type, report_date)
+                         DO UPDATE SET data = $4, created_at = NOW()`,
+                        [asin, reportType, reportDate, JSON.stringify(item)]
+                    );
+                }
+
+                return { success: true, itemCount: items.length };
+            } catch (err) {
+                return { success: false, error: err.message };
+            }
+        }
+
+        // Fetch sales reports in 14-day chunks
+        for (let daysAgo = maxDaysBack; daysAgo > 0; daysAgo -= 14) {
+            const chunkEnd = new Date(today);
+            chunkEnd.setDate(today.getDate() - Math.max(0, daysAgo - 14));
+
+            const chunkStart = new Date(today);
+            chunkStart.setDate(today.getDate() - daysAgo);
+
+            const result = await fetchReportChunk('GET_VENDOR_REAL_TIME_SALES_REPORT', chunkStart, chunkEnd);
+            if (result.success) {
+                results.salesReport.success++;
+            } else {
+                results.salesReport.failed++;
+                results.salesReport.errors.push(`${chunkStart.toISOString().split('T')[0]}: ${result.error}`);
+            }
+        }
+
+        // Fetch inventory reports in 7-day chunks
+        for (let daysAgo = maxDaysBack; daysAgo > 0; daysAgo -= 7) {
+            const chunkEnd = new Date(today);
+            chunkEnd.setDate(today.getDate() - Math.max(0, daysAgo - 7));
+
+            const chunkStart = new Date(today);
+            chunkStart.setDate(today.getDate() - daysAgo);
+
+            const result = await fetchReportChunk('GET_VENDOR_REAL_TIME_INVENTORY_REPORT', chunkStart, chunkEnd);
+            if (result.success) {
+                results.inventoryReport.success++;
+            } else {
+                results.inventoryReport.failed++;
+                results.inventoryReport.errors.push(`${chunkStart.toISOString().split('T')[0]}: ${result.error}`);
+            }
+        }
+
+        res.json({
+            success: true,
+            message: `Backfilled ${maxDaysBack} days of real-time data`,
+            results
+        });
+
+    } catch (err) {
+        console.error('Backfill error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API: Check data gaps in vendor reports
 app.get('/api/vendor-analytics/data-gaps', async (req, res) => {
     try {
