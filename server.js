@@ -3724,6 +3724,44 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
     }
 });
 
+// API: Check actual data structure of a report type (diagnostic)
+app.get('/api/vendor-analytics/sample-data/:reportType', async (req, res) => {
+    try {
+        const { reportType } = req.params;
+
+        const result = await pool.query(
+            `SELECT asin, report_date, data
+             FROM vendor_reports
+             WHERE report_type = $1
+             ORDER BY report_date DESC
+             LIMIT 5`,
+            [reportType]
+        );
+
+        if (result.rows.length === 0) {
+            return res.json({ success: true, message: 'No data found for this report type', samples: [] });
+        }
+
+        const samples = result.rows.map(row => ({
+            asin: row.asin,
+            reportDate: row.report_date,
+            dataKeys: Object.keys(typeof row.data === 'string' ? JSON.parse(row.data) : row.data),
+            data: typeof row.data === 'string' ? JSON.parse(row.data) : row.data
+        }));
+
+        res.json({
+            success: true,
+            reportType,
+            sampleCount: samples.length,
+            samples
+        });
+
+    } catch (err) {
+        console.error('Sample data error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API: Check data gaps in vendor reports
 app.get('/api/vendor-analytics/data-gaps', async (req, res) => {
     try {
