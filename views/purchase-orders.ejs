@@ -319,7 +319,8 @@
                 const itemRows = items.map(item => {
                     const asin = item.amazonProductIdentifier || '-';
                     const title = productTitles[asin] || '';
-                    const sku = item.vendorProductIdentifier || vendorSkus[asin] || '-';
+                    // Prioritize user-entered SKU from products table over Amazon's vendorProductIdentifier
+                    const sku = vendorSkus[asin] || item.vendorProductIdentifier || '-';
                     const ordered = parseInt(item.orderedQuantity?.amount) || 0;
                     const accepted = parseInt(item.acknowledgedQuantity?.amount) || 0;
                     const unitCost = item.netCost?.amount ? parseFloat(item.netCost.amount) : 0;
@@ -467,7 +468,7 @@
                                 <div class="font-bold text-blue-600 mb-2">Item ${idx + 1}: ${item.amazonProductIdentifier || 'N/A'}</div>
                                 <div class="grid grid-cols-2 md:grid-cols-3 gap-2 text-xs">
                                     <div><span class="text-slate-500">ASIN:</span> <span class="font-medium">${item.amazonProductIdentifier || '-'}</span></div>
-                                    <div><span class="text-slate-500">Vendor SKU:</span> <span class="font-medium">${item.vendorProductIdentifier || '-'}</span></div>
+                                    <div><span class="text-slate-500">Vendor SKU:</span> <span class="font-medium">${vendorSkus[item.amazonProductIdentifier] || item.vendorProductIdentifier || '-'}</span></div>
                                     <div><span class="text-slate-500">External ID:</span> <span class="font-medium">${item.externalId || '-'}</span></div>
                                     <div><span class="text-slate-500">Ordered Qty:</span> <span class="font-medium">${item.orderedQuantity?.amount || '-'} ${item.orderedQuantity?.unitOfMeasure || ''}</span></div>
                                     <div><span class="text-slate-500">Acknowledged Qty:</span> <span class="font-medium ${(item.acknowledgedQuantity?.amount || 0) < (item.orderedQuantity?.amount || 0) ? 'text-amber-600' : ''}">${item.acknowledgedQuantity?.amount || '-'} ${item.acknowledgedQuantity?.unitOfMeasure || ''}</span></div>
