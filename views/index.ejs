@@ -25,11 +25,8 @@
         }
         select.filter-select:hover { border-color: #94a3b8; }
 
-        /* Sticky header */
+        /* Table header - not sticky to avoid z-index conflicts */
         #inventoryTable thead {
-            position: sticky;
-            top: 0;
-            z-index: 100;
             background: #0f172a;
         }
 
@@ -1656,6 +1653,12 @@
             const historyRow = document.getElementById(`history-row-${asin}`);
             const toggleBtn = document.querySelector(`.history-toggle[data-asin="${asin}"]`);
             const arrow = document.getElementById(`arrow-${asin}`);
+
+            if (!historyRow) {
+                console.error(`History row not found for ASIN: ${asin}`);
+                alert(`History not available for ${asin}. Please refresh the page.`);
+                return;
+            }
 
             if (historyRow) {
                 // Check both 'hidden' (Tailwind) and 'hidden-row' (filter) classes
