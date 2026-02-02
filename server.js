@@ -1652,6 +1652,50 @@ async function refreshAccessToken(refreshToken) {
 }
 
 // Test endpoint: Verify OAuth connection and get token status
+// API: Update refresh token manually
+app.post('/api/sp-api/update-token', async (req, res) => {
+    try {
+        const { refresh_token } = req.body;
+
+        if (!refresh_token) {
+            return res.status(400).json({ error: 'refresh_token is required' });
+        }
+
+        // Update existing token or insert new one
+        const existing = await pool.query('SELECT id FROM oauth_tokens LIMIT 1');
+
+        if (existing.rows.length > 0) {
+            await pool.query(
+                `UPDATE oauth_tokens SET refresh_token = $1, access_token = NULL, expires_at = NULL, updated_at = CURRENT_TIMESTAMP`,
+                [refresh_token]
+            );
+        } else {
+            await pool.query(
+                `INSERT INTO oauth_tokens (refresh_token) VALUES ($1)`,
+                [refresh_token]
+            );
+        }
+
+        // Try to get a new access token with the updated refresh token
+        try {
+            const accessToken = await getValidAccessToken();
+            res.json({
+                success: true,
+                message: 'Refresh token updated successfully',
+                accessTokenValid: !!accessToken
+            });
+        } catch (tokenErr) {
+            res.json({
+                success: true,
+                message: 'Refresh token saved, but failed to get access token',
+                error: tokenErr.message
+            });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 app.get('/api/sp-api/connection-status', async (req, res) => {
     try {
         // Check if tokens exist in database
