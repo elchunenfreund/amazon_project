@@ -4190,13 +4190,14 @@ app.post('/api/purchase-orders/sync-status', async (req, res) => {
         for (const orderStatus of allStatuses) {
             try {
                 const poNumber = orderStatus.purchaseOrderNumber;
-                const itemStatuses = orderStatus.purchaseOrderStatus?.itemStatus || [];
+                // API returns itemStatus directly on the order, not nested under purchaseOrderStatus
+                const itemStatuses = orderStatus.itemStatus || orderStatus.purchaseOrderStatus?.itemStatus || [];
 
                 for (const itemStatus of itemStatuses) {
-                    // Try amazonProductIdentifier first (ASIN), then buyerProductIdentifier as fallback
-                    const asin = itemStatus.amazonProductIdentifier || itemStatus.buyerProductIdentifier;
+                    // Try buyerProductIdentifier first (this is the ASIN in the status API), then amazonProductIdentifier
+                    const asin = itemStatus.buyerProductIdentifier || itemStatus.amazonProductIdentifier;
 
-                    // Get receiving status from itemStatus
+                    // Get receiving status from itemStatus (if available)
                     const receivingStatus = itemStatus.receivingStatus;
                     let receivedQty = null;
                     let lastReceivingDate = null;
@@ -4208,9 +4209,10 @@ app.post('/api/purchase-orders/sync-status', async (req, res) => {
                         lastReceivingDate = receivingStatus.lastReceiveDate || null;
                     }
 
-                    // Also check for acknowledged quantity in netCost section
-                    const acknowledgedQty = itemStatus.acknowledgedStatus?.acceptedQuantity?.amount
-                        ? parseInt(itemStatus.acknowledgedStatus.acceptedQuantity.amount)
+                    // Get acknowledged quantity - API uses "acknowledgementStatus" not "acknowledgedStatus"
+                    const ackStatus = itemStatus.acknowledgementStatus || itemStatus.acknowledgedStatus;
+                    const acknowledgedQty = ackStatus?.acceptedQuantity?.amount
+                        ? parseInt(ackStatus.acceptedQuantity.amount)
                         : null;
 
                     if (asin && (receivedQty !== null || acknowledgedQty !== null)) {
