@@ -3610,7 +3610,11 @@ app.get('/api/charts/multi-series', async (req, res) => {
 app.get('/api/purchase-orders/debug-receiving', async (req, res) => {
     try {
         const accessToken = await getValidAccessToken();
-        const url = 'https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrdersStatus?limit=5';
+
+        // Try to get shipped/closed POs which should have receiving data
+        // Use a date range that goes back further to find older orders
+        const threeMonthsAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+        const url = `https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrdersStatus?limit=100&updatedAfter=${encodeURIComponent(threeMonthsAgo)}`;
 
         const response = await fetch(url, {
             headers: {
@@ -3625,17 +3629,40 @@ app.get('/api/purchase-orders/debug-receiving', async (req, res) => {
             return res.status(response.status).json({ error: 'API Error', details: data });
         }
 
-        // Extract sample item statuses to see what identifiers are available
-        const samples = (data.payload?.ordersStatus || []).slice(0, 3).map(order => ({
+        const allOrders = data.payload?.ordersStatus || [];
+
+        // Analyze all orders to find ones with itemStatuses
+        const ordersWithItems = allOrders.filter(o =>
+            (o.purchaseOrderStatus?.itemStatus || []).length > 0
+        );
+
+        const ordersWithReceiving = allOrders.filter(o =>
+            (o.purchaseOrderStatus?.itemStatus || []).some(i => i.receivingStatus)
+        );
+
+        // Get samples of orders WITH item statuses
+        const samplesWithItems = ordersWithItems.slice(0, 5).map(order => ({
             poNumber: order.purchaseOrderNumber,
-            itemStatuses: (order.purchaseOrderStatus?.itemStatus || []).slice(0, 2).map(item => ({
+            poState: order.purchaseOrderState,
+            itemCount: (order.purchaseOrderStatus?.itemStatus || []).length,
+            items: (order.purchaseOrderStatus?.itemStatus || []).slice(0, 2).map(item => ({
                 amazonProductIdentifier: item.amazonProductIdentifier,
                 buyerProductIdentifier: item.buyerProductIdentifier,
                 vendorProductIdentifier: item.vendorProductIdentifier,
+                itemNetCost: item.netCost,
                 hasReceivingStatus: !!item.receivingStatus,
-                receivedQty: item.receivingStatus?.receivedQuantity?.amount,
-                receiveStatus: item.receivingStatus?.receiveStatus
+                receivingStatus: item.receivingStatus
             }))
+        }));
+
+        // Get samples of orders WITHOUT item statuses to see their state
+        const ordersWithoutItems = allOrders.filter(o =>
+            (o.purchaseOrderStatus?.itemStatus || []).length === 0
+        );
+        const samplesWithoutItems = ordersWithoutItems.slice(0, 5).map(order => ({
+            poNumber: order.purchaseOrderNumber,
+            poState: order.purchaseOrderState,
+            hasItemStatus: false
         }));
 
         // Also get sample from our database to compare
@@ -3643,10 +3670,22 @@ app.get('/api/purchase-orders/debug-receiving', async (req, res) => {
             SELECT po_number, asin, vendor_sku FROM po_line_items LIMIT 5
         `);
 
+        // Check PO states in our database
+        const dbStates = await pool.query(`
+            SELECT po_status, COUNT(*) as count FROM purchase_orders GROUP BY po_status ORDER BY count DESC
+        `);
+
         res.json({
-            apiSamples: samples,
+            summary: {
+                totalOrdersFromAPI: allOrders.length,
+                ordersWithItemStatuses: ordersWithItems.length,
+                ordersWithReceivingData: ordersWithReceiving.length,
+                ordersWithoutItemStatuses: ordersWithoutItems.length
+            },
+            samplesWithItems,
+            samplesWithoutItems,
             dbSamples: dbSample.rows,
-            totalOrdersInResponse: data.payload?.ordersStatus?.length || 0
+            dbPOStates: dbStates.rows
         });
     } catch (err) {
         res.status(500).json({ error: err.message });
