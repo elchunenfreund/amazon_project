@@ -219,7 +219,8 @@ async function waitForReport(accessToken, reportId, maxWaitMs = 120000) {
         if (data.processingStatus === 'DONE') {
             return data.reportDocumentId;
         } else if (data.processingStatus === 'FATAL' || data.processingStatus === 'CANCELLED') {
-            throw new Error(`Report ${data.processingStatus}: ${JSON.stringify(data)}`);
+            console.error(`[Report ${data.processingStatus}] Full response:`, JSON.stringify(data, null, 2));
+            throw new Error(`Report ${data.processingStatus}: ${data.reportType || 'unknown'} - ${JSON.stringify(data.errors || data)}`);
         }
 
         await sleep(3000);
@@ -332,18 +333,20 @@ async function syncVendorReport(reportType, daysBack = 14) {
         const accessToken = await getValidAccessToken();
 
         const endDate = new Date();
-        let startDate = new Date();
+        let startDate;
 
         if (reportConfig.isRealTime) {
-            // RT reports have limited span
+            // RT reports have limited span - use millisecond arithmetic for accuracy
             const maxSpan = reportConfig.maxSpanDays || 7;
-            startDate.setDate(endDate.getDate() - Math.min(daysBack, maxSpan));
+            const daysToGoBack = Math.min(daysBack, maxSpan);
+            startDate = new Date(endDate.getTime() - daysToGoBack * 24 * 60 * 60 * 1000);
         } else {
-            // Weekly reports
-            startDate.setDate(endDate.getDate() - daysBack);
+            // Weekly reports - use millisecond arithmetic
+            startDate = new Date(endDate.getTime() - daysBack * 24 * 60 * 60 * 1000);
         }
 
-        console.log(`[${reportConfig.name}] Date range: ${startDate.toISOString().split('T')[0]} to ${endDate.toISOString().split('T')[0]}`);
+        console.log(`[${reportConfig.name}] Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+        console.log(`[${reportConfig.name}] Days span: ${Math.round((endDate - startDate) / (1000 * 60 * 60 * 24))} days`);
 
         const reportId = await createReport(accessToken, reportType, startDate, endDate);
         console.log(`[${reportConfig.name}] Report created: ${reportId}`);

@@ -4150,6 +4150,9 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
         // Helper to create and process a report
         async function fetchReportChunk(reportType, startDate, endDate) {
             try {
+                const daySpan = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
+                console.log(`[Backfill ${reportType}] Date range: ${startDate.toISOString()} to ${endDate.toISOString()} (${daySpan} days)`);
+
                 // Create report request
                 const reportSpec = {
                     reportType: reportType,
@@ -4198,7 +4201,8 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                         reportDocumentId = statusData.reportDocumentId;
                         break;
                     } else if (statusData.processingStatus === 'CANCELLED' || statusData.processingStatus === 'FATAL') {
-                        throw new Error(`Report ${statusData.processingStatus}`);
+                        console.error(`[Backfill ${reportType}] Report ${statusData.processingStatus}:`, JSON.stringify(statusData, null, 2));
+                        throw new Error(`Report ${statusData.processingStatus}: ${JSON.stringify(statusData.errors || statusData)}`);
                     }
                 }
 
@@ -4254,13 +4258,11 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
             }
         }
 
-        // Fetch sales reports in 14-day chunks
+        // Fetch sales reports in 14-day chunks - use millisecond arithmetic for accuracy
         for (let daysAgo = maxDaysBack; daysAgo > 0; daysAgo -= 14) {
-            const chunkEnd = new Date(today);
-            chunkEnd.setDate(today.getDate() - Math.max(0, daysAgo - 14));
-
-            const chunkStart = new Date(today);
-            chunkStart.setDate(today.getDate() - daysAgo);
+            const daysBackEnd = Math.max(0, daysAgo - 14);
+            const chunkEnd = new Date(today.getTime() - daysBackEnd * 24 * 60 * 60 * 1000);
+            const chunkStart = new Date(today.getTime() - daysAgo * 24 * 60 * 60 * 1000);
 
             const result = await fetchReportChunk('GET_VENDOR_REAL_TIME_SALES_REPORT', chunkStart, chunkEnd);
             if (result.success) {
@@ -4271,13 +4273,11 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
             }
         }
 
-        // Fetch inventory reports in 7-day chunks
+        // Fetch inventory reports in 7-day chunks - use millisecond arithmetic for accuracy
         for (let daysAgo = maxDaysBack; daysAgo > 0; daysAgo -= 7) {
-            const chunkEnd = new Date(today);
-            chunkEnd.setDate(today.getDate() - Math.max(0, daysAgo - 7));
-
-            const chunkStart = new Date(today);
-            chunkStart.setDate(today.getDate() - daysAgo);
+            const daysBackEnd = Math.max(0, daysAgo - 7);
+            const chunkEnd = new Date(today.getTime() - daysBackEnd * 24 * 60 * 60 * 1000);
+            const chunkStart = new Date(today.getTime() - daysAgo * 24 * 60 * 60 * 1000);
 
             const result = await fetchReportChunk('GET_VENDOR_REAL_TIME_INVENTORY_REPORT', chunkStart, chunkEnd);
             if (result.success) {
