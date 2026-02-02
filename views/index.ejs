@@ -558,7 +558,7 @@
                             <td class="p-6 text-center text-base">
                                 <div class="flex gap-2 justify-center">
                                     <% if(item.hasReports && item.history.length > 0) { %>
-                                        <button onclick="toggleHistory('<%= item.asin %>')" class="px-4 py-2 bg-white text-slate-900 text-[10px] font-black rounded-lg border-2 border-slate-900 hover:bg-slate-900 hover:text-white transition-all history-toggle flex items-center gap-1" data-asin="<%= item.asin %>">
+                                        <button onclick="event.stopPropagation(); toggleHistory('<%= item.asin %>');" class="px-4 py-2 bg-white text-slate-900 text-[10px] font-black rounded-lg border-2 border-slate-900 hover:bg-slate-900 hover:text-white transition-all history-toggle flex items-center gap-1" data-asin="<%= item.asin %>">
                                             <span>HISTORY</span>
                                             <span class="history-arrow transition-transform duration-200" id="arrow-<%= item.asin %>">▼</span>
                                         </button>
@@ -2612,9 +2612,19 @@
                 const picker = document.getElementById('dateRangePicker');
                 const btn = document.getElementById('dateRangeBtn');
                 // Don't close if clicking inside the picker or button
+                // Also don't interfere with other buttons/links
                 if (picker && !picker.classList.contains('hidden') &&
                     !picker.contains(e.target) && !btn.contains(e.target)) {
-                    picker.classList.add('hidden');
+                    // Only close if the click is not on a button or interactive element
+                    const target = e.target;
+                    const isButton = target.tagName === 'BUTTON' || target.closest('button');
+                    const isLink = target.tagName === 'A' || target.closest('a');
+                    const isInput = target.tagName === 'INPUT' || target.closest('input');
+
+                    // Don't close if clicking on buttons, links, or inputs (except the date picker button)
+                    if (!isButton && !isLink && !isInput) {
+                        picker.classList.add('hidden');
+                    }
                 }
             });
 
