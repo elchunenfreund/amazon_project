@@ -205,11 +205,23 @@ async function createReport(accessToken, reportType, startDate, endDate) {
 
         console.log(`[${reportType}] Aligned to week boundaries: ${reportSpec.dataStartTime} to ${reportSpec.dataEndTime}`);
 
+        // Build reportOptions based on what each report type supports
+        // Sales and Inventory support: reportPeriod, distributorView, sellingProgram
+        // Margin and Traffic only support: reportPeriod
+        const requiresOptions = reportConfig.requiresOptions || [];
         reportSpec.reportOptions = {
-            reportPeriod: 'WEEK',
-            distributorView: 'MANUFACTURING',
-            sellingProgram: 'RETAIL'
+            reportPeriod: 'WEEK'
         };
+
+        // Only add distributorView and sellingProgram if the report supports them
+        if (requiresOptions.includes('distributorView')) {
+            reportSpec.reportOptions.distributorView = 'MANUFACTURING';
+        }
+        if (requiresOptions.includes('sellingProgram')) {
+            reportSpec.reportOptions.sellingProgram = 'RETAIL';
+        }
+
+        console.log(`[${reportType}] Report options:`, JSON.stringify(reportSpec.reportOptions));
     }
 
     const response = await fetchWithRetry('https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports', {
