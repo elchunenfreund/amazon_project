@@ -468,7 +468,7 @@
 
         async function syncPurchaseOrders() {
             const createdAfter = document.getElementById('createdAfter').value;
-            const createdBefore = document.getElementById('endDate').value; // Use page end date
+            // createdBefore is optional - we sync all POs after the specified date
 
             const syncBtn = document.getElementById('syncBtn');
             const syncBtnText = document.getElementById('syncBtnText');
@@ -485,8 +485,7 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        createdAfter: createdAfter ? createdAfter + 'T00:00:00Z' : undefined,
-                        createdBefore: createdBefore ? createdBefore + 'T23:59:59Z' : undefined
+                        createdAfter: createdAfter ? createdAfter + 'T00:00:00Z' : undefined
                     })
                 });
 
