@@ -262,26 +262,54 @@
                     <input type="text" id="searchInput" onkeyup="applyFilters()" placeholder="ASIN or Title..." class="px-3 md:px-5 py-2 md:py-3 rounded-xl border-2 border-slate-200 w-full sm:w-64 outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base">
                 </div>
 
-                <div class="flex flex-col w-full sm:w-auto">
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Update Filter</label>
-                    <select id="updateRangeFilter" onchange="applyUpdateRangeFilter()" class="px-3 md:px-5 py-2 md:py-3 rounded-xl border-2 border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 text-sm md:text-base bg-white">
-                        <option value="all">All Updates</option>
-                        <option value="24h">Last 24 Hours</option>
-                        <option value="48h">Last 48 Hours</option>
-                        <option value="7d">Last 7 Days</option>
-                        <option value="custom">Custom Range</option>
-                    </select>
-                </div>
-                <div id="customRangeContainer" class="hidden flex gap-2 items-end">
-                    <div class="flex flex-col">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">From</label>
-                        <input type="datetime-local" id="customRangeFrom" onchange="applyUpdateRangeFilter()" class="px-2 py-2 rounded-xl border-2 border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+                <div class="flex flex-col w-full sm:w-auto relative">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Date Range Filter</label>
+                    <button onclick="toggleDateRangePicker()" id="dateRangeBtn" class="px-3 md:px-5 py-2 md:py-3 rounded-xl border-2 border-slate-200 outline-none focus:ring-2 focus:ring-orange-500 text-sm md:text-base bg-white text-left flex items-center gap-2 min-w-[200px]">
+                        <span id="dateRangeLabel">All Updates</span>
+                        <svg class="w-4 h-4 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </button>
+
+                    <!-- Date Range Picker Dropdown -->
+                    <div id="dateRangePicker" class="hidden absolute top-full left-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-50 min-w-[340px]">
+                        <!-- Quick Presets -->
+                        <div class="flex flex-wrap gap-2 mb-4">
+                            <button onclick="setDatePreset('all')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="all">All</button>
+                            <button onclick="setDatePreset('24h')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="24h">24h</button>
+                            <button onclick="setDatePreset('48h')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="48h">48h</button>
+                            <button onclick="setDatePreset('7d')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="7d">7 Days</button>
+                            <button onclick="setDatePreset('30d')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="30d">30 Days</button>
+                        </div>
+
+                        <!-- Calendar Header -->
+                        <div class="flex items-center justify-between mb-2">
+                            <button onclick="changeCalendarMonth(-1)" class="p-1 hover:bg-slate-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
+                            <span id="calendarMonthYear" class="font-bold text-slate-700"></span>
+                            <button onclick="changeCalendarMonth(1)" class="p-1 hover:bg-slate-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
+                        </div>
+
+                        <!-- Calendar Grid -->
+                        <div class="grid grid-cols-7 gap-1 text-center text-xs mb-2">
+                            <div class="font-bold text-slate-400 py-1">Su</div>
+                            <div class="font-bold text-slate-400 py-1">Mo</div>
+                            <div class="font-bold text-slate-400 py-1">Tu</div>
+                            <div class="font-bold text-slate-400 py-1">We</div>
+                            <div class="font-bold text-slate-400 py-1">Th</div>
+                            <div class="font-bold text-slate-400 py-1">Fr</div>
+                            <div class="font-bold text-slate-400 py-1">Sa</div>
+                        </div>
+                        <div id="calendarDays" class="grid grid-cols-7 gap-1 text-center text-sm"></div>
+
+                        <!-- Selected Range Display -->
+                        <div id="selectedRangeDisplay" class="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-600 text-center">
+                            Click to select start date, then end date
+                        </div>
+
+                        <!-- Apply/Clear Buttons -->
+                        <div class="flex gap-2 mt-3">
+                            <button onclick="clearDateRange()" class="flex-1 px-3 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 transition-all text-sm">Clear</button>
+                            <button onclick="applyDateRangeAndClose()" class="flex-1 px-3 py-2 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 transition-all text-sm">Apply Filter</button>
+                        </div>
                     </div>
-                    <div class="flex flex-col">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">To</label>
-                        <input type="datetime-local" id="customRangeTo" onchange="applyUpdateRangeFilter()" class="px-2 py-2 rounded-xl border-2 border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
-                    </div>
-                    <button onclick="applyUpdateRangeFilter()" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all text-sm">Apply</button>
                 </div>
 
                 <a href="/products" class="bg-slate-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-slate-700 active:scale-95 transition-all text-sm md:text-base">📦 PRODUCTS</a>
@@ -2526,129 +2554,298 @@
             }
         }
 
-        // Update Range Filter Functions
-        function applyUpdateRangeFilter() {
-            const range = document.getElementById('updateRangeFilter').value;
-            const customContainer = document.getElementById('customRangeContainer');
+        // ============================================
+        // Date Range Picker Calendar
+        // ============================================
+        let calendarDate = new Date();
+        let rangeStartDate = null;
+        let rangeEndDate = null;
+        let currentPreset = 'all';
 
-            // Show/hide custom date inputs
-            if (range === 'custom') {
-                customContainer.classList.remove('hidden');
-                // Set defaults if not already set
-                const fromInput = document.getElementById('customRangeFrom');
-                const toInput = document.getElementById('customRangeTo');
-                if (!fromInput.value) {
-                    const defaultFrom = new Date();
-                    defaultFrom.setHours(defaultFrom.getHours() - 24);
-                    fromInput.value = defaultFrom.toISOString().slice(0, 16);
-                }
-                if (!toInput.value) {
-                    toInput.value = new Date().toISOString().slice(0, 16);
-                }
-            } else {
-                customContainer.classList.add('hidden');
+        function toggleDateRangePicker() {
+            const picker = document.getElementById('dateRangePicker');
+            picker.classList.toggle('hidden');
+            if (!picker.classList.contains('hidden')) {
+                renderCalendar();
+            }
+        }
+
+        // Close picker when clicking outside
+        document.addEventListener('click', function(e) {
+            const picker = document.getElementById('dateRangePicker');
+            const btn = document.getElementById('dateRangeBtn');
+            if (picker && !picker.contains(e.target) && !btn.contains(e.target)) {
+                picker.classList.add('hidden');
+            }
+        });
+
+        function changeCalendarMonth(delta) {
+            calendarDate.setMonth(calendarDate.getMonth() + delta);
+            renderCalendar();
+        }
+
+        function renderCalendar() {
+            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                               'July', 'August', 'September', 'October', 'November', 'December'];
+            const year = calendarDate.getFullYear();
+            const month = calendarDate.getMonth();
+
+            document.getElementById('calendarMonthYear').textContent = `${monthNames[month]} ${year}`;
+
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            const startDayOfWeek = firstDay.getDay();
+            const daysInMonth = lastDay.getDate();
+
+            const daysContainer = document.getElementById('calendarDays');
+            daysContainer.innerHTML = '';
+
+            // Empty cells before first day
+            for (let i = 0; i < startDayOfWeek; i++) {
+                daysContainer.innerHTML += '<div class="py-2"></div>';
             }
 
-            // Calculate date range (start and end)
-            let startDate = null;
-            let endDate = null;
-            const now = new Date();
+            // Days of month
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
 
-            switch(range) {
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(year, month, day);
+                date.setHours(0, 0, 0, 0);
+
+                const isToday = date.getTime() === today.getTime();
+                const isSelected = isDateSelected(date);
+                const isInRange = isDateInRange(date);
+                const isStart = rangeStartDate && date.getTime() === rangeStartDate.getTime();
+                const isEnd = rangeEndDate && date.getTime() === rangeEndDate.getTime();
+
+                let classes = 'py-2 rounded-lg cursor-pointer transition-all hover:bg-orange-100';
+
+                if (isStart || isEnd) {
+                    classes += ' bg-orange-600 text-white font-bold hover:bg-orange-700';
+                } else if (isInRange) {
+                    classes += ' bg-orange-200 text-orange-800';
+                } else if (isToday) {
+                    classes += ' border-2 border-orange-400 font-bold';
+                }
+
+                daysContainer.innerHTML += `<div class="${classes}" onclick="selectDate(${year}, ${month}, ${day})">${day}</div>`;
+            }
+
+            updateSelectedRangeDisplay();
+            updatePresetButtons();
+        }
+
+        function isDateSelected(date) {
+            if (!rangeStartDate) return false;
+            if (rangeStartDate && date.getTime() === rangeStartDate.getTime()) return true;
+            if (rangeEndDate && date.getTime() === rangeEndDate.getTime()) return true;
+            return false;
+        }
+
+        function isDateInRange(date) {
+            if (!rangeStartDate || !rangeEndDate) return false;
+            return date > rangeStartDate && date < rangeEndDate;
+        }
+
+        function selectDate(year, month, day) {
+            const date = new Date(year, month, day);
+            date.setHours(0, 0, 0, 0);
+
+            if (!rangeStartDate || (rangeStartDate && rangeEndDate)) {
+                // First click or resetting
+                rangeStartDate = date;
+                rangeEndDate = null;
+                currentPreset = 'custom';
+            } else {
+                // Second click
+                if (date < rangeStartDate) {
+                    rangeEndDate = rangeStartDate;
+                    rangeStartDate = date;
+                } else {
+                    rangeEndDate = date;
+                }
+                // Set end date to end of day
+                rangeEndDate.setHours(23, 59, 59, 999);
+                currentPreset = 'custom';
+            }
+
+            renderCalendar();
+        }
+
+        function setDatePreset(preset) {
+            const now = new Date();
+            currentPreset = preset;
+
+            switch(preset) {
+                case 'all':
+                    rangeStartDate = null;
+                    rangeEndDate = null;
+                    break;
                 case '24h':
-                    startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-                    endDate = now;
+                    rangeStartDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                    rangeEndDate = now;
                     break;
                 case '48h':
-                    startDate = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-                    endDate = now;
+                    rangeStartDate = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+                    rangeEndDate = now;
                     break;
                 case '7d':
-                    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                    endDate = now;
+                    rangeStartDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    rangeEndDate = now;
                     break;
-                case 'custom':
-                    const customFrom = document.getElementById('customRangeFrom').value;
-                    const customTo = document.getElementById('customRangeTo').value;
-                    if (customFrom) startDate = new Date(customFrom);
-                    if (customTo) endDate = new Date(customTo);
+                case '30d':
+                    rangeStartDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                    rangeEndDate = now;
                     break;
-                default:
-                    startDate = null; // Show all
-                    endDate = null;
             }
 
-            // Filter rows based on check_date
+            renderCalendar();
+        }
+
+        function updatePresetButtons() {
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                if (btn.dataset.preset === currentPreset) {
+                    btn.classList.add('bg-orange-600', 'text-white');
+                    btn.classList.remove('bg-slate-100');
+                } else {
+                    btn.classList.remove('bg-orange-600', 'text-white');
+                    btn.classList.add('bg-slate-100');
+                }
+            });
+        }
+
+        function updateSelectedRangeDisplay() {
+            const display = document.getElementById('selectedRangeDisplay');
+            if (!rangeStartDate) {
+                display.textContent = 'Click to select start date, then end date';
+            } else if (!rangeEndDate) {
+                display.innerHTML = `<span class="text-orange-600 font-bold">Start:</span> ${formatDateShort(rangeStartDate)} <span class="text-slate-400">→ Select end date</span>`;
+            } else {
+                display.innerHTML = `<span class="text-orange-600 font-bold">${formatDateShort(rangeStartDate)}</span> → <span class="text-orange-600 font-bold">${formatDateShort(rangeEndDate)}</span>`;
+            }
+        }
+
+        function formatDateShort(date) {
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        }
+
+        function clearDateRange() {
+            rangeStartDate = null;
+            rangeEndDate = null;
+            currentPreset = 'all';
+            renderCalendar();
+            applyDateRangeFilter();
+            updateDateRangeLabel();
+        }
+
+        function applyDateRangeAndClose() {
+            applyDateRangeFilter();
+            updateDateRangeLabel();
+            document.getElementById('dateRangePicker').classList.add('hidden');
+        }
+
+        function updateDateRangeLabel() {
+            const label = document.getElementById('dateRangeLabel');
+            if (!rangeStartDate) {
+                label.textContent = 'All Updates';
+            } else if (currentPreset !== 'custom') {
+                const presetLabels = { '24h': 'Last 24 Hours', '48h': 'Last 48 Hours', '7d': 'Last 7 Days', '30d': 'Last 30 Days' };
+                label.textContent = presetLabels[currentPreset] || 'All Updates';
+            } else {
+                label.textContent = `${formatDateShort(rangeStartDate)} - ${rangeEndDate ? formatDateShort(rangeEndDate) : '...'}`;
+            }
+        }
+
+        function applyDateRangeFilter() {
             const rows = Array.from(document.querySelectorAll('.inventory-row'));
             const tbody = document.getElementById('tableBody');
+            const hasFilter = rangeStartDate && rangeEndDate;
 
             rows.forEach(row => {
                 const hasChanged = row.dataset.hasChanged === 'true';
                 const checkDateStr = row.dataset.checkDate;
 
-                if (!startDate && !endDate) {
-                    // No filter - show all
-                    row.classList.remove('hidden-by-filter');
-                    row.style.display = '';
-                } else if (!hasChanged) {
-                    // Not updated - show it (stable rows always visible)
+                // Remove any previous filter highlighting
+                row.classList.remove('ring-2', 'ring-orange-400', 'bg-orange-50', 'matched-filter');
+
+                if (!hasFilter) {
+                    // No filter - show all, keep normal styling
                     row.classList.remove('hidden-by-filter');
                     row.style.display = '';
                 } else if (checkDateStr) {
-                    // Updated row with check_date - filter by date range
+                    // Check if this row's update falls within the date range
                     const checkDate = new Date(checkDateStr);
-                    const afterStart = !startDate || checkDate >= startDate;
-                    const beforeEnd = !endDate || checkDate <= endDate;
+                    const afterStart = checkDate >= rangeStartDate;
+                    const beforeEnd = checkDate <= rangeEndDate;
 
                     if (afterStart && beforeEnd) {
+                        // Matches filter - show it and highlight in orange
                         row.classList.remove('hidden-by-filter');
                         row.style.display = '';
+                        row.classList.add('matched-filter', 'ring-2', 'ring-orange-400', 'bg-orange-50');
                     } else {
-                        row.classList.add('hidden-by-filter');
-                        row.style.display = 'none';
+                        // Doesn't match - still show but not highlighted
+                        row.classList.remove('hidden-by-filter');
+                        row.style.display = '';
                     }
                 } else {
-                    // Updated but no check_date - show it
+                    // No check_date - show it
                     row.classList.remove('hidden-by-filter');
                     row.style.display = '';
                 }
             });
 
-            // Re-sort: bring visible updated rows to top
-            const visibleRows = rows.filter(r => !r.classList.contains('hidden-by-filter'));
-            const updatedRows = visibleRows.filter(r => r.dataset.hasChanged === 'true' && !r.classList.contains('opacity-60'));
-            const stableRows = visibleRows.filter(r => r.dataset.hasChanged !== 'true' && !r.classList.contains('opacity-60'));
-            const snoozedRows = visibleRows.filter(r => r.classList.contains('opacity-60'));
-            const hiddenRows = rows.filter(r => r.classList.contains('hidden-by-filter'));
+            // Re-sort: bring MATCHED FILTER rows to top first, then other updated rows, then stable
+            const matchedRows = rows.filter(r => r.classList.contains('matched-filter') && !r.classList.contains('opacity-60'));
+            const updatedRows = rows.filter(r => r.dataset.hasChanged === 'true' && !r.classList.contains('matched-filter') && !r.classList.contains('opacity-60'));
+            const stableRows = rows.filter(r => r.dataset.hasChanged !== 'true' && !r.classList.contains('opacity-60'));
+            const snoozedRows = rows.filter(r => r.classList.contains('opacity-60'));
 
             tbody.innerHTML = '';
             let index = 1;
 
-            // Add updated (non-snoozed) first
-            updatedRows.filter(r => !r.classList.contains('opacity-60')).forEach(row => {
+            // Add matched filter rows first (highlighted in orange)
+            matchedRows.forEach(row => {
                 const numCell = row.querySelector('td:nth-child(2)');
                 if (numCell) numCell.textContent = index++;
                 tbody.appendChild(row);
             });
 
-            // Then stable (non-snoozed)
-            stableRows.filter(r => !r.classList.contains('opacity-60')).forEach(row => {
+            // Then other updated rows
+            updatedRows.forEach(row => {
                 const numCell = row.querySelector('td:nth-child(2)');
                 if (numCell) numCell.textContent = index++;
                 tbody.appendChild(row);
             });
 
-            // Then snoozed
+            // Then stable rows
+            stableRows.forEach(row => {
+                const numCell = row.querySelector('td:nth-child(2)');
+                if (numCell) numCell.textContent = index++;
+                tbody.appendChild(row);
+            });
+
+            // Finally snoozed rows
             snoozedRows.forEach(row => {
                 const numCell = row.querySelector('td:nth-child(2)');
                 if (numCell) numCell.textContent = index++;
                 tbody.appendChild(row);
             });
 
-            // Finally hidden
-            hiddenRows.forEach(row => {
-                tbody.appendChild(row);
-            });
+            // Update the count display if there's a filter
+            if (hasFilter) {
+                const matchCount = matchedRows.length;
+                const countEl = document.getElementById('dateRangeLabel');
+                if (matchCount > 0) {
+                    countEl.innerHTML = countEl.textContent + ` <span class="bg-orange-600 text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">${matchCount}</span>`;
+                }
+            }
+        }
+
+        // Legacy function for compatibility
+        function applyUpdateRangeFilter() {
+            applyDateRangeFilter();
         }
     </script>
 </body>
