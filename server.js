@@ -4190,8 +4190,8 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
 
                     const statusResp = await fetch(`https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports/${reportId}`, {
                         headers: {
-                            'Authorization': `Bearer ${accessToken}`,
-                            'x-amz-access-token': accessToken
+                            'x-amz-access-token': accessToken,
+                            'Content-Type': 'application/json'
                         }
                     });
                     const statusData = await statusResp.json();
@@ -4212,8 +4212,8 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                 // Download report
                 const docResp = await fetch(`https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/documents/${reportDocumentId}`, {
                     headers: {
-                        'Authorization': `Bearer ${accessToken}`,
-                        'x-amz-access-token': accessToken
+                        'x-amz-access-token': accessToken,
+                        'Content-Type': 'application/json'
                     }
                 });
                 const docData = await docResp.json();
