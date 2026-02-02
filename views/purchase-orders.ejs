@@ -384,6 +384,8 @@
                     const recKey = poNumber + '|' + asin;
                     const recData = receivingData[recKey];
                     const received = recData?.receivedQuantity || 0;
+                    const receivingStatus = recData?.receivingStatus || null;
+                    const lastReceivingDate = recData?.lastReceivingDate || null;
 
                     totalOrdered += ordered;
                     totalAccepted += accepted;
@@ -401,10 +403,30 @@
                                      invStatus === 'low' ? '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-medium">' + currentInv + ' units</span>' :
                                      '<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-medium">' + currentInv + ' units</span>';
 
-                    // Received status badge
+                    // Received status badge with progress bar
+                    const recPercent = ordered > 0 ? Math.round((received / ordered) * 100) : 0;
+                    const recBarColor = received === 0 ? 'bg-slate-200' :
+                                        received < ordered ? 'bg-amber-500' : 'bg-green-500';
                     const recBadge = received === 0 ? '<span class="text-slate-400">-</span>' :
-                                     received < ordered ? '<span class="text-amber-600 font-medium">' + received + '</span>' :
-                                     '<span class="text-green-600 font-medium">' + received + '</span>';
+                                     `<div>
+                                        <span class="${received < ordered ? 'text-amber-600' : 'text-green-600'} font-medium">${received}</span>
+                                        <span class="text-slate-400 text-xs ml-1">(${recPercent}%)</span>
+                                      </div>
+                                      <div class="w-full bg-slate-200 rounded-full h-1.5 mt-1">
+                                        <div class="${recBarColor} h-1.5 rounded-full" style="width: ${Math.min(recPercent, 100)}%"></div>
+                                      </div>`;
+
+                    // Receiving status badge
+                    const statusBadgeMap = {
+                        'RECEIVED': '<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded text-xs font-medium">Received</span>',
+                        'PARTIALLY_RECEIVED': '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded text-xs font-medium">Partial</span>',
+                        'NOT_RECEIVED': '<span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-medium">Not Received</span>',
+                        'RECEIVING': '<span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-medium">Receiving</span>'
+                    };
+                    const recStatusBadge = receivingStatus ? (statusBadgeMap[receivingStatus] || '<span class="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-medium">' + receivingStatus + '</span>') : '<span class="text-slate-400">-</span>';
+
+                    // Format last receiving date
+                    const lastRecDateFormatted = lastReceivingDate ? new Date(lastReceivingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '-';
 
                     return `
                         <tr class="${invStatus === 'out' ? 'bg-red-50' : ''}">
@@ -415,7 +437,9 @@
                             <td class="px-3 py-2 text-xs text-slate-600">${sku}</td>
                             <td class="px-3 py-2 text-right font-medium">${ordered}</td>
                             <td class="px-3 py-2 text-right font-medium ${accepted < ordered ? 'text-amber-600' : ''}">${accepted || '-'}</td>
-                            <td class="px-3 py-2 text-right">${recBadge}</td>
+                            <td class="px-3 py-2 text-right min-w-[80px]">${recBadge}</td>
+                            <td class="px-3 py-2 text-center">${recStatusBadge}</td>
+                            <td class="px-3 py-2 text-center text-xs text-slate-600">${lastRecDateFormatted}</td>
                             <td class="px-3 py-2 text-center">${invBadge}</td>
                             <td class="px-3 py-2 text-right">${unitCost ? '$' + unitCost.toFixed(2) : '-'}</td>
                             <td class="px-3 py-2 text-right font-medium">${lineTotal ? '$' + lineTotal.toFixed(2) : '-'}</td>
@@ -434,6 +458,8 @@
                                     <th class="px-3 py-2 text-right">Ordered</th>
                                     <th class="px-3 py-2 text-right">Accepted</th>
                                     <th class="px-3 py-2 text-right">Received</th>
+                                    <th class="px-3 py-2 text-center">Rec. Status</th>
+                                    <th class="px-3 py-2 text-center">Last Received</th>
                                     <th class="px-3 py-2 text-center">Inventory</th>
                                     <th class="px-3 py-2 text-right">Unit Cost</th>
                                     <th class="px-3 py-2 text-right">Line Total</th>
@@ -449,6 +475,8 @@
                                     <td class="px-3 py-2 text-right">${totalOrdered}</td>
                                     <td class="px-3 py-2 text-right">${totalAccepted}</td>
                                     <td class="px-3 py-2 text-right">${totalReceived > 0 ? totalReceived : '-'}</td>
+                                    <td class="px-3 py-2 text-center">${totalReceived > 0 ? '<span class="text-xs font-normal text-slate-500">' + Math.round((totalReceived / totalOrdered) * 100) + '% fulfilled</span>' : ''}</td>
+                                    <td class="px-3 py-2"></td>
                                     <td class="px-3 py-2"></td>
                                     <td class="px-3 py-2"></td>
                                     <td class="px-3 py-2 text-right">$${totalValue.toFixed(2)}</td>
@@ -496,6 +524,51 @@
                         <span class="font-bold">Inventory Alert</span>
                     </div>
                     <p class="text-sm text-amber-700 mt-1">Some items in this PO have low or zero inventory. Check the inventory column for details.</p>
+                </div>
+                ` : ''}
+
+                <!-- Receiving Summary Section -->
+                ${totalOrdered > 0 ? `
+                <div class="bg-gradient-to-r from-slate-50 to-emerald-50 border border-slate-200 rounded-lg p-4 mb-6">
+                    <div class="flex items-center gap-2 mb-3">
+                        <span class="text-lg">📦</span>
+                        <span class="font-bold text-slate-800">Receiving Summary</span>
+                    </div>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div class="text-center">
+                            <div class="text-2xl font-bold text-slate-700">${totalOrdered}</div>
+                            <div class="text-xs text-slate-500">Ordered</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold ${totalAccepted < totalOrdered ? 'text-amber-600' : 'text-slate-700'}">${totalAccepted}</div>
+                            <div class="text-xs text-slate-500">Accepted</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold ${totalReceived === 0 ? 'text-slate-400' : totalReceived < totalOrdered ? 'text-amber-600' : 'text-green-600'}">${totalReceived || 0}</div>
+                            <div class="text-xs text-slate-500">Received</div>
+                        </div>
+                        <div class="text-center">
+                            <div class="text-2xl font-bold ${totalReceived >= totalOrdered ? 'text-green-600' : totalReceived > 0 ? 'text-amber-600' : 'text-slate-400'}">${totalOrdered > 0 ? Math.round((totalReceived / totalOrdered) * 100) : 0}%</div>
+                            <div class="text-xs text-slate-500">Fulfilled</div>
+                        </div>
+                    </div>
+                    <div class="space-y-2">
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-500 w-20">Accepted:</span>
+                            <div class="flex-1 bg-slate-200 rounded-full h-2">
+                                <div class="bg-blue-500 h-2 rounded-full transition-all" style="width: ${totalOrdered > 0 ? Math.min((totalAccepted / totalOrdered) * 100, 100) : 0}%"></div>
+                            </div>
+                            <span class="text-xs font-medium w-12 text-right">${totalOrdered > 0 ? Math.round((totalAccepted / totalOrdered) * 100) : 0}%</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-500 w-20">Received:</span>
+                            <div class="flex-1 bg-slate-200 rounded-full h-2">
+                                <div class="${totalReceived >= totalOrdered ? 'bg-green-500' : 'bg-amber-500'} h-2 rounded-full transition-all" style="width: ${totalOrdered > 0 ? Math.min((totalReceived / totalOrdered) * 100, 100) : 0}%"></div>
+                            </div>
+                            <span class="text-xs font-medium w-12 text-right">${totalOrdered > 0 ? Math.round((totalReceived / totalOrdered) * 100) : 0}%</span>
+                        </div>
+                    </div>
+                    ${totalReceived === 0 ? '<div class="mt-3 text-xs text-slate-500 bg-slate-100 rounded p-2">No receiving data yet. Click "Sync Receiving" to fetch the latest status from Amazon.</div>' : ''}
                 </div>
                 ` : ''}
 
