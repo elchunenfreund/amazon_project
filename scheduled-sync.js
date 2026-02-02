@@ -4,15 +4,21 @@
  * Syncs all vendor reports and purchase orders automatically.
  *
  * Usage:
- *   node scheduled-sync.js              # Sync everything
- *   node scheduled-sync.js reports      # Sync only vendor reports
+ *   node scheduled-sync.js              # Sync everything (high memory usage)
+ *   node scheduled-sync.js reports      # Sync only weekly vendor reports
  *   node scheduled-sync.js po           # Sync only purchase orders
- *   node scheduled-sync.js rt           # Sync only real-time reports
+ *   node scheduled-sync.js rt           # Sync both RT reports (may exceed 512MB on Basic dynos)
+ *   node scheduled-sync.js rt-inv       # Sync only RT Inventory (lower memory)
+ *   node scheduled-sync.js rt-sales     # Sync only RT Sales (lower memory)
  *
- * Heroku Scheduler setup:
- *   heroku addons:create scheduler:standard
- *   heroku addons:open scheduler
- *   Add job: node scheduled-sync.js (run every 10 min, hour, or day as needed)
+ * Recommended Heroku Scheduler setup for Basic dynos (512MB):
+ *   - node scheduled-sync.js rt-inv     (Hourly at :00)
+ *   - node scheduled-sync.js rt-sales   (Hourly at :30 or separate job)
+ *   - node scheduled-sync.js reports    (Daily)
+ *   - node scheduled-sync.js po         (Daily)
+ *
+ * Note: For memory-constrained environments, split RT reports into separate jobs
+ *       using 'rt-inv' and 'rt-sales' instead of 'rt'
  */
 
 const { Pool } = require('pg');
@@ -258,19 +264,23 @@ async function downloadAndSaveReport(accessToken, reportDocumentId, reportType) 
     let reportData;
     try {
         reportData = JSON.parse(reportContent);
+        // Clear raw content to free memory
+        reportContent = null;
     } catch (e) {
         console.error(`[${reportType}] Failed to parse report JSON`);
         return 0;
     }
 
     // Extract ASIN data
-    const reportConfig = VENDOR_REPORT_TYPES[reportType];
     let dataKey = reportType.includes('INVENTORY') ? 'inventoryByAsin' :
                   reportType.includes('SALES') ? 'salesByAsin' :
                   reportType.includes('TRAFFIC') ? 'trafficByAsin' :
                   reportType.includes('MARGIN') ? 'netPureProductMarginByAsin' : null;
 
     let asinData = reportData[dataKey] || reportData.reportData || [];
+    // Clear reportData to free memory - we only need asinData now
+    reportData = null;
+
     if (!Array.isArray(asinData)) asinData = [];
 
     if (asinData.length === 0) {
@@ -278,51 +288,58 @@ async function downloadAndSaveReport(accessToken, reportDocumentId, reportType) 
         return 0;
     }
 
-    // Prepare batch data
-    const itemsToSave = [];
+    console.log(`[${reportType}] Processing ${asinData.length} items...`);
+
+    // Collect unique dates for deletion
+    const uniqueDates = new Set();
     for (const item of asinData) {
         if (item.asin) {
             const reportDate = item.endDate || item.startDate || item.date || new Date().toISOString().split('T')[0];
-            itemsToSave.push({
-                asin: item.asin,
-                reportDate,
-                data: JSON.stringify(item),
-                dataStartDate: item.startDate || null,
-                dataEndDate: item.endDate || null
-            });
+            uniqueDates.add(reportDate);
         }
     }
 
-    if (itemsToSave.length === 0) return 0;
+    // Batch delete existing records for these dates
+    if (uniqueDates.size > 0) {
+        await pool.query(
+            `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = ANY($2)`,
+            [reportType, Array.from(uniqueDates)]
+        );
+    }
 
-    // Batch delete and insert
-    const uniqueDates = [...new Set(itemsToSave.map(i => i.reportDate))];
-    await pool.query(
-        `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = ANY($2)`,
-        [reportType, uniqueDates]
-    );
+    // Process in smaller chunks (200 instead of 500) to reduce memory spikes
+    const chunkSize = 200;
+    let savedCount = 0;
 
-    const chunkSize = 500;
-    for (let i = 0; i < itemsToSave.length; i += chunkSize) {
-        const chunk = itemsToSave.slice(i, i + chunkSize);
+    for (let i = 0; i < asinData.length; i += chunkSize) {
+        const chunk = asinData.slice(i, Math.min(i + chunkSize, asinData.length));
         const values = [];
         const params = [];
         let paramIndex = 1;
 
         for (const item of chunk) {
+            if (!item.asin) continue;
+
+            const reportDate = item.endDate || item.startDate || item.date || new Date().toISOString().split('T')[0];
             values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, CURRENT_TIMESTAMP)`);
-            params.push(reportType, item.asin, item.reportDate, item.data, item.dataStartDate, item.dataEndDate);
+            params.push(reportType, item.asin, reportDate, JSON.stringify(item), item.startDate || null, item.endDate || null);
             paramIndex += 6;
+            savedCount++;
         }
 
-        await pool.query(
-            `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
-             VALUES ${values.join(', ')}`,
-            params
-        );
+        if (values.length > 0) {
+            await pool.query(
+                `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
+                 VALUES ${values.join(', ')}`,
+                params
+            );
+        }
     }
 
-    return itemsToSave.length;
+    // Clear asinData to free memory
+    asinData = null;
+
+    return savedCount;
 }
 
 async function syncVendorReport(reportType, daysBack = 14) {
@@ -517,6 +534,14 @@ async function syncPurchaseOrders(daysBack = 30) {
 // Main Entry Point
 // ============================================
 
+// Helper to trigger garbage collection if available
+function tryGC() {
+    if (global.gc) {
+        console.log('[Memory] Triggering garbage collection...');
+        global.gc();
+    }
+}
+
 async function main() {
     const args = process.argv.slice(2);
     const mode = args[0] || 'all';
@@ -524,6 +549,7 @@ async function main() {
     console.log('='.repeat(60));
     console.log(`SCHEDULED SYNC - ${new Date().toISOString()}`);
     console.log(`Mode: ${mode}`);
+    console.log(`Memory: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB used`);
     console.log('='.repeat(60));
 
     const results = {
@@ -535,24 +561,51 @@ async function main() {
 
     try {
         // Sync based on mode
+        // SPLIT RT MODES: Use 'rt-inv' or 'rt-sales' separately to reduce memory usage
+        // Or use 'rt' to run both (may exceed memory on Basic dynos)
+
+        if (mode === 'rt-inv') {
+            // RT Inventory only - lighter memory footprint
+            results.reports['RT_INVENTORY'] = await syncVendorReport('GET_VENDOR_REAL_TIME_INVENTORY_REPORT', 7);
+            tryGC();
+        }
+
+        if (mode === 'rt-sales') {
+            // RT Sales only - lighter memory footprint
+            results.reports['RT_SALES'] = await syncVendorReport('GET_VENDOR_REAL_TIME_SALES_REPORT', 14);
+            tryGC();
+        }
+
         if (mode === 'all' || mode === 'reports' || mode === 'rt') {
             // Real-time reports (run frequently - every 10 min or hourly)
+            // WARNING: Running both RT reports together may exceed memory on Basic dynos
+            // Consider using 'rt-inv' and 'rt-sales' separately instead
             if (mode === 'all' || mode === 'rt') {
                 results.reports['RT_INVENTORY'] = await syncVendorReport('GET_VENDOR_REAL_TIME_INVENTORY_REPORT', 7);
+                tryGC();
+                console.log(`[Memory] After RT Inventory: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB used`);
+
                 results.reports['RT_SALES'] = await syncVendorReport('GET_VENDOR_REAL_TIME_SALES_REPORT', 14);
+                tryGC();
+                console.log(`[Memory] After RT Sales: ${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB used`);
             }
 
             // Weekly reports (run daily or less frequently)
             if (mode === 'all' || mode === 'reports') {
                 results.reports['SALES'] = await syncVendorReport('GET_VENDOR_SALES_REPORT', 30);
+                tryGC();
                 results.reports['MARGIN'] = await syncVendorReport('GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT', 30);
+                tryGC();
                 results.reports['TRAFFIC'] = await syncVendorReport('GET_VENDOR_TRAFFIC_REPORT', 30);
+                tryGC();
                 results.reports['INVENTORY'] = await syncVendorReport('GET_VENDOR_INVENTORY_REPORT', 30);
+                tryGC();
             }
         }
 
         if (mode === 'all' || mode === 'po') {
             results.purchaseOrders = await syncPurchaseOrders(30);
+            tryGC();
         }
 
         results.endTime = new Date().toISOString();

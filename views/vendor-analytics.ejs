@@ -753,7 +753,7 @@
         restoreColumnVisibility();
 
         async function backfillDailyData() {
-            if (!confirm('This will fetch real-time daily data for the past 30 days.\n\nThis may take a few minutes. Continue?')) {
+            if (!confirm('This will fetch real-time data:\n- Sales: last 14 days\n- Inventory: last 7 days\n\nThis may take a minute. Continue?')) {
                 return;
             }
 
@@ -761,14 +761,14 @@
             const statusDiv = document.getElementById('syncStatus');
 
             btn.disabled = true;
-            btn.textContent = 'Backfilling...';
-            statusDiv.innerHTML = '<span class="text-orange-600">Fetching daily data (this may take a few minutes)...</span>';
+            btn.textContent = 'Syncing...';
+            statusDiv.innerHTML = '<span class="text-orange-600">Fetching RT data (sales 14d, inventory 7d)...</span>';
 
             try {
                 const response = await fetch('/api/vendor-reports/backfill-daily', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ daysBack: 30 })
+                    body: JSON.stringify({})
                 });
 
                 const data = await response.json();
@@ -776,22 +776,25 @@
                 if (data.success) {
                     const sales = data.results.salesReport;
                     const inv = data.results.inventoryReport;
-                    statusDiv.innerHTML = `<span class="text-green-600">Backfill complete! Sales: ${sales.success} chunks, Inventory: ${inv.success} chunks</span>`;
+                    const salesItems = sales.itemCount || 0;
+                    const invItems = inv.itemCount || 0;
+                    statusDiv.innerHTML = `<span class="text-green-600">RT sync complete! Sales: ${salesItems} items, Inventory: ${invItems} items</span>`;
 
-                    if (sales.errors.length > 0 || inv.errors.length > 0) {
-                        console.log('Backfill errors:', data.results);
+                    if ((sales.errors && sales.errors.length > 0) || (inv.errors && inv.errors.length > 0)) {
+                        console.log('RT sync errors:', data.results);
+                        statusDiv.innerHTML += `<br><span class="text-amber-600">Some errors occurred - check console</span>`;
                     }
 
                     // Reload page after 2 seconds to show new data
                     setTimeout(() => window.location.reload(), 2000);
                 } else {
-                    statusDiv.innerHTML = `<span class="text-red-600">Backfill failed: ${data.error}</span>`;
+                    statusDiv.innerHTML = `<span class="text-red-600">RT sync failed: ${data.error}</span>`;
                 }
             } catch (err) {
-                statusDiv.innerHTML = `<span class="text-red-600">Backfill error: ${err.message}</span>`;
+                statusDiv.innerHTML = `<span class="text-red-600">RT sync error: ${err.message}</span>`;
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Backfill Daily Data';
+                btn.textContent = 'Sync RT Data';
             }
         }
 

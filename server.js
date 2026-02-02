@@ -4235,23 +4235,46 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                 const dataKey = reportConfig.dataKey;
                 const items = reportContent[dataKey] || [];
 
-                for (const item of items) {
-                    const asin = item.asin;
-                    if (!asin) continue;
+                console.log(`[Backfill ${reportType}] Found ${items.length} items to save`);
 
-                    // For real-time reports, use the startDate as report_date
-                    const reportDate = startDate.toISOString().split('T')[0];
+                // Delete existing records for this report type and date range first
+                const reportDate = startDate.toISOString().split('T')[0];
+                await pool.query(
+                    `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = $2`,
+                    [reportType, reportDate]
+                );
 
-                    await pool.query(
-                        `INSERT INTO vendor_reports (asin, report_type, report_date, data, created_at)
-                         VALUES ($1, $2, $3, $4, NOW())
-                         ON CONFLICT (asin, report_type, report_date)
-                         DO UPDATE SET data = $4, created_at = NOW()`,
-                        [asin, reportType, reportDate, JSON.stringify(item)]
-                    );
+                // Batch insert in chunks of 100 for better performance
+                const chunkSize = 100;
+                let savedCount = 0;
+
+                for (let i = 0; i < items.length; i += chunkSize) {
+                    const chunk = items.slice(i, Math.min(i + chunkSize, items.length));
+                    const values = [];
+                    const params = [];
+                    let paramIndex = 1;
+
+                    for (const item of chunk) {
+                        const asin = item.asin;
+                        if (!asin) continue;
+
+                        values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, CURRENT_TIMESTAMP)`);
+                        params.push(reportType, asin, reportDate, JSON.stringify(item), item.startDate || null, item.endDate || null);
+                        paramIndex += 6;
+                        savedCount++;
+                    }
+
+                    if (values.length > 0) {
+                        await pool.query(
+                            `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
+                             VALUES ${values.join(', ')}`,
+                            params
+                        );
+                    }
                 }
 
-                return { success: true, itemCount: items.length };
+                console.log(`[Backfill ${reportType}] Saved ${savedCount} items`);
+                return { success: true, itemCount: savedCount };
             } catch (err) {
                 return { success: false, error: err.message };
             }
