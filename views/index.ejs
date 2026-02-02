@@ -1339,8 +1339,10 @@
             });
 
             tbody.innerHTML = '';
-            notSnoozed.forEach((row, index) => {
-                row.querySelector('td:first-child').textContent = index + 1;
+            let idx = 1;
+            notSnoozed.forEach((row) => {
+                const numCell = row.querySelector('td:nth-child(2)');
+                if (numCell) numCell.textContent = idx++;
                 tbody.appendChild(row);
                 // Re-append history row if exists
                 const asin = row.getAttribute('data-asin');
@@ -1348,8 +1350,9 @@
                     tbody.appendChild(historyRows[asin]);
                 }
             });
-            snoozed.forEach((row, index) => {
-                row.querySelector('td:first-child').textContent = notSnoozed.length + index + 1;
+            snoozed.forEach((row) => {
+                const numCell = row.querySelector('td:nth-child(2)');
+                if (numCell) numCell.textContent = idx++;
                 tbody.appendChild(row);
                 // Re-append history row if exists
                 const asin = row.getAttribute('data-asin');
@@ -2908,36 +2911,39 @@
             const stableRows = rows.filter(r => r.dataset.hasChanged !== 'true' && !r.classList.contains('opacity-60'));
             const snoozedRows = rows.filter(r => r.classList.contains('opacity-60'));
 
+            // Collect history rows before clearing tbody
+            const historyRows = {};
+            document.querySelectorAll('.history-row').forEach(hr => {
+                const asin = hr.id.replace('history-row-', '');
+                historyRows[asin] = hr;
+            });
+
             tbody.innerHTML = '';
             let index = 1;
 
-            // Add matched filter rows first (highlighted in orange)
-            matchedRows.forEach(row => {
+            // Helper to append row with its history row
+            function appendWithHistory(row) {
                 const numCell = row.querySelector('td:nth-child(2)');
                 if (numCell) numCell.textContent = index++;
                 tbody.appendChild(row);
-            });
+                // Re-append history row if exists
+                const asin = row.getAttribute('data-asin');
+                if (asin && historyRows[asin]) {
+                    tbody.appendChild(historyRows[asin]);
+                }
+            }
+
+            // Add matched filter rows first (highlighted in orange)
+            matchedRows.forEach(appendWithHistory);
 
             // Then other updated rows
-            updatedRows.forEach(row => {
-                const numCell = row.querySelector('td:nth-child(2)');
-                if (numCell) numCell.textContent = index++;
-                tbody.appendChild(row);
-            });
+            updatedRows.forEach(appendWithHistory);
 
             // Then stable rows
-            stableRows.forEach(row => {
-                const numCell = row.querySelector('td:nth-child(2)');
-                if (numCell) numCell.textContent = index++;
-                tbody.appendChild(row);
-            });
+            stableRows.forEach(appendWithHistory);
 
             // Finally snoozed rows
-            snoozedRows.forEach(row => {
-                const numCell = row.querySelector('td:nth-child(2)');
-                if (numCell) numCell.textContent = index++;
-                tbody.appendChild(row);
-            });
+            snoozedRows.forEach(appendWithHistory);
 
             // Update the count display if there's a filter
             if (hasFilter) {
