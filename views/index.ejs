@@ -1330,14 +1330,32 @@
 
             // Reorder: non-snoozed (sorted) first, then snoozed
             const tbody = document.getElementById('tableBody');
+
+            // Collect history rows before clearing
+            const historyRows = {};
+            document.querySelectorAll('.history-row').forEach(hr => {
+                const asin = hr.id.replace('history-row-', '');
+                historyRows[asin] = hr;
+            });
+
             tbody.innerHTML = '';
             notSnoozed.forEach((row, index) => {
                 row.querySelector('td:first-child').textContent = index + 1;
                 tbody.appendChild(row);
+                // Re-append history row if exists
+                const asin = row.getAttribute('data-asin');
+                if (asin && historyRows[asin]) {
+                    tbody.appendChild(historyRows[asin]);
+                }
             });
             snoozed.forEach((row, index) => {
                 row.querySelector('td:first-child').textContent = notSnoozed.length + index + 1;
                 tbody.appendChild(row);
+                // Re-append history row if exists
+                const asin = row.getAttribute('data-asin');
+                if (asin && historyRows[asin]) {
+                    tbody.appendChild(historyRows[asin]);
+                }
             });
         }
 
