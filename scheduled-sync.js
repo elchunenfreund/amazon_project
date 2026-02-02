@@ -31,6 +31,7 @@ const pool = new Pool({
 const MARKETPLACE_ID = 'A2EUQ1WTGCTBG2'; // Canada
 
 // Report types configuration
+// requiresOptions lists which reportOptions each report type supports
 const VENDOR_REPORT_TYPES = {
     'GET_VENDOR_REAL_TIME_INVENTORY_REPORT': {
         name: 'Real-Time Inventory',
@@ -45,22 +46,22 @@ const VENDOR_REPORT_TYPES = {
     'GET_VENDOR_SALES_REPORT': {
         name: 'Sales Report',
         isRealTime: false,
-        requiresOptions: true
+        requiresOptions: ['reportPeriod', 'distributorView', 'sellingProgram']
     },
     'GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT': {
         name: 'Net Pure Product Margin',
         isRealTime: false,
-        requiresOptions: true
+        requiresOptions: ['reportPeriod']  // Does NOT support distributorView or sellingProgram
     },
     'GET_VENDOR_TRAFFIC_REPORT': {
         name: 'Traffic Report',
         isRealTime: false,
-        requiresOptions: true
+        requiresOptions: ['reportPeriod']  // Does NOT support distributorView or sellingProgram
     },
     'GET_VENDOR_INVENTORY_REPORT': {
         name: 'Inventory Report',
         isRealTime: false,
-        requiresOptions: true
+        requiresOptions: ['reportPeriod', 'distributorView', 'sellingProgram']
     }
 };
 
