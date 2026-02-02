@@ -120,6 +120,7 @@
                     <thead class="bg-slate-900 text-white">
                         <tr>
                             <th class="px-4 py-3 text-left font-bold">PO Number</th>
+                            <th class="px-4 py-3 text-left font-bold">Vendor Code</th>
                             <th class="px-4 py-3 text-left font-bold">Date</th>
                             <th class="px-4 py-3 text-center font-bold">Status</th>
                             <th class="px-4 py-3 text-left font-bold">Delivery Window</th>
@@ -131,7 +132,7 @@
                     <tbody class="divide-y divide-slate-200">
                         <% if (purchaseOrders.length === 0) { %>
                         <tr>
-                            <td colspan="7" class="px-4 py-12 text-center text-slate-500">
+                            <td colspan="8" class="px-4 py-12 text-center text-slate-500">
                                 <p class="text-4xl mb-4">No Purchase Orders</p>
                                 <p class="font-medium">No purchase orders synced yet</p>
                                 <p class="text-sm">Click "Sync from SP-API" to fetch your vendor purchase orders</p>
@@ -142,6 +143,17 @@
                         <tr id="po-row-<%= po.po_number %>" class="hover:bg-slate-50 transition-all duration-300">
                             <td class="px-4 py-3">
                                 <span class="font-mono font-bold text-slate-800"><%= po.po_number %></span>
+                            </td>
+                            <td class="px-4 py-3 text-xs">
+                                <%
+                                const sellingParty = typeof po.selling_party === 'string' ? JSON.parse(po.selling_party) : po.selling_party;
+                                const vendorCode = sellingParty?.partyId || '';
+                                %>
+                                <% if (vendorCode) { %>
+                                <span class="font-mono font-semibold text-purple-700 bg-purple-50 px-2 py-1 rounded"><%= vendorCode %></span>
+                                <% } else { %>
+                                <span class="text-slate-400">-</span>
+                                <% } %>
                             </td>
                             <td class="px-4 py-3 text-slate-600">
                                 <% if (po.po_date) { %>
@@ -497,7 +509,31 @@
             };
             const statusClass = statusColors[po.po_status] || 'bg-slate-100 text-slate-800';
 
+            // Extract vendor code from selling party
+            const sellingParty = rawData.sellingParty || (typeof po.selling_party === 'string' ? JSON.parse(po.selling_party) : po.selling_party);
+            const buyingParty = rawData.buyingParty || (typeof po.buying_party === 'string' ? JSON.parse(po.buying_party) : po.buying_party);
+            const vendorCode = sellingParty?.partyId || '';
+            const amazonCode = buyingParty?.partyId || '';
+
             document.getElementById('poModalContent').innerHTML = `
+                <!-- Vendor Code Banner -->
+                ${vendorCode ? `
+                <div class="bg-purple-50 border border-purple-200 rounded-xl p-4 mb-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <div class="text-xs text-purple-600 font-medium">Vendor Code (Amazon's ID for your company)</div>
+                            <div class="font-mono font-black text-2xl text-purple-800">${vendorCode}</div>
+                        </div>
+                        ${amazonCode ? `
+                        <div class="text-right">
+                            <div class="text-xs text-slate-500 font-medium">Amazon Buying Party</div>
+                            <div class="font-mono font-bold text-slate-700">${amazonCode}</div>
+                        </div>
+                        ` : ''}
+                    </div>
+                </div>
+                ` : ''}
+
                 <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                     <div class="bg-slate-50 p-3 rounded-lg">
                         <div class="text-xs text-slate-500">PO Number</div>

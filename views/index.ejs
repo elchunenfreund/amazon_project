@@ -334,6 +334,12 @@
                     <p class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Report End</p>
                     <p id="last-sync-time" class="text-lg md:text-xl font-mono font-black text-blue-600"><%= lastSyncTime %></p>
                 </div>
+                <% if (typeof globalLastOrderDate !== 'undefined' && globalLastOrderDate) { %>
+                <div class="bg-purple-50 px-4 md:px-6 py-2 md:py-2.5 rounded-xl border border-purple-200 shadow-sm min-w-[140px] md:min-w-[160px]">
+                    <p class="text-[10px] font-black text-purple-400 uppercase tracking-widest">Last PO Date</p>
+                    <p class="text-lg md:text-xl font-mono font-black text-purple-600"><%= new Date(globalLastOrderDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %></p>
+                </div>
+                <% } %>
             </div>
         </header>
 
@@ -404,6 +410,14 @@
                         <th class="p-6 sortable-header" onclick="sortByPrice()" id="priceHeader">
                             Price
                             <span class="sort-indicator" id="priceSortIndicator">↕</span>
+                        </th>
+                        <th class="p-6 text-center">
+                            <div>Sales</div>
+                            <div class="text-[8px] text-slate-400 font-normal normal-case">Vendor Reports</div>
+                        </th>
+                        <th class="p-6 text-center">
+                            <div>Traffic</div>
+                            <div class="text-[8px] text-slate-400 font-normal normal-case">Glance Views</div>
                         </th>
                         <th class="p-6">Last PO</th>
                         <th class="p-6">Comment</th>
@@ -493,6 +507,27 @@
                                             <span class="text-slate-400 font-normal ml-1">(was <%= item.previousPrice %>)</span>
                                         </div>
                                     <% } %>
+                                <% } %>
+                            </td>
+                            <!-- Sales Column -->
+                            <td class="p-6 text-center text-sm">
+                                <% if (item.salesData) { %>
+                                    <div class="font-bold text-blue-600"><%= item.salesData.shippedUnits %></div>
+                                    <div class="text-[10px] text-slate-500">shipped</div>
+                                    <% if (item.salesData.orderedRevenue > 0) { %>
+                                    <div class="text-[10px] text-green-600 font-medium">$<%= item.salesData.orderedRevenue.toFixed(0) %></div>
+                                    <% } %>
+                                <% } else { %>
+                                    <span class="text-slate-400">-</span>
+                                <% } %>
+                            </td>
+                            <!-- Traffic Column -->
+                            <td class="p-6 text-center text-sm">
+                                <% if (item.trafficData && item.trafficData.glanceViews > 0) { %>
+                                    <div class="font-bold text-orange-600"><%= item.trafficData.glanceViews.toLocaleString() %></div>
+                                    <div class="text-[10px] text-slate-500">views</div>
+                                <% } else { %>
+                                    <span class="text-slate-400">-</span>
                                 <% } %>
                             </td>
                             <!-- Last PO Column -->

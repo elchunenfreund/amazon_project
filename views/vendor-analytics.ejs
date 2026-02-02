@@ -416,6 +416,9 @@
 
                             <!-- Received Column -->
                             <td class="px-3 py-3 text-center col-received">
+                                <%
+                                const totalInbound = lastOrderedData ? Math.max(0, (lastOrderedData.totalOrdered || 0) - (lastOrderedData.totalReceived || 0)) : 0;
+                                %>
                                 <% if (lastOrderedData && lastOrderedData.totalReceived > 0) { %>
                                     <div class="metric-item">
                                         <div class="metric-label">Received</div>
@@ -423,6 +426,13 @@
                                             <%= lastOrderedData.totalReceived.toLocaleString() %>
                                         </div>
                                     </div>
+                                    <% if (totalInbound > 0) { %>
+                                    <div class="mt-1">
+                                        <span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs font-medium" title="Ordered but not yet received">
+                                            Inbound: <%= totalInbound.toLocaleString() %>
+                                        </span>
+                                    </div>
+                                    <% } %>
                                     <% if (lastOrderedData.totalOrdered > 0) { %>
                                     <div class="text-xs text-slate-500 mt-1">
                                         <%= Math.round((lastOrderedData.totalReceived / lastOrderedData.totalOrdered) * 100) %>% of ordered
@@ -434,7 +444,16 @@
                                     </div>
                                     <% } %>
                                 <% } else if (lastOrderedData && lastOrderedData.totalOrdered > 0) { %>
-                                    <span class="text-slate-400 text-xs">Pending</span>
+                                    <div class="metric-item">
+                                        <div class="metric-label">Received</div>
+                                        <div class="metric-value text-slate-400">0</div>
+                                    </div>
+                                    <div class="mt-1">
+                                        <span class="bg-orange-100 text-orange-700 px-2 py-0.5 rounded text-xs font-medium" title="All ordered units pending receipt">
+                                            Inbound: <%= lastOrderedData.totalOrdered.toLocaleString() %>
+                                        </span>
+                                    </div>
+                                    <div class="text-xs text-slate-400 mt-1">Pending receipt</div>
                                 <% } else { %>
                                     <span class="text-slate-400">-</span>
                                 <% } %>

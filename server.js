@@ -226,6 +226,44 @@ app.get('/', async (req, res) => {
             poCountMap[row.asin] = parseInt(row.po_count);
         });
 
+        // Get latest sales data (last 30 days) from vendor_reports
+        const salesDataMap = {};
+        const salesResult = await pool.query(`
+            SELECT DISTINCT ON (asin) asin, data, report_date
+            FROM vendor_reports
+            WHERE report_type = 'GET_VENDOR_SALES_REPORT'
+            ORDER BY asin, report_date DESC
+        `);
+        salesResult.rows.forEach(row => {
+            const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            salesDataMap[row.asin] = {
+                shippedUnits: data.shippedUnits || 0,
+                orderedUnits: data.orderedUnits || 0,
+                orderedRevenue: data.orderedRevenue?.amount ? parseFloat(data.orderedRevenue.amount) : 0,
+                reportDate: row.report_date
+            };
+        });
+
+        // Get latest traffic data from vendor_reports
+        const trafficDataMap = {};
+        const trafficResult = await pool.query(`
+            SELECT DISTINCT ON (asin) asin, data, report_date
+            FROM vendor_reports
+            WHERE report_type = 'GET_VENDOR_TRAFFIC_REPORT'
+            ORDER BY asin, report_date DESC
+        `);
+        trafficResult.rows.forEach(row => {
+            const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            trafficDataMap[row.asin] = {
+                glanceViews: data.glanceViews || 0,
+                reportDate: row.report_date
+            };
+        });
+
+        // Get global last ordered date (for the top bar info)
+        const globalLastOrderedResult = await pool.query(`SELECT MAX(po_date) as last_order_date FROM purchase_orders`);
+        const globalLastOrderDate = globalLastOrderedResult.rows[0]?.last_order_date || null;
+
         // Create Set of valid ASINs (only those in products table)
         const validAsins = new Set(productMeta.rows.map(row => row.asin));
 
@@ -277,6 +315,11 @@ app.get('/', async (req, res) => {
             // Add last PO info
             latest.lastPO = lastPOMap[asin] || null;
             latest.poCount = poCountMap[asin] || 0;
+
+            // Add sales and traffic data
+            latest.salesData = salesDataMap[asin] || null;
+            latest.trafficData = trafficDataMap[asin] || null;
+
             latest.history = history.map(row => ({
                 ...row,
                 check_date_formatted: formatMontrealDateTime(row.check_date),
@@ -321,6 +364,8 @@ app.get('/', async (req, res) => {
                     history: [],
                     lastPO: lastPOMap[product.asin] || null,
                     poCount: poCountMap[product.asin] || 0,
+                    salesData: salesDataMap[product.asin] || null,
+                    trafficData: trafficDataMap[product.asin] || null,
                 };
                 dashboardData.push(placeholder);
             }
@@ -338,7 +383,7 @@ app.get('/', async (req, res) => {
         // Get list of all ASINs for comparison dropdown
         const allAsins = productMeta.rows.map(row => row.asin).sort();
 
-        res.render('index', { reports: dashboardData, lastSyncTime: lastSync, allAsins });
+        res.render('index', { reports: dashboardData, lastSyncTime: lastSync, allAsins, globalLastOrderDate });
     } catch (err) {
         res.status(500).send(err.message);
     }
@@ -410,24 +455,52 @@ app.post('/stop-report', (req, res) => {
 });
 
 app.get('/history/:asin', async (req, res) => {
-    const result = await pool.query(`SELECT * FROM daily_reports WHERE asin = $1 ORDER BY check_date DESC`, [req.params.asin]);
-    const rows = result.rows;
+    try {
+        const { asin } = req.params;
+        const { startDate, endDate } = req.query;
 
-    // Format dates for all rows first
-    rows.forEach(row => {
-        row.check_date_formatted = formatMontrealDateTime(row.check_date);
-    });
+        // Build query with optional date filtering
+        let query = `SELECT * FROM daily_reports WHERE asin = $1`;
+        const params = [asin];
 
-    // Then compare adjacent rows for change detection
-    for(let i=0; i<rows.length-1; i++) {
-        const curr = rows[i];
-        const prev = rows[i+1];
-        curr.isPriceChange = (curr.price !== prev.price);
-        curr.isStockChange = (curr.availability !== prev.availability) || (curr.stock_level !== prev.stock_level);
-        curr.isSellerChange = (curr.seller !== prev.seller);
+        if (startDate) {
+            params.push(startDate);
+            query += ` AND check_date >= $${params.length}::date`;
+        }
+        if (endDate) {
+            params.push(endDate);
+            query += ` AND check_date <= ($${params.length}::date + interval '1 day')`;
+        }
+
+        query += ` ORDER BY check_date DESC`;
+
+        const result = await pool.query(query, params);
+        const rows = result.rows;
+
+        // Format dates for all rows first
+        rows.forEach(row => {
+            row.check_date_formatted = formatMontrealDateTime(row.check_date);
+        });
+
+        // Then compare adjacent rows for change detection
+        for(let i=0; i<rows.length-1; i++) {
+            const curr = rows[i];
+            const prev = rows[i+1];
+            curr.isPriceChange = (curr.price !== prev.price);
+            curr.isStockChange = (curr.availability !== prev.availability) || (curr.stock_level !== prev.stock_level);
+            curr.isSellerChange = (curr.seller !== prev.seller);
+        }
+
+        res.render('history', {
+            reports: rows,
+            asin,
+            startDate: startDate || '',
+            endDate: endDate || ''
+        });
+    } catch (err) {
+        console.error('History page error:', err);
+        res.status(500).send('Error loading history: ' + err.message);
     }
-
-    res.render('history', { reports: rows, asin: req.params.asin });
 });
 
 app.get('/products', async (req, res) => {

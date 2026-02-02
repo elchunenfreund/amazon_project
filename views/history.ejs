@@ -46,7 +46,31 @@
             </button>
         </div>
         <h1 class="text-3xl font-black mb-2 text-slate-800">History for <a href="https://www.amazon.ca/dp/<%= asin %>" target="_blank" class="font-mono text-blue-600 hover:underline"><%= asin %></a></h1>
-        <p class="text-slate-500 mb-8 font-mono text-base"><%= reports.length %> entries found</p>
+        <p class="text-slate-500 mb-4 font-mono text-base"><%= reports.length %> entries found</p>
+
+        <!-- Date Range Filter -->
+        <div class="bg-white rounded-xl shadow-lg p-4 mb-6 border border-slate-200">
+            <form method="get" action="/history/<%= asin %>" class="flex flex-wrap items-end gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
+                    <input type="date" name="startDate" value="<%= typeof startDate !== 'undefined' ? startDate : '' %>"
+                           class="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">End Date</label>
+                    <input type="date" name="endDate" value="<%= typeof endDate !== 'undefined' ? endDate : '' %>"
+                           class="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none">
+                </div>
+                <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 transition-all">
+                    Apply Filter
+                </button>
+                <% if ((typeof startDate !== 'undefined' && startDate) || (typeof endDate !== 'undefined' && endDate)) { %>
+                <a href="/history/<%= asin %>" class="bg-slate-200 text-slate-700 px-4 py-2 rounded-lg font-medium hover:bg-slate-300 transition-all">
+                    Clear Filter
+                </a>
+                <% } %>
+            </form>
+        </div>
 
         <div class="bg-white rounded-xl shadow-lg overflow-hidden border border-slate-200">
             <table class="w-full text-left">
