@@ -1164,16 +1164,16 @@
             });
         });
 
-        // Initialize: Select all ASINs by default and load chart
+        // Initialize: Don't select any ASINs by default
         function initializeChart() {
-            // Select all checkboxes in both table and chart selector
-            document.querySelectorAll('.asin-checkbox').forEach(cb => cb.checked = true);
-            document.querySelectorAll('.chart-asin-checkbox').forEach(cb => cb.checked = true);
-            document.getElementById('selectAll').checked = true;
+            // Don't select any checkboxes by default
+            document.querySelectorAll('.asin-checkbox').forEach(cb => cb.checked = false);
+            document.querySelectorAll('.chart-asin-checkbox').forEach(cb => cb.checked = false);
+            document.getElementById('selectAll').checked = false;
             updateSyncSelectedButton();
 
-            // Load chart with all ASINs selected
-            updateChart();
+            // Don't load chart initially (no ASINs selected)
+            // Chart will load when user selects ASINs
         }
 
         // Run initialization when page loads
