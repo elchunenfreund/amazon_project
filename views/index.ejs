@@ -272,9 +272,16 @@
                         <option value="custom">Custom Range</option>
                     </select>
                 </div>
-                <div id="customRangeContainer" class="hidden flex flex-col w-full sm:w-auto">
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Custom From</label>
-                    <input type="datetime-local" id="customRangeFrom" onchange="applyUpdateRangeFilter()" class="px-2 py-2 rounded-xl border-2 border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+                <div id="customRangeContainer" class="hidden flex gap-2 items-end">
+                    <div class="flex flex-col">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">From</label>
+                        <input type="datetime-local" id="customRangeFrom" onchange="applyUpdateRangeFilter()" class="px-2 py-2 rounded-xl border-2 border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+                    </div>
+                    <div class="flex flex-col">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">To</label>
+                        <input type="datetime-local" id="customRangeTo" onchange="applyUpdateRangeFilter()" class="px-2 py-2 rounded-xl border-2 border-slate-200 outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white">
+                    </div>
+                    <button onclick="applyUpdateRangeFilter()" class="px-4 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all text-sm">Apply</button>
                 </div>
 
                 <a href="/products" class="bg-slate-600 text-white px-4 md:px-6 py-2 md:py-3 rounded-xl font-black shadow-lg hover:bg-slate-700 active:scale-95 transition-all text-sm md:text-base">📦 PRODUCTS</a>
@@ -379,7 +386,9 @@
                     <% reports.forEach((item, index) => { %>
                         <tr class="inventory-row transition-all <%= item.hasChanged ? 'bg-orange-200 border-l-8 border-orange-500' : 'hover:bg-slate-50' %> <%= item.isSnoozed ? 'opacity-60' : '' %> <%= item.availability === 'Doggy' ? 'border-l-4 border-purple-500' : '' %>"
                             data-asin="<%= item.asin %>"
-                            data-price="<%= (item.price || 'N/A').replace(/"/g, '&quot;') %>">
+                            data-price="<%= (item.price || 'N/A').replace(/"/g, '&quot;') %>"
+                            data-check-date="<%= item.check_date ? new Date(item.check_date).toISOString() : '' %>"
+                            data-has-changed="<%= item.hasChanged ? 'true' : 'false' %>">
                             <td class="p-6 text-center">
                                 <input type="checkbox" class="asin-checkbox w-5 h-5 cursor-pointer" value="<%= item.asin %>" onchange="updateSelectAllState()">
                             </td>
@@ -387,20 +396,6 @@
                             <td class="p-6 font-bold">
                                 <% if(item.hasChanged) { %>
                                     <span class="px-2 py-1 rounded text-[10px] font-black bg-orange-600 text-white shadow-sm uppercase">UPDATED</span>
-                                    <div class="mt-1 flex flex-wrap gap-1">
-                                        <% if(item.changedFields && item.changedFields.includes('price')) { %>
-                                            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-100 text-green-700 border border-green-300">PRICE</span>
-                                        <% } %>
-                                        <% if(item.changedFields && item.changedFields.includes('availability')) { %>
-                                            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700 border border-blue-300">STATUS</span>
-                                        <% } %>
-                                        <% if(item.changedFields && item.changedFields.includes('stock')) { %>
-                                            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-700 border border-amber-300">STOCK</span>
-                                        <% } %>
-                                        <% if(item.changedFields && item.changedFields.includes('seller')) { %>
-                                            <span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-100 text-purple-700 border border-purple-300">SELLER</span>
-                                        <% } %>
-                                    </div>
                                 <% } else { %>
                                     <span class="px-2 py-1 rounded text-[10px] font-black bg-slate-200 text-slate-500 shadow-sm uppercase">STABLE</span>
                                 <% } %>
@@ -415,7 +410,7 @@
                                 <% } %>
                             </td>
 
-                            <td class="p-6 text-center stock-cell font-black text-base"
+                            <td class="p-6 text-center stock-cell font-black text-base <%= (item.changedFields && (item.changedFields.includes('availability') || item.changedFields.includes('stock'))) ? 'ring-2 ring-red-500 ring-inset bg-red-50' : '' %>"
                                 data-availability-val="<%= (item.availability || '').toUpperCase() %>"
                                 data-stocklevel-val="<%= (item.stock_level || '').toUpperCase() %>">
 
@@ -443,11 +438,11 @@
                                 <% } %>
                             </td>
 
-                            <td class="p-6 text-base font-black seller-cell <%= (item.seller && item.seller.includes('Amazon')) ? 'text-blue-600' : 'text-slate-500' %>" data-seller-val="<%= item.seller %>">
+                            <td class="p-6 text-base font-black seller-cell <%= (item.seller && item.seller.includes('Amazon')) ? 'text-blue-600' : 'text-slate-500' %> <%= (item.changedFields && item.changedFields.includes('seller')) ? 'ring-2 ring-red-500 ring-inset bg-red-50' : '' %>" data-seller-val="<%= item.seller %>">
                                 <%= item.seller %>
                             </td>
 
-                            <td class="p-6 text-xl font-black text-slate-900 price-cell text-base">
+                            <td class="p-6 text-xl font-black text-slate-900 price-cell text-base <%= (item.changedFields && item.changedFields.includes('price')) ? 'ring-2 ring-red-500 ring-inset bg-red-50' : '' %>">
                                 <%= item.price %>
                                 <% if(item.changedFields && item.changedFields.includes('price') && item.previousPrice) { %>
                                     <%
@@ -2536,63 +2531,95 @@
             const range = document.getElementById('updateRangeFilter').value;
             const customContainer = document.getElementById('customRangeContainer');
 
-            // Show/hide custom date input
+            // Show/hide custom date inputs
             if (range === 'custom') {
                 customContainer.classList.remove('hidden');
-                // Set default to 24 hours ago
-                const now = new Date();
-                now.setHours(now.getHours() - 24);
-                document.getElementById('customRangeFrom').value = now.toISOString().slice(0, 16);
+                // Set defaults if not already set
+                const fromInput = document.getElementById('customRangeFrom');
+                const toInput = document.getElementById('customRangeTo');
+                if (!fromInput.value) {
+                    const defaultFrom = new Date();
+                    defaultFrom.setHours(defaultFrom.getHours() - 24);
+                    fromInput.value = defaultFrom.toISOString().slice(0, 16);
+                }
+                if (!toInput.value) {
+                    toInput.value = new Date().toISOString().slice(0, 16);
+                }
             } else {
                 customContainer.classList.add('hidden');
             }
 
-            // Calculate cutoff date
-            let cutoffDate = null;
+            // Calculate date range (start and end)
+            let startDate = null;
+            let endDate = null;
             const now = new Date();
 
             switch(range) {
                 case '24h':
-                    cutoffDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                    startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+                    endDate = now;
                     break;
                 case '48h':
-                    cutoffDate = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+                    startDate = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+                    endDate = now;
                     break;
                 case '7d':
-                    cutoffDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                    endDate = now;
                     break;
                 case 'custom':
                     const customFrom = document.getElementById('customRangeFrom').value;
-                    if (customFrom) {
-                        cutoffDate = new Date(customFrom);
-                    }
+                    const customTo = document.getElementById('customRangeTo').value;
+                    if (customFrom) startDate = new Date(customFrom);
+                    if (customTo) endDate = new Date(customTo);
                     break;
                 default:
-                    cutoffDate = null; // Show all
+                    startDate = null; // Show all
+                    endDate = null;
             }
 
-            // Filter and re-sort rows
+            // Filter rows based on check_date
             const rows = Array.from(document.querySelectorAll('.inventory-row'));
             const tbody = document.getElementById('tableBody');
 
             rows.forEach(row => {
-                const isUpdated = row.classList.contains('bg-orange-200');
-                if (!isUpdated || cutoffDate === null) {
-                    // Show all non-updated rows, or all rows if no filter
-                    row.classList.remove('hidden-row');
+                const hasChanged = row.dataset.hasChanged === 'true';
+                const checkDateStr = row.dataset.checkDate;
+
+                if (!startDate && !endDate) {
+                    // No filter - show all
+                    row.classList.remove('hidden-by-filter');
+                    row.style.display = '';
+                } else if (!hasChanged) {
+                    // Not updated - show it (stable rows always visible)
+                    row.classList.remove('hidden-by-filter');
+                    row.style.display = '';
+                } else if (checkDateStr) {
+                    // Updated row with check_date - filter by date range
+                    const checkDate = new Date(checkDateStr);
+                    const afterStart = !startDate || checkDate >= startDate;
+                    const beforeEnd = !endDate || checkDate <= endDate;
+
+                    if (afterStart && beforeEnd) {
+                        row.classList.remove('hidden-by-filter');
+                        row.style.display = '';
+                    } else {
+                        row.classList.add('hidden-by-filter');
+                        row.style.display = 'none';
+                    }
                 } else {
-                    // For updated rows, check if within cutoff
-                    // We'll assume updated rows are within cutoff for now
-                    // In a full implementation, we'd need check_date data attribute
-                    row.classList.remove('hidden-row');
+                    // Updated but no check_date - show it
+                    row.classList.remove('hidden-by-filter');
+                    row.style.display = '';
                 }
             });
 
-            // Re-sort: bring updated rows to top
-            const updatedRows = rows.filter(r => r.classList.contains('bg-orange-200') && !r.classList.contains('hidden-row'));
-            const stableRows = rows.filter(r => !r.classList.contains('bg-orange-200') && !r.classList.contains('hidden-row'));
-            const snoozedRows = rows.filter(r => r.classList.contains('opacity-60') && !r.classList.contains('hidden-row'));
-            const hiddenRows = rows.filter(r => r.classList.contains('hidden-row'));
+            // Re-sort: bring visible updated rows to top
+            const visibleRows = rows.filter(r => !r.classList.contains('hidden-by-filter'));
+            const updatedRows = visibleRows.filter(r => r.dataset.hasChanged === 'true' && !r.classList.contains('opacity-60'));
+            const stableRows = visibleRows.filter(r => r.dataset.hasChanged !== 'true' && !r.classList.contains('opacity-60'));
+            const snoozedRows = visibleRows.filter(r => r.classList.contains('opacity-60'));
+            const hiddenRows = rows.filter(r => r.classList.contains('hidden-by-filter'));
 
             tbody.innerHTML = '';
             let index = 1;
