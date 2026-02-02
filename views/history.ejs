@@ -309,15 +309,32 @@
 
             const datasets = chartData.series
                 .filter(s => selectedMetrics.includes(s.metric))
-                .map(s => ({
-                    label: s.label,
-                    data: s.values,
-                    borderColor: s.color,
-                    backgroundColor: s.color + '20',
-                    fill: false,
-                    tension: 0.3,
-                    yAxisID: s.yAxisID || 'y'
-                }));
+                .map(s => {
+                    // Sparse metrics (PO data) need larger, more visible points
+                    const isSparseMetric = ['poOrdered', 'poAccepted'].includes(s.metric);
+
+                    return {
+                        label: s.label,
+                        data: s.values,
+                        borderColor: s.color,
+                        backgroundColor: s.color + '20',
+                        fill: false,
+                        tension: 0.3,
+                        yAxisID: s.yAxisID || 'y',
+                        // Make sparse data points highly visible
+                        spanGaps: true,  // Connect points across null values
+                        pointRadius: isSparseMetric ? 5 : 2,  // Larger points for PO data
+                        pointHoverRadius: isSparseMetric ? 7 : 4,
+                        pointBackgroundColor: s.color,  // Solid color for points
+                        pointBorderColor: '#fff',  // White border for contrast
+                        pointBorderWidth: isSparseMetric ? 2 : 1,
+                        pointHoverBackgroundColor: s.color,
+                        pointHoverBorderColor: '#fff',
+                        pointHoverBorderWidth: 2,
+                        borderWidth: 2,  // Make lines more visible
+                        showLine: true  // Ensure lines are drawn
+                    };
+                });
 
             if (analyticsChart) {
                 analyticsChart.destroy();

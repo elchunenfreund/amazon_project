@@ -55,22 +55,60 @@
         <!-- Date Filter & Sync Controls -->
         <div class="bg-white rounded-2xl shadow-lg p-6 mb-8 border border-slate-200">
             <div class="flex flex-wrap items-end gap-4">
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Start Date</label>
-                    <input type="date" id="startDate" value="<%= startDate %>"
-                           class="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none">
+                <!-- Calendar Date Range Picker -->
+                <div class="flex flex-col w-full sm:w-auto relative">
+                    <label class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Date Range Filter</label>
+                    <button onclick="toggleDateRangePicker()" id="dateRangeBtn" class="px-5 py-2 rounded-xl border-2 border-slate-300 outline-none focus:ring-2 focus:ring-purple-500 text-sm bg-white text-left flex items-center gap-2 min-w-[220px] hover:border-purple-400 transition-all">
+                        <span id="dateRangeLabel">Loading...</span>
+                        <svg class="w-4 h-4 ml-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                    </button>
+
+                    <!-- Date Range Picker Dropdown -->
+                    <div id="dateRangePicker" class="hidden fixed bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-[99999] min-w-[340px]">
+                        <!-- Quick Presets -->
+                        <div class="flex flex-wrap gap-2 mb-4">
+                            <button onclick="setDatePreset('all')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 transition-all" data-preset="all">All POs</button>
+                            <button onclick="setDatePreset('24h')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 transition-all" data-preset="24h">24h</button>
+                            <button onclick="setDatePreset('48h')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 transition-all" data-preset="48h">48h</button>
+                            <button onclick="setDatePreset('7d')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 transition-all" data-preset="7d">7 Days</button>
+                            <button onclick="setDatePreset('30d')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 transition-all" data-preset="30d">30 Days</button>
+                            <button onclick="setDatePreset('90d')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 transition-all" data-preset="90d">90 Days</button>
+                            <button onclick="showCustomCalendar(event)" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-purple-100 hover:text-purple-700 transition-all" data-preset="custom">Custom Range</button>
+                        </div>
+
+                        <!-- Calendar Section (hidden by default) -->
+                        <div id="calendarSection" class="hidden">
+                            <div class="flex items-center justify-between mb-2">
+                                <button onclick="changeCalendarMonth(-1); event.stopPropagation();" class="p-1 hover:bg-slate-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
+                                <span id="calendarMonthYear" class="font-bold text-slate-700"></span>
+                                <button onclick="changeCalendarMonth(1); event.stopPropagation();" class="p-1 hover:bg-slate-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
+                            </div>
+                            <div class="grid grid-cols-7 gap-1 text-center text-xs mb-2">
+                                <div class="font-bold text-slate-400 py-1">Su</div>
+                                <div class="font-bold text-slate-400 py-1">Mo</div>
+                                <div class="font-bold text-slate-400 py-1">Tu</div>
+                                <div class="font-bold text-slate-400 py-1">We</div>
+                                <div class="font-bold text-slate-400 py-1">Th</div>
+                                <div class="font-bold text-slate-400 py-1">Fr</div>
+                                <div class="font-bold text-slate-400 py-1">Sa</div>
+                            </div>
+                            <div id="calendarDays" class="grid grid-cols-7 gap-1 text-center text-sm"></div>
+                            <div id="selectedRangeDisplay" class="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-600 text-center">
+                                Click to select start date, then end date
+                            </div>
+                            <div class="flex gap-2 mt-3">
+                                <button onclick="clearDateRange(); event.stopPropagation();" class="flex-1 px-3 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 transition-all text-sm">Clear</button>
+                                <button onclick="applyDateRangeAndClose(); event.stopPropagation();" class="flex-1 px-3 py-2 bg-purple-600 text-white font-bold rounded-lg hover:bg-purple-700 transition-all text-sm">Apply Filter</button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">End Date</label>
-                    <input type="date" id="endDate" value="<%= endDate %>"
-                           class="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none">
-                </div>
-                <button onclick="applyDateFilter()" class="bg-blue-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-blue-700 transition-all">
-                    Apply Filter
-                </button>
+
                 <div class="border-l border-slate-300 h-8 mx-2"></div>
+
+                <!-- Sync Controls -->
                 <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Sync from API (Created After)</label>
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Sync from API (Created After)</label>
                     <input type="date" id="createdAfter"
                            class="px-4 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none">
                 </div>
@@ -235,13 +273,197 @@
         const inventoryByAsin = <%- JSON.stringify(inventoryByAsin || {}) %>;
         const receivingData = <%- JSON.stringify(receivingData || {}) %>;
 
-        // Set default sync date (last 30 days)
-        document.getElementById('createdAfter').value = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        // ============================================
+        // Date Range Picker Calendar for PO Filtering
+        // ============================================
+        let calendarDate = new Date();
+        let rangeStartDate = null;
+        let rangeEndDate = null;
+        let currentPreset = '90d';
 
-        function applyDateFilter() {
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
-            window.location.href = `/purchase-orders?startDate=${startDate}&endDate=${endDate}`;
+        const urlParams = new URLSearchParams(window.location.search);
+        const urlStartDate = urlParams.get('startDate');
+        const urlEndDate = urlParams.get('endDate');
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('createdAfter').value = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+            if (urlStartDate && urlEndDate) {
+                const start = new Date(urlStartDate);
+                const end = new Date(urlEndDate);
+                const daysDiff = Math.round((end - start) / (1000 * 60 * 60 * 24));
+                if (daysDiff === 0) currentPreset = '24h';
+                else if (daysDiff === 1) currentPreset = '48h';
+                else if (daysDiff >= 6 && daysDiff <= 7) currentPreset = '7d';
+                else if (daysDiff >= 29 && daysDiff <= 31) currentPreset = '30d';
+                else if (daysDiff >= 89 && daysDiff <= 91) currentPreset = '90d';
+                else { currentPreset = 'custom'; rangeStartDate = start; rangeEndDate = end; }
+            } else if (!urlStartDate && !urlEndDate) {
+                currentPreset = 'all';
+            }
+
+            updateDateRangeLabel();
+            updatePresetButtons();
+
+            document.addEventListener('mousedown', function(e) {
+                const picker = document.getElementById('dateRangePicker');
+                const btn = document.getElementById('dateRangeBtn');
+                if (picker && !picker.classList.contains('hidden') && !picker.contains(e.target) && !btn.contains(e.target)) {
+                    picker.classList.add('hidden');
+                }
+            });
+        });
+
+        function toggleDateRangePicker() {
+            const picker = document.getElementById('dateRangePicker');
+            const btn = document.getElementById('dateRangeBtn');
+            picker.classList.toggle('hidden');
+            if (!picker.classList.contains('hidden')) {
+                const rect = btn.getBoundingClientRect();
+                picker.style.top = (rect.bottom + 8) + 'px';
+                picker.style.left = rect.left + 'px';
+                document.getElementById('calendarSection').classList.add('hidden');
+                updatePresetButtons();
+            }
+        }
+
+        function showCustomCalendar(event) {
+            if (event) event.stopPropagation();
+            document.getElementById('calendarSection').classList.remove('hidden');
+            currentPreset = 'custom';
+            renderCalendar();
+        }
+
+        function changeCalendarMonth(delta) {
+            calendarDate.setMonth(calendarDate.getMonth() + delta);
+            renderCalendar();
+        }
+
+        function renderCalendar() {
+            const year = calendarDate.getFullYear();
+            const month = calendarDate.getMonth();
+            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            document.getElementById('calendarMonthYear').textContent = `${monthNames[month]} ${year}`;
+
+            const firstDay = new Date(year, month, 1).getDay();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            let daysHtml = '';
+
+            for (let i = 0; i < firstDay; i++) daysHtml += '<div></div>';
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const date = new Date(year, month, day);
+                const isStart = rangeStartDate && isSameDay(date, rangeStartDate);
+                const isEnd = rangeEndDate && isSameDay(date, rangeEndDate);
+                const isInRange = rangeStartDate && rangeEndDate && date > rangeStartDate && date < rangeEndDate;
+                const isToday = isSameDay(date, new Date());
+
+                let classes = 'py-1 px-2 rounded cursor-pointer hover:bg-purple-100 ';
+                if (isStart || isEnd) classes += 'bg-purple-600 text-white hover:bg-purple-700 font-bold ';
+                else if (isInRange) classes += 'bg-purple-200 ';
+                else if (isToday) classes += 'border border-purple-400 ';
+
+                daysHtml += `<div class="${classes}" onclick="selectDate(${day})">${day}</div>`;
+            }
+
+            document.getElementById('calendarDays').innerHTML = daysHtml;
+            updateSelectedRangeDisplay();
+        }
+
+        function selectDate(day) {
+            const date = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), day);
+            date.setHours(0, 0, 0, 0);
+
+            if (!rangeStartDate || (rangeStartDate && rangeEndDate)) {
+                rangeStartDate = date;
+                rangeEndDate = null;
+            } else {
+                if (date < rangeStartDate) { rangeEndDate = rangeStartDate; rangeStartDate = date; }
+                else rangeEndDate = date;
+                rangeEndDate.setHours(23, 59, 59, 999);
+                currentPreset = 'custom';
+            }
+            renderCalendar();
+        }
+
+        function setDatePreset(preset) {
+            const now = new Date();
+            currentPreset = preset;
+
+            if (preset === 'all') { window.location.href = '/purchase-orders'; return; }
+
+            switch(preset) {
+                case '24h':
+                    rangeStartDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                    rangeEndDate = new Date(now); rangeEndDate.setHours(23, 59, 59, 999);
+                    break;
+                case '48h':
+                    rangeStartDate = new Date(now); rangeStartDate.setDate(rangeStartDate.getDate() - 1);
+                    rangeStartDate.setHours(0, 0, 0, 0);
+                    rangeEndDate = new Date(now); rangeEndDate.setHours(23, 59, 59, 999);
+                    break;
+                case '7d':
+                    rangeStartDate = new Date(now); rangeStartDate.setDate(rangeStartDate.getDate() - 7);
+                    rangeStartDate.setHours(0, 0, 0, 0);
+                    rangeEndDate = new Date(now); rangeEndDate.setHours(23, 59, 59, 999);
+                    break;
+                case '30d':
+                    rangeStartDate = new Date(now); rangeStartDate.setDate(rangeStartDate.getDate() - 30);
+                    rangeStartDate.setHours(0, 0, 0, 0);
+                    rangeEndDate = new Date(now); rangeEndDate.setHours(23, 59, 59, 999);
+                    break;
+                case '90d':
+                    rangeStartDate = new Date(now); rangeStartDate.setDate(rangeStartDate.getDate() - 90);
+                    rangeStartDate.setHours(0, 0, 0, 0);
+                    rangeEndDate = new Date(now); rangeEndDate.setHours(23, 59, 59, 999);
+                    break;
+            }
+            document.getElementById('calendarSection').classList.add('hidden');
+            applyDateRangeAndClose();
+        }
+
+        function updatePresetButtons() {
+            document.querySelectorAll('.preset-btn').forEach(btn => {
+                const preset = btn.getAttribute('data-preset');
+                if (preset === currentPreset) {
+                    btn.classList.add('bg-purple-600', 'text-white');
+                    btn.classList.remove('bg-slate-100', 'hover:bg-purple-100', 'hover:text-purple-700');
+                } else {
+                    btn.classList.remove('bg-purple-600', 'text-white');
+                    btn.classList.add('bg-slate-100', 'hover:bg-purple-100', 'hover:text-purple-700');
+                }
+            });
+        }
+
+        function isSameDay(d1, d2) { return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate(); }
+        function formatDateShort(date) { return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+        function formatDateForUrl(date) { return date.toISOString().split('T')[0]; }
+
+        function clearDateRange() { rangeStartDate = null; rangeEndDate = null; currentPreset = 'all'; renderCalendar(); updateDateRangeLabel(); }
+
+        function applyDateRangeAndClose() {
+            if (!rangeStartDate || !rangeEndDate) { alert('Please select both start and end dates'); return; }
+            window.location.href = `/purchase-orders?startDate=${formatDateForUrl(rangeStartDate)}&endDate=${formatDateForUrl(rangeEndDate)}`;
+        }
+
+        function updateDateRangeLabel() {
+            const label = document.getElementById('dateRangeLabel');
+            if (currentPreset === 'all') label.textContent = 'All Purchase Orders';
+            else if (currentPreset === '24h') label.textContent = 'Last 24 Hours';
+            else if (currentPreset === '48h') label.textContent = 'Last 48 Hours';
+            else if (currentPreset === '7d') label.textContent = 'Last 7 Days';
+            else if (currentPreset === '30d') label.textContent = 'Last 30 Days';
+            else if (currentPreset === '90d') label.textContent = 'Last 90 Days';
+            else if (currentPreset === 'custom' && rangeStartDate && rangeEndDate) label.textContent = `${formatDateShort(rangeStartDate)} - ${formatDateShort(rangeEndDate)}`;
+            else if (urlStartDate && urlEndDate) label.textContent = `${urlStartDate} to ${urlEndDate}`;
+            updatePresetButtons();
+        }
+
+        function updateSelectedRangeDisplay() {
+            const display = document.getElementById('selectedRangeDisplay');
+            if (!rangeStartDate) display.textContent = 'Click to select start date, then end date';
+            else if (!rangeEndDate) display.textContent = `Start: ${formatDateShort(rangeStartDate)} - Click to select end date`;
+            else display.textContent = `${formatDateShort(rangeStartDate)} - ${formatDateShort(rangeEndDate)}`;
         }
 
         async function syncPurchaseOrders() {

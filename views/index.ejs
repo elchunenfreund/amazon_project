@@ -419,6 +419,10 @@
                             <div>Traffic</div>
                             <div class="text-[8px] text-slate-400 font-normal normal-case">Glance Views</div>
                         </th>
+                        <th class="p-6 text-center">
+                            <div>Received</div>
+                            <div class="text-[8px] text-slate-400 font-normal normal-case">PO Receiving</div>
+                        </th>
                         <th class="p-6">Last PO</th>
                         <th class="p-6">Comment</th>
                         <th class="p-6">Snooze</th>
@@ -453,25 +457,26 @@
                                 <% } %>
                             </td>
 
-                            <td class="p-6 text-center stock-cell font-black text-base <%= (item.changedFields && (item.changedFields.includes('availability') || item.changedFields.includes('stock'))) ? 'ring-2 ring-red-500 ring-inset bg-red-50' : '' %>"
+                            <td class="p-6 text-center stock-cell font-black text-base <%= (item.changedFields && (item.changedFields.includes('availability') || item.changedFields.includes('stock'))) ? 'bg-amber-50' : '' %>"
                                 data-availability-val="<%= (item.availability || '').toUpperCase() %>"
                                 data-stocklevel-val="<%= (item.stock_level || '').toUpperCase() %>">
 
+                                <% const stockChanged = item.changedFields && (item.changedFields.includes('availability') || item.changedFields.includes('stock')); %>
                                 <% if(item.availability === 'In Stock') { %>
-                                    <div class="text-emerald-600 uppercase">IN STOCK</div>
+                                    <div class="text-emerald-600 uppercase <%= stockChanged ? 'inline-block ring-2 ring-red-500 rounded px-2 py-1' : '' %>">IN STOCK</div>
                                 <% } else if(item.availability === 'Back Order') { %>
-                                    <div class="text-amber-600 uppercase">BACK ORDER</div>
+                                    <div class="text-amber-600 uppercase <%= stockChanged ? 'inline-block ring-2 ring-red-500 rounded px-2 py-1' : '' %>">BACK ORDER</div>
                                 <% } else if(item.availability === 'Doggy') { %>
-                                    <div class="text-purple-600 uppercase font-bold">
+                                    <div class="text-purple-600 uppercase font-bold <%= stockChanged ? 'inline-block ring-2 ring-red-500 rounded px-2 py-1' : '' %>">
                                         <span class="text-xl">🐕</span> DOGGY
                                     </div>
                                     <div class="mt-1 text-[9px] text-purple-900 bg-purple-200 border border-purple-400 rounded px-1 py-0.5">
                                         Invalid Page
                                     </div>
                                 <% } else if(item.availability === 'Pending') { %>
-                                    <div class="text-slate-400 uppercase italic">PENDING</div>
+                                    <div class="text-slate-400 uppercase italic <%= stockChanged ? 'inline-block ring-2 ring-red-500 rounded px-2 py-1' : '' %>">PENDING</div>
                                 <% } else { %>
-                                    <div class="text-rose-600 uppercase">UNAVAILABLE</div>
+                                    <div class="text-rose-600 uppercase <%= stockChanged ? 'inline-block ring-2 ring-red-500 rounded px-2 py-1' : '' %>">UNAVAILABLE</div>
                                 <% } %>
 
                                 <% if(item.stock_level && item.stock_level.includes('Low Stock')) { %>
@@ -481,12 +486,20 @@
                                 <% } %>
                             </td>
 
-                            <td class="p-6 text-base font-black seller-cell <%= (item.seller && item.seller.includes('Amazon')) ? 'text-blue-600' : 'text-slate-500' %> <%= (item.changedFields && item.changedFields.includes('seller')) ? 'ring-2 ring-red-500 ring-inset bg-red-50' : '' %>" data-seller-val="<%= item.seller %>">
-                                <%= item.seller %>
+                            <td class="p-6 text-base font-black seller-cell <%= (item.seller && item.seller.includes('Amazon')) ? 'text-blue-600' : 'text-slate-500' %> <%= (item.changedFields && item.changedFields.includes('seller')) ? 'bg-amber-50' : '' %>" data-seller-val="<%= item.seller %>">
+                                <% if (item.changedFields && item.changedFields.includes('seller')) { %>
+                                    <span class="inline-block ring-2 ring-red-500 rounded px-2 py-1"><%= item.seller %></span>
+                                <% } else { %>
+                                    <%= item.seller %>
+                                <% } %>
                             </td>
 
-                            <td class="p-6 text-xl font-black text-slate-900 price-cell text-base <%= (item.changedFields && item.changedFields.includes('price')) ? 'ring-2 ring-red-500 ring-inset bg-red-50' : '' %>">
-                                <%= item.price %>
+                            <td class="p-6 text-xl font-black text-slate-900 price-cell text-base <%= (item.changedFields && item.changedFields.includes('price')) ? 'bg-amber-50' : '' %>">
+                                <% if (item.changedFields && item.changedFields.includes('price')) { %>
+                                    <span class="inline-block ring-2 ring-red-500 rounded px-2 py-1"><%= item.price %></span>
+                                <% } else { %>
+                                    <%= item.price %>
+                                <% } %>
                                 <% if(item.changedFields && item.changedFields.includes('price') && item.previousPrice) { %>
                                     <%
                                     // Parse prices to calculate difference
@@ -526,6 +539,28 @@
                                 <% if (item.trafficData && item.trafficData.glanceViews > 0) { %>
                                     <div class="font-bold text-orange-600"><%= item.trafficData.glanceViews.toLocaleString() %></div>
                                     <div class="text-[10px] text-slate-500">views</div>
+                                <% } else { %>
+                                    <span class="text-slate-400">-</span>
+                                <% } %>
+                            </td>
+                            <!-- Received Column -->
+                            <td class="p-6 text-center text-sm">
+                                <% if (item.receivingData && item.receivingData.totalOrdered > 0) { %>
+                                    <%
+                                    const inbound = Math.max(0, item.receivingData.totalOrdered - item.receivingData.totalReceived);
+                                    const pctReceived = Math.round((item.receivingData.totalReceived / item.receivingData.totalOrdered) * 100);
+                                    %>
+                                    <div class="font-bold <%= item.receivingData.totalReceived >= item.receivingData.totalOrdered ? 'text-green-600' : 'text-amber-600' %>">
+                                        <%= item.receivingData.totalReceived.toLocaleString() %>
+                                    </div>
+                                    <div class="text-[10px] text-slate-500"><%= pctReceived %>% of <%= item.receivingData.totalOrdered.toLocaleString() %></div>
+                                    <% if (inbound > 0) { %>
+                                    <div class="mt-1">
+                                        <span class="bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded text-[10px] font-medium">
+                                            +<%= inbound.toLocaleString() %> inbound
+                                        </span>
+                                    </div>
+                                    <% } %>
                                 <% } else { %>
                                     <span class="text-slate-400">-</span>
                                 <% } %>

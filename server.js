@@ -226,6 +226,28 @@ app.get('/', async (req, res) => {
             poCountMap[row.asin] = parseInt(row.po_count);
         });
 
+        // Get aggregated receiving data by ASIN (for Received column)
+        const receivingDataResult = await pool.query(`
+            SELECT
+                asin,
+                SUM(ordered_quantity) as total_ordered,
+                SUM(acknowledged_quantity) as total_accepted,
+                SUM(received_quantity) as total_received,
+                MAX(last_receiving_date) as last_receiving_date
+            FROM po_line_items
+            WHERE asin IS NOT NULL
+            GROUP BY asin
+        `);
+        const receivingDataMap = {};
+        receivingDataResult.rows.forEach(row => {
+            receivingDataMap[row.asin] = {
+                totalOrdered: parseInt(row.total_ordered) || 0,
+                totalAccepted: parseInt(row.total_accepted) || 0,
+                totalReceived: parseInt(row.total_received) || 0,
+                lastReceivingDate: row.last_receiving_date
+            };
+        });
+
         // Get latest sales data (last 30 days) from vendor_reports
         const salesDataMap = {};
         const salesResult = await pool.query(`
@@ -316,9 +338,10 @@ app.get('/', async (req, res) => {
             latest.lastPO = lastPOMap[asin] || null;
             latest.poCount = poCountMap[asin] || 0;
 
-            // Add sales and traffic data
+            // Add sales, traffic, and receiving data
             latest.salesData = salesDataMap[asin] || null;
             latest.trafficData = trafficDataMap[asin] || null;
+            latest.receivingData = receivingDataMap[asin] || null;
 
             latest.history = history.map(row => ({
                 ...row,
@@ -366,6 +389,7 @@ app.get('/', async (req, res) => {
                     poCount: poCountMap[product.asin] || 0,
                     salesData: salesDataMap[product.asin] || null,
                     trafficData: trafficDataMap[product.asin] || null,
+                    receivingData: receivingDataMap[product.asin] || null,
                 };
                 dashboardData.push(placeholder);
             }
@@ -2634,18 +2658,38 @@ app.get('/vendor-analytics', async (req, res) => {
 // Purchase Orders Page
 app.get('/purchase-orders', async (req, res) => {
     try {
-        // Get date range from query params or default to last 90 days
-        const endDate = req.query.endDate || new Date().toISOString().split('T')[0];
-        const startDate = req.query.startDate || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        // Get date range from query params
+        const endDate = req.query.endDate;
+        const startDate = req.query.startDate;
 
-        // Get POs from database filtered by date (use ship_window_start as fallback for NULL po_date)
-        const posResult = await pool.query(
-            `SELECT * FROM purchase_orders
-             WHERE COALESCE(po_date, ship_window_start::date, created_at::date) >= $1
-               AND COALESCE(po_date, ship_window_start::date, created_at::date) <= $2
-             ORDER BY COALESCE(po_date, ship_window_start::date, created_at::date) DESC`,
-            [startDate, endDate]
-        );
+        // If no dates provided, show ALL purchase orders (no date filter)
+        let posResult;
+        let displayStartDate, displayEndDate;
+
+        if (!startDate && !endDate) {
+            // "All" preset - no date filtering
+            posResult = await pool.query(
+                `SELECT * FROM purchase_orders
+                 ORDER BY COALESCE(po_date, ship_window_start::date, created_at::date) DESC`
+            );
+            displayStartDate = 'All';
+            displayEndDate = 'Time';
+        } else {
+            // Use provided dates or default to last 90 days
+            const actualEndDate = endDate || new Date().toISOString().split('T')[0];
+            const actualStartDate = startDate || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+            // Get POs from database filtered by date (use ship_window_start as fallback for NULL po_date)
+            posResult = await pool.query(
+                `SELECT * FROM purchase_orders
+                 WHERE COALESCE(po_date, ship_window_start::date, created_at::date) >= $1
+                   AND COALESCE(po_date, ship_window_start::date, created_at::date) <= $2
+                 ORDER BY COALESCE(po_date, ship_window_start::date, created_at::date) DESC`,
+                [actualStartDate, actualEndDate]
+            );
+            displayStartDate = actualStartDate;
+            displayEndDate = actualEndDate;
+        }
 
         // Get all unique ASINs from POs
         const allAsins = new Set();
@@ -2757,8 +2801,8 @@ app.get('/purchase-orders', async (req, res) => {
             vendorSkus,
             inventoryByAsin,
             receivingData,
-            startDate,
-            endDate
+            startDate: displayStartDate,
+            endDate: displayEndDate
         });
     } catch (err) {
         console.error('Purchase orders error:', err);
