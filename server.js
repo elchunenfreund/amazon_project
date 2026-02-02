@@ -3692,6 +3692,51 @@ app.get('/api/purchase-orders/debug-receiving', async (req, res) => {
     }
 });
 
+// API: Debug - check Vendor Shipments API for receiving data
+app.get('/api/purchase-orders/debug-shipments', async (req, res) => {
+    try {
+        const accessToken = await getValidAccessToken();
+
+        // Try the Vendor Shipments API - this should have receiving/delivery status
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+        const url = `https://sellingpartnerapi-na.amazon.com/vendor/shipping/v1/shipmentConfirmations?limit=10&createdAfter=${encodeURIComponent(thirtyDaysAgo)}`;
+
+        const response = await fetch(url, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            // Try alternative endpoint if this fails
+            const altUrl = `https://sellingpartnerapi-na.amazon.com/vendor/directFulfillment/shipping/v1/shipments?limit=10&createdAfter=${encodeURIComponent(thirtyDaysAgo)}`;
+            const altResponse = await fetch(altUrl, {
+                headers: {
+                    'x-amz-access-token': accessToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+            const altData = await altResponse.json();
+
+            return res.json({
+                primaryEndpoint: { status: response.status, error: data },
+                alternativeEndpoint: { status: altResponse.status, data: altData }
+            });
+        }
+
+        res.json({
+            success: true,
+            shipments: data.payload?.shipmentConfirmations || data.payload || data,
+            totalCount: (data.payload?.shipmentConfirmations || []).length
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API: Debug - check PO database status
 app.get('/api/purchase-orders/debug', async (req, res) => {
     try {
