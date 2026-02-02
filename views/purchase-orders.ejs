@@ -161,10 +161,43 @@
                 <table class="w-full text-sm">
                     <thead class="bg-slate-900 text-white">
                         <tr>
-                            <th class="px-4 py-3 text-left font-bold">PO Number</th>
-                            <th class="px-4 py-3 text-left font-bold">Vendor Code</th>
-                            <th class="px-4 py-3 text-left font-bold">Date</th>
-                            <th class="px-4 py-3 text-center font-bold">Status</th>
+                            <th class="px-4 py-3 text-left font-bold cursor-pointer hover:bg-slate-800" onclick="sortColumn('po_number')">
+                                <div class="flex items-center gap-1">
+                                    PO Number
+                                    <span class="text-xs"><%= (typeof currentSort !== 'undefined' && currentSort.sortBy === 'po_number') ? (currentSort.sortDir === 'asc' ? '▲' : '▼') : '↕' %></span>
+                                </div>
+                            </th>
+                            <th class="px-4 py-3 text-left font-bold">
+                                <div>Vendor Code</div>
+                                <select onchange="applyVendorFilter()" id="vendorFilter" class="mt-1 text-xs bg-slate-800 text-white border border-slate-700 rounded px-2 py-1">
+                                    <option value="all" <%= (typeof currentFilters === 'undefined' || currentFilters.filterVendor === 'all') ? 'selected' : '' %>>All Vendors</option>
+                                    <% if (typeof uniqueVendors !== 'undefined' && uniqueVendors.length > 0) { %>
+                                        <% uniqueVendors.forEach(vendor => { %>
+                                            <option value="<%= vendor %>" <%= (typeof currentFilters !== 'undefined' && currentFilters.filterVendor === vendor) ? 'selected' : '' %>><%= vendor %></option>
+                                        <% }); %>
+                                    <% } %>
+                                </select>
+                            </th>
+                            <th class="px-4 py-3 text-left font-bold cursor-pointer hover:bg-slate-800" onclick="sortColumn('po_date')">
+                                <div class="flex items-center gap-1">
+                                    Date
+                                    <span class="text-xs"><%= (typeof currentSort !== 'undefined' && currentSort.sortBy === 'po_date') ? (currentSort.sortDir === 'asc' ? '▲' : '▼') : '↕' %></span>
+                                </div>
+                            </th>
+                            <th class="px-4 py-3 text-center font-bold cursor-pointer hover:bg-slate-800" onclick="sortColumn('po_status')">
+                                <div class="flex items-center justify-center gap-1">
+                                    Status
+                                    <span class="text-xs"><%= (typeof currentSort !== 'undefined' && currentSort.sortBy === 'po_status') ? (currentSort.sortDir === 'asc' ? '▲' : '▼') : '↕' %></span>
+                                </div>
+                                <select onchange="applyStatusFilterPO()" id="statusFilter" class="mt-1 text-xs bg-slate-800 text-white border border-slate-700 rounded px-2 py-1" onclick="event.stopPropagation()">
+                                    <option value="all" <%= (typeof currentFilters === 'undefined' || currentFilters.filterStatus === 'all') ? 'selected' : '' %>>All Status</option>
+                                    <% if (typeof uniqueStatuses !== 'undefined' && uniqueStatuses.length > 0) { %>
+                                        <% uniqueStatuses.forEach(status => { %>
+                                            <option value="<%= status %>" <%= (typeof currentFilters !== 'undefined' && currentFilters.filterStatus === status) ? 'selected' : '' %>><%= status %></option>
+                                        <% }); %>
+                                    <% } %>
+                                </select>
+                            </th>
                             <th class="px-4 py-3 text-left font-bold">Delivery Window</th>
                             <th class="px-4 py-3 text-center font-bold">Items</th>
                             <th class="px-4 py-3 text-left font-bold">Ship To</th>
@@ -520,6 +553,48 @@
                 syncBtnText.textContent = 'Sync POs';
                 syncSpinner.classList.add('hidden');
             }
+        }
+
+        // === SERVER-SIDE SORTING & FILTERING FUNCTIONS ===
+        function sortColumn(column) {
+            const url = new URL(window.location);
+            const currentSort = url.searchParams.get('sortBy');
+            const currentDir = url.searchParams.get('sortDir') || 'desc';
+
+            if (currentSort === column) {
+                url.searchParams.set('sortDir', currentDir === 'asc' ? 'desc' : 'asc');
+            } else {
+                url.searchParams.set('sortBy', column);
+                url.searchParams.set('sortDir', 'asc');
+            }
+
+            window.location.href = url.toString();
+        }
+
+        function applyStatusFilterPO() {
+            const status = document.getElementById('statusFilter').value;
+            const url = new URL(window.location);
+
+            if (status === 'all') {
+                url.searchParams.delete('filterStatus');
+            } else {
+                url.searchParams.set('filterStatus', status);
+            }
+
+            window.location.href = url.toString();
+        }
+
+        function applyVendorFilter() {
+            const vendor = document.getElementById('vendorFilter').value;
+            const url = new URL(window.location);
+
+            if (vendor === 'all') {
+                url.searchParams.delete('filterVendor');
+            } else {
+                url.searchParams.set('filterVendor', vendor);
+            }
+
+            window.location.href = url.toString();
         }
 
         async function syncReceivingStatus() {

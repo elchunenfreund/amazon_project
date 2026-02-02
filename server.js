@@ -174,6 +174,13 @@ function formatMontrealDateTime(date) {
 
 app.get('/', async (req, res) => {
     try {
+        // === EXTRACT QUERY PARAMETERS FOR SORTING AND FILTERING ===
+        const sortBy = req.query.sortBy || 'default'; // default, asin, price, availability, seller, sales, traffic, received, lastPO
+        const sortDir = req.query.sortDir || 'asc'; // asc, desc
+        const filterStatus = req.query.filterStatus ? req.query.filterStatus.split(',') : [];
+        const filterSeller = req.query.filterSeller || 'all';
+        const searchQuery = req.query.search || '';
+
         const result = await pool.query(`SELECT * FROM daily_reports ORDER BY asin, check_date DESC`);
         const grouped = {};
         result.rows.forEach(row => {
@@ -398,16 +405,122 @@ app.get('/', async (req, res) => {
         const timeResult = await pool.query(`SELECT check_date FROM daily_reports ORDER BY check_date DESC LIMIT 1`);
         const lastSync = formatMontrealTime(timeResult.rows[0]?.check_date);
 
-        // Sort: snoozed items to bottom, then by hasChanged, then by ASIN
-        dashboardData.sort((a, b) => {
-            if (a.isSnoozed !== b.isSnoozed) return a.isSnoozed ? 1 : -1;
-            return (b.hasChanged - a.hasChanged) || a.asin.localeCompare(b.asin);
-        });
+        // === SERVER-SIDE FILTERING ===
+        let filteredData = dashboardData;
+
+        // Filter by status (availability)
+        if (filterStatus.length > 0 && !filterStatus.includes('all')) {
+            filteredData = filteredData.filter(item => {
+                const availability = (item.availability || '').toUpperCase();
+                return filterStatus.some(status => {
+                    if (status === 'IN STOCK') return availability === 'IN STOCK';
+                    if (status === 'BACK ORDER') return availability === 'BACK ORDER';
+                    if (status === 'UNAVAILABLE') return availability === 'UNAVAILABLE';
+                    if (status === 'DOGGY') return availability === 'DOGGY';
+                    if (status === 'LOW STOCK') return availability.includes('LOW') || (item.stock_level && item.stock_level.toString().includes('left'));
+                    if (status === 'PENDING') return availability === 'PENDING';
+                    return false;
+                });
+            });
+        }
+
+        // Filter by seller
+        if (filterSeller !== 'all') {
+            filteredData = filteredData.filter(item => {
+                if (filterSeller === 'Amazon') return item.seller === 'Amazon';
+                if (filterSeller === '3rd Party') return item.seller && item.seller !== 'Amazon' && item.seller !== 'N/A';
+                return true;
+            });
+        }
+
+        // Search filter (ASIN or product title)
+        if (searchQuery) {
+            const searchLower = searchQuery.toLowerCase();
+            filteredData = filteredData.filter(item =>
+                (item.asin || '').toLowerCase().includes(searchLower) ||
+                (item.header || '').toLowerCase().includes(searchLower)
+            );
+        }
+
+        // === SERVER-SIDE SORTING ===
+        if (sortBy === 'default') {
+            // Default: snoozed items to bottom, then by hasChanged, then by ASIN
+            filteredData.sort((a, b) => {
+                if (a.isSnoozed !== b.isSnoozed) return a.isSnoozed ? 1 : -1;
+                return (b.hasChanged - a.hasChanged) || a.asin.localeCompare(b.asin);
+            });
+        } else {
+            filteredData.sort((a, b) => {
+                let aVal, bVal;
+
+                if (sortBy === 'asin') {
+                    aVal = a.asin || '';
+                    bVal = b.asin || '';
+                    return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                }
+
+                if (sortBy === 'price') {
+                    const parsePrice = (p) => {
+                        if (!p || p === 'N/A') return -Infinity;
+                        const match = String(p).match(/[\d.]+/);
+                        return match ? parseFloat(match[0]) : -Infinity;
+                    };
+                    aVal = parsePrice(a.price);
+                    bVal = parsePrice(b.price);
+                    return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+
+                if (sortBy === 'availability') {
+                    aVal = a.availability || '';
+                    bVal = b.availability || '';
+                    return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                }
+
+                if (sortBy === 'seller') {
+                    aVal = a.seller || '';
+                    bVal = b.seller || '';
+                    return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+                }
+
+                if (sortBy === 'sales') {
+                    aVal = a.salesData?.shippedUnits || 0;
+                    bVal = b.salesData?.shippedUnits || 0;
+                    return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+
+                if (sortBy === 'traffic') {
+                    aVal = a.trafficData?.glanceViews || 0;
+                    bVal = b.trafficData?.glanceViews || 0;
+                    return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+
+                if (sortBy === 'received') {
+                    aVal = a.receivingData?.totalReceived || 0;
+                    bVal = b.receivingData?.totalReceived || 0;
+                    return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+
+                if (sortBy === 'lastPO') {
+                    aVal = a.lastPO?.po_date ? new Date(a.lastPO.po_date).getTime() : 0;
+                    bVal = b.lastPO?.po_date ? new Date(b.lastPO.po_date).getTime() : 0;
+                    return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+                }
+
+                return 0;
+            });
+        }
 
         // Get list of all ASINs for comparison dropdown
         const allAsins = productMeta.rows.map(row => row.asin).sort();
 
-        res.render('index', { reports: dashboardData, lastSyncTime: lastSync, allAsins, globalLastOrderDate });
+        res.render('index', {
+            reports: filteredData,
+            lastSyncTime: lastSync,
+            allAsins,
+            globalLastOrderDate,
+            currentSort: { sortBy, sortDir },
+            currentFilters: { filterStatus, filterSeller, searchQuery }
+        });
     } catch (err) {
         res.status(500).send(err.message);
     }
@@ -2504,11 +2617,16 @@ app.get('/vendor-analytics', async (req, res) => {
     try {
         // Get all tracked ASINs
         const asinsResult = await pool.query('SELECT DISTINCT asin FROM products ORDER BY asin');
-        const asins = asinsResult.rows.map(r => r.asin);
+        let asins = asinsResult.rows.map(r => r.asin);
 
         // Get date range from query params or default to last 30 days
         const endDate = req.query.endDate || new Date().toISOString().split('T')[0];
         const startDate = req.query.startDate || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+
+        // === EXTRACT SORTING AND FILTERING PARAMS ===
+        const sortBy = req.query.sortBy || 'asin'; // asin, status, sales, traffic, inventory, lastOrdered
+        const sortDir = req.query.sortDir || 'asc';
+        const filterStatus = req.query.filterStatus || 'all'; // all, in-stock, unavailable, back-order
 
         // Get stored report data for the date range
         const reportsResult = await pool.query(
@@ -2636,8 +2754,76 @@ app.get('/vendor-analytics', async (req, res) => {
         // Get filter ASIN from query params
         const filterAsin = req.query.asin || null;
 
+        // === SERVER-SIDE FILTERING ===
+        let filteredAsins = asins;
+
+        // Filter by availability status
+        if (filterStatus !== 'all') {
+            filteredAsins = filteredAsins.filter(asin => {
+                const tracker = asinTrackerData[asin];
+                if (!tracker) return false;
+
+                const availability = (tracker.availability || '').toUpperCase();
+
+                if (filterStatus === 'in-stock') return availability === 'IN STOCK';
+                if (filterStatus === 'unavailable') return availability === 'UNAVAILABLE';
+                if (filterStatus === 'back-order') return availability === 'BACK ORDER';
+
+                return true;
+            });
+        }
+
+        // === SERVER-SIDE SORTING ===
+        filteredAsins.sort((asinA, asinB) => {
+            let aVal, bVal;
+
+            if (sortBy === 'asin') {
+                aVal = asinA;
+                bVal = asinB;
+                return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            }
+
+            if (sortBy === 'status') {
+                aVal = asinTrackerData[asinA]?.availability || '';
+                bVal = asinTrackerData[asinB]?.availability || '';
+                return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            }
+
+            if (sortBy === 'sales') {
+                const salesA = dataByAsin[asinA]?.['GET_VENDOR_SALES_REPORT'];
+                const salesB = dataByAsin[asinB]?.['GET_VENDOR_SALES_REPORT'];
+                aVal = salesA?.shippedUnits || 0;
+                bVal = salesB?.shippedUnits || 0;
+                return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+
+            if (sortBy === 'traffic') {
+                const trafficA = dataByAsin[asinA]?.['GET_VENDOR_TRAFFIC_REPORT'];
+                const trafficB = dataByAsin[asinB]?.['GET_VENDOR_TRAFFIC_REPORT'];
+                aVal = trafficA?.glanceViews || 0;
+                bVal = trafficB?.glanceViews || 0;
+                return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+
+            if (sortBy === 'inventory') {
+                const invA = dataByAsin[asinA]?.['GET_VENDOR_REAL_TIME_INVENTORY_REPORT'];
+                const invB = dataByAsin[asinB]?.['GET_VENDOR_REAL_TIME_INVENTORY_REPORT'];
+                aVal = invA?.highlyAvailableInventory || 0;
+                bVal = invB?.highlyAvailableInventory || 0;
+                return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+
+            if (sortBy === 'lastOrdered') {
+                aVal = lastOrderedByAsin[asinA]?.date ? new Date(lastOrderedByAsin[asinA].date).getTime() : 0;
+                bVal = lastOrderedByAsin[asinB]?.date ? new Date(lastOrderedByAsin[asinB].date).getTime() : 0;
+                return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+
+            return 0;
+        });
+
         res.render('vendor-analytics', {
-            asins,
+            asins: filteredAsins,
             dataByAsin,
             asinTrackerData,
             lastOrderedByAsin,
@@ -2647,7 +2833,9 @@ app.get('/vendor-analytics', async (req, res) => {
             reportTypes: VENDOR_REPORT_TYPES,
             startDate,
             endDate,
-            filterAsin
+            filterAsin,
+            currentSort: { sortBy, sortDir },
+            currentFilters: { filterStatus }
         });
     } catch (err) {
         console.error('Vendor analytics error:', err);
@@ -2661,6 +2849,12 @@ app.get('/purchase-orders', async (req, res) => {
         // Get date range from query params
         const endDate = req.query.endDate;
         const startDate = req.query.startDate;
+
+        // === EXTRACT SORTING AND FILTERING PARAMS ===
+        const sortBy = req.query.sortBy || 'po_date'; // po_number, po_date, po_status
+        const sortDir = req.query.sortDir || 'desc';
+        const filterStatus = req.query.filterStatus || 'all';
+        const filterVendor = req.query.filterVendor || 'all';
 
         // If no dates provided, show ALL purchase orders (no date filter)
         let posResult;
@@ -2795,14 +2989,66 @@ app.get('/purchase-orders', async (req, res) => {
             });
         }
 
+        // === SERVER-SIDE FILTERING ===
+        let filteredPOs = posResult.rows;
+
+        // Get unique statuses and vendors for filter dropdowns
+        const uniqueStatuses = [...new Set(posResult.rows.map(po => po.po_status).filter(Boolean))].sort();
+        const uniqueVendors = [...new Set(posResult.rows.map(po => {
+            const sellingParty = typeof po.selling_party === 'string' ? JSON.parse(po.selling_party) : po.selling_party;
+            return sellingParty?.partyId;
+        }).filter(Boolean))].sort();
+
+        // Filter by status
+        if (filterStatus !== 'all') {
+            filteredPOs = filteredPOs.filter(po => po.po_status === filterStatus);
+        }
+
+        // Filter by vendor code
+        if (filterVendor !== 'all') {
+            filteredPOs = filteredPOs.filter(po => {
+                const sellingParty = typeof po.selling_party === 'string' ? JSON.parse(po.selling_party) : po.selling_party;
+                return sellingParty?.partyId === filterVendor;
+            });
+        }
+
+        // === SERVER-SIDE SORTING ===
+        filteredPOs.sort((a, b) => {
+            let aVal, bVal;
+
+            if (sortBy === 'po_number') {
+                aVal = a.po_number || '';
+                bVal = b.po_number || '';
+                return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            }
+
+            if (sortBy === 'po_date') {
+                aVal = a.po_date ? new Date(a.po_date).getTime() : (a.ship_window_start ? new Date(a.ship_window_start).getTime() : 0);
+                bVal = b.po_date ? new Date(b.po_date).getTime() : (b.ship_window_start ? new Date(b.ship_window_start).getTime() : 0);
+                return sortDir === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+
+            if (sortBy === 'po_status') {
+                aVal = a.po_status || '';
+                bVal = b.po_status || '';
+                return sortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            }
+
+            return 0;
+        });
+
         res.render('purchase-orders', {
-            purchaseOrders: posResult.rows,
+            purchaseOrders: filteredPOs,
             productTitles,
             vendorSkus,
             inventoryByAsin,
             receivingData,
             startDate: displayStartDate,
-            endDate: displayEndDate
+            endDate: displayEndDate,
+            currentSort: { sortBy, sortDir },
+            currentFilters: { filterStatus, filterVendor },
+            uniqueStatuses,
+            uniqueVendors
         });
     } catch (err) {
         console.error('Purchase orders error:', err);

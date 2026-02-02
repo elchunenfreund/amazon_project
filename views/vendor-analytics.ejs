@@ -160,30 +160,61 @@
                             <th class="px-2 py-3 text-center bg-slate-900" style="width: 40px;">
                                 <input type="checkbox" id="selectAll" onchange="toggleSelectAll()" class="w-4 h-4 cursor-pointer">
                             </th>
-                            <th class="sticky-col px-4 py-3 text-left font-bold bg-slate-900" style="left: 40px;">ASIN</th>
-                            <th class="px-3 py-3 text-center font-bold bg-slate-900 col-status" style="min-width: 130px;">
-                                <div>Product Status</div>
-                                <div class="text-xs font-normal text-slate-400">Availability & Price</div>
+                            <th class="sticky-col px-4 py-3 text-left font-bold bg-slate-900 cursor-pointer hover:bg-slate-800" style="left: 40px;" onclick="sortColumnVA('asin')">
+                                <div class="flex items-center gap-1">
+                                    ASIN
+                                    <span class="text-xs"><%= (typeof currentSort !== 'undefined' && currentSort.sortBy === 'asin') ? (currentSort.sortDir === 'asc' ? '▲' : '▼') : '↕' %></span>
+                                </div>
                             </th>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-rt-inv" title="GET_VENDOR_REAL_TIME_INVENTORY_REPORT">
-                                <div>RT Inventory</div>
-                                <div class="text-xs font-normal text-slate-400">Highly Available</div>
-                                <div class="text-[10px] font-normal text-blue-400 mt-1">Real-Time API</div>
+                            <th class="px-3 py-3 text-center font-bold bg-slate-900 col-status cursor-pointer hover:bg-slate-800" style="min-width: 130px;" onclick="sortColumnVA('status')">
+                                <div class="flex items-center justify-center gap-1">
+                                    <div>
+                                        <div>Product Status</div>
+                                        <div class="text-xs font-normal text-slate-400">Availability & Price</div>
+                                    </div>
+                                    <span class="text-xs"><%= (typeof currentSort !== 'undefined' && currentSort.sortBy === 'status') ? (currentSort.sortDir === 'asc' ? '▲' : '▼') : '↕' %></span>
+                                </div>
+                                <select onchange="applyStatusFilterVA()" id="statusFilter" class="mt-1 text-xs bg-slate-800 text-white border border-slate-700 rounded px-2 py-1" onclick="event.stopPropagation()">
+                                    <option value="all" <%= (typeof currentFilters === 'undefined' || currentFilters.filterStatus === 'all') ? 'selected' : '' %>>All Status</option>
+                                    <option value="in-stock" <%= (typeof currentFilters !== 'undefined' && currentFilters.filterStatus === 'in-stock') ? 'selected' : '' %>>In Stock</option>
+                                    <option value="unavailable" <%= (typeof currentFilters !== 'undefined' && currentFilters.filterStatus === 'unavailable') ? 'selected' : '' %>>Unavailable</option>
+                                    <option value="back-order" <%= (typeof currentFilters !== 'undefined' && currentFilters.filterStatus === 'back-order') ? 'selected' : '' %>>Back Order</option>
+                                </select>
+                            </th>
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-rt-inv cursor-pointer hover:bg-slate-800" title="GET_VENDOR_REAL_TIME_INVENTORY_REPORT" onclick="sortColumnVA('inventory')">
+                                <div class="flex items-center justify-center gap-1">
+                                    <div>
+                                        <div>RT Inventory</div>
+                                        <div class="text-xs font-normal text-slate-400">Highly Available</div>
+                                        <div class="text-[10px] font-normal text-blue-400 mt-1">Real-Time API</div>
+                                    </div>
+                                    <span class="text-xs"><%= (typeof currentSort !== 'undefined' && currentSort.sortBy === 'inventory') ? (currentSort.sortDir === 'asc' ? '▲' : '▼') : '↕' %></span>
+                                </div>
                             </th>
                             <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-rt-sales" title="GET_VENDOR_REAL_TIME_SALES_REPORT">
                                 <div>RT Sales</div>
                                 <div class="text-xs font-normal text-slate-400">Units & Revenue</div>
                                 <div class="text-[10px] font-normal text-blue-400 mt-1">Real-Time API</div>
                             </th>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-sales" title="GET_VENDOR_SALES_REPORT">
-                                <div>Sales</div>
-                                <div class="text-xs font-normal text-slate-400">Shipped & Ordered</div>
-                                <div class="text-[10px] font-normal text-purple-400 mt-1">Weekly Report</div>
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-sales cursor-pointer hover:bg-slate-800" title="GET_VENDOR_SALES_REPORT" onclick="sortColumnVA('sales')">
+                                <div class="flex items-center justify-center gap-1">
+                                    <div>
+                                        <div>Sales</div>
+                                        <div class="text-xs font-normal text-slate-400">Shipped & Ordered</div>
+                                        <div class="text-[10px] font-normal text-purple-400 mt-1">Weekly Report</div>
+                                    </div>
+                                    <span class="text-xs"><%= (typeof currentSort !== 'undefined' && currentSort.sortBy === 'sales') ? (currentSort.sortDir === 'asc' ? '▲' : '▼') : '↕' %></span>
+                                </div>
                             </th>
-                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-traffic" title="GET_VENDOR_TRAFFIC_REPORT">
-                                <div>Traffic</div>
-                                <div class="text-xs font-normal text-slate-400">Glance Views</div>
-                                <div class="text-[10px] font-normal text-purple-400 mt-1">Weekly Report</div>
+                            <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-traffic cursor-pointer hover:bg-slate-800" title="GET_VENDOR_TRAFFIC_REPORT" onclick="sortColumnVA('traffic')">
+                                <div class="flex items-center justify-center gap-1">
+                                    <div>
+                                        <div>Traffic</div>
+                                        <div class="text-xs font-normal text-slate-400">Glance Views</div>
+                                        <div class="text-[10px] font-normal text-purple-400 mt-1">Weekly Report</div>
+                                    </div>
+                                    <span class="text-xs"><%= (typeof currentSort !== 'undefined' && currentSort.sortBy === 'traffic') ? (currentSort.sortDir === 'asc' ? '▲' : '▼') : '↕' %></span>
+                                </div>
                             </th>
                             <th class="report-cell px-3 py-3 text-center font-bold bg-slate-900 col-margin" title="GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT">
                                 <div>Margin</div>
@@ -195,10 +226,15 @@
                                 <div class="text-xs font-normal text-slate-400">On Hand</div>
                                 <div class="text-[10px] font-normal text-purple-400 mt-1">Weekly Report</div>
                             </th>
-                            <th class="px-3 py-3 text-center font-bold bg-slate-900 col-last-ordered" style="min-width: 120px;">
-                                <div>Last Ordered</div>
-                                <div class="text-xs font-normal text-slate-400">PO Date & Count</div>
-                                <div class="text-[10px] font-normal text-emerald-400 mt-1">Purchase Orders</div>
+                            <th class="px-3 py-3 text-center font-bold bg-slate-900 col-last-ordered cursor-pointer hover:bg-slate-800" style="min-width: 120px;" onclick="sortColumnVA('lastOrdered')">
+                                <div class="flex items-center justify-center gap-1">
+                                    <div>
+                                        <div>Last Ordered</div>
+                                        <div class="text-xs font-normal text-slate-400">PO Date & Count</div>
+                                        <div class="text-[10px] font-normal text-emerald-400 mt-1">Purchase Orders</div>
+                                    </div>
+                                    <span class="text-xs"><%= (typeof currentSort !== 'undefined' && currentSort.sortBy === 'lastOrdered') ? (currentSort.sortDir === 'asc' ? '▲' : '▼') : '↕' %></span>
+                                </div>
                             </th>
                             <th class="px-3 py-3 text-center font-bold bg-slate-900 col-received" style="min-width: 120px;">
                                 <div>Received</div>
@@ -735,6 +771,34 @@
             const startDate = document.getElementById('startDate').value;
             const endDate = document.getElementById('endDate').value;
             window.location.href = `/vendor-analytics?startDate=${startDate}&endDate=${endDate}`;
+        }
+
+        // Sorting and filtering functions
+        function sortColumnVA(column) {
+            const url = new URL(window.location);
+            const currentSort = url.searchParams.get('sortBy');
+            const currentDir = url.searchParams.get('sortDir') || 'asc';
+
+            if (currentSort === column) {
+                // Toggle direction if same column
+                url.searchParams.set('sortDir', currentDir === 'asc' ? 'desc' : 'asc');
+            } else {
+                // New column, start with ascending
+                url.searchParams.set('sortBy', column);
+                url.searchParams.set('sortDir', 'asc');
+            }
+            window.location.href = url.toString();
+        }
+
+        function applyStatusFilterVA() {
+            const status = document.getElementById('statusFilter').value;
+            const url = new URL(window.location);
+            if (status === 'all') {
+                url.searchParams.delete('filterStatus');
+            } else {
+                url.searchParams.set('filterStatus', status);
+            }
+            window.location.href = url.toString();
         }
 
         // Checkbox functions
