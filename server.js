@@ -3714,6 +3714,9 @@ app.get('/api/purchase-orders/debug-closed-pos', async (req, res) => {
             stateCount[state] = (stateCount[state] || 0) + 1;
         });
 
+        // Get sample raw order to see full structure
+        const sampleOrder = generalOrders[0] || null;
+
         res.json({
             closedPOsFromDB: closedPOs.rows,
             queriedPONumbers: poNumbers,
@@ -3721,7 +3724,9 @@ app.get('/api/purchase-orders/debug-closed-pos', async (req, res) => {
             results,
             generalAPIStats: {
                 totalReturned: generalOrders.length,
-                byState: stateCount
+                byState: stateCount,
+                sampleOrderKeys: sampleOrder ? Object.keys(sampleOrder) : [],
+                sampleOrderFull: sampleOrder
             },
             rawFirstOrder: orders[0] || null
         });
