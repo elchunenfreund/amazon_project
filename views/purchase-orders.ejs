@@ -139,7 +139,7 @@
                         </tr>
                         <% } else { %>
                         <% purchaseOrders.forEach(po => { %>
-                        <tr class="hover:bg-slate-50">
+                        <tr id="po-row-<%= po.po_number %>" class="hover:bg-slate-50 transition-all duration-300">
                             <td class="px-4 py-3">
                                 <span class="font-mono font-bold text-slate-800"><%= po.po_number %></span>
                             </td>
@@ -602,6 +602,35 @@
         // Close modal on outside click
         document.getElementById('poModal').addEventListener('click', function(e) {
             if (e.target === this) closePOModal();
+        });
+
+        // Handle URL query parameter to scroll to specific PO
+        document.addEventListener('DOMContentLoaded', function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const targetPO = urlParams.get('po');
+
+            if (targetPO) {
+                const row = document.getElementById('po-row-' + targetPO);
+                if (row) {
+                    // Highlight the row
+                    row.classList.add('bg-blue-100', 'ring-2', 'ring-blue-500', 'ring-inset');
+                    row.classList.remove('hover:bg-slate-50');
+
+                    // Scroll to the row after a short delay
+                    setTimeout(() => {
+                        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+                        // Auto-open the PO details modal
+                        showPODetails(targetPO);
+                    }, 200);
+
+                    // Remove highlight after 5 seconds but keep the row visible
+                    setTimeout(() => {
+                        row.classList.remove('bg-blue-100', 'ring-2', 'ring-blue-500', 'ring-inset');
+                        row.classList.add('hover:bg-slate-50', 'bg-yellow-50');
+                    }, 5000);
+                }
+            }
         });
     </script>
 </body>
