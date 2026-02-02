@@ -156,6 +156,32 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
 // Vendor Reports Sync
 // ============================================
 
+// Helper to align date to week boundary (Sunday = start, Saturday = end)
+function getWeekBoundaries(daysBack = 30) {
+    const now = new Date();
+
+    // Find the most recent Saturday that's at least 3 days ago (for data availability)
+    // Saturday = 6 in JavaScript Date
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    let endSaturday = new Date(threeDaysAgo);
+    while (endSaturday.getDay() !== 6) {
+        endSaturday.setDate(endSaturday.getDate() - 1);
+    }
+
+    // Find the Sunday that starts the week containing our target start date
+    // Go back daysBack days, then find the previous Sunday
+    let startDate = new Date(endSaturday.getTime() - daysBack * 24 * 60 * 60 * 1000);
+    let startSunday = new Date(startDate);
+    while (startSunday.getDay() !== 0) {
+        startSunday.setDate(startSunday.getDate() - 1);
+    }
+
+    return {
+        start: startSunday,
+        end: endSaturday
+    };
+}
+
 async function createReport(accessToken, reportType, startDate, endDate) {
     const reportConfig = VENDOR_REPORT_TYPES[reportType];
 
@@ -168,15 +194,16 @@ async function createReport(accessToken, reportType, startDate, endDate) {
         reportSpec.dataStartTime = startDate.toISOString();
         reportSpec.dataEndTime = endDate.toISOString();
     } else {
-        // Weekly reports need aligned dates and options
-        // Use 3-day lag for weekly data availability
-        const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
-        if (endDate > threeDaysAgo) {
-            endDate = threeDaysAgo;
-        }
+        // Weekly reports need dates aligned to week boundaries
+        // Amazon uses Sunday-Saturday weeks
+        // Also need 3+ day lag for data availability
+        const weekBounds = getWeekBoundaries(30);
 
-        reportSpec.dataStartTime = startDate.toISOString().split('T')[0] + 'T00:00:00Z';
-        reportSpec.dataEndTime = endDate.toISOString().split('T')[0] + 'T23:59:59Z';
+        // Format as date-only strings with time component
+        reportSpec.dataStartTime = weekBounds.start.toISOString().split('T')[0] + 'T00:00:00Z';
+        reportSpec.dataEndTime = weekBounds.end.toISOString().split('T')[0] + 'T23:59:59Z';
+
+        console.log(`[${reportType}] Aligned to week boundaries: ${reportSpec.dataStartTime} to ${reportSpec.dataEndTime}`);
 
         reportSpec.reportOptions = {
             reportPeriod: 'WEEK',
@@ -209,6 +236,35 @@ async function createReport(accessToken, reportType, startDate, endDate) {
     return data.reportId;
 }
 
+async function downloadErrorDocument(accessToken, reportDocumentId) {
+    try {
+        const docResponse = await fetchWithRetry(`https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/documents/${reportDocumentId}`, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const docData = await docResponse.json();
+        const downloadUrl = docData.url;
+
+        const contentResponse = await fetchWithRetry(downloadUrl);
+        let content;
+
+        if (docData.compressionAlgorithm === 'GZIP') {
+            const zlib = require('zlib');
+            const buffer = await contentResponse.arrayBuffer();
+            content = zlib.gunzipSync(Buffer.from(buffer)).toString('utf-8');
+        } else {
+            content = await contentResponse.text();
+        }
+
+        return content.substring(0, 2000); // Limit to first 2000 chars
+    } catch (err) {
+        return `Failed to download error document: ${err.message}`;
+    }
+}
+
 async function waitForReport(accessToken, reportId, maxWaitMs = 120000) {
     const startTime = Date.now();
 
@@ -226,6 +282,14 @@ async function waitForReport(accessToken, reportId, maxWaitMs = 120000) {
             return data.reportDocumentId;
         } else if (data.processingStatus === 'FATAL' || data.processingStatus === 'CANCELLED') {
             console.error(`[Report ${data.processingStatus}] Full response:`, JSON.stringify(data, null, 2));
+
+            // Try to download the error document if available
+            if (data.reportDocumentId) {
+                console.log(`[Report ${data.processingStatus}] Downloading error document...`);
+                const errorContent = await downloadErrorDocument(accessToken, data.reportDocumentId);
+                console.error(`[Report ${data.processingStatus}] Error document content:`, errorContent);
+            }
+
             throw new Error(`Report ${data.processingStatus}: ${data.reportType || 'unknown'} - ${JSON.stringify(data.errors || data)}`);
         }
 
