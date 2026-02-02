@@ -3650,6 +3650,63 @@ app.get('/api/charts/multi-series', async (req, res) => {
     }
 });
 
+// API: Debug - check specific CLOSED POs for receiving data
+app.get('/api/purchase-orders/debug-closed-pos', async (req, res) => {
+    try {
+        const accessToken = await getValidAccessToken();
+
+        // Get some CLOSED PO numbers from our database
+        const closedPOs = await pool.query(`
+            SELECT po_number FROM purchase_orders
+            WHERE po_status = 'Closed'
+            ORDER BY po_date DESC
+            LIMIT 10
+        `);
+
+        if (closedPOs.rows.length === 0) {
+            return res.json({ error: 'No closed POs found in database' });
+        }
+
+        const poNumbers = closedPOs.rows.map(r => r.po_number);
+
+        // Query Amazon API for these specific PO numbers
+        const url = `https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrdersStatus?purchaseOrderNumber=${poNumbers.join(',')}`;
+
+        const response = await fetch(url, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            return res.status(response.status).json({ error: 'API Error', details: data });
+        }
+
+        const orders = data.payload?.ordersStatus || [];
+
+        // Analyze results
+        const results = orders.map(order => ({
+            poNumber: order.purchaseOrderNumber,
+            poState: order.purchaseOrderState,
+            hasItemStatus: (order.purchaseOrderStatus?.itemStatus || []).length > 0,
+            itemStatusCount: (order.purchaseOrderStatus?.itemStatus || []).length,
+            itemStatuses: (order.purchaseOrderStatus?.itemStatus || []).slice(0, 2)
+        }));
+
+        res.json({
+            queriedPONumbers: poNumbers,
+            returnedOrdersCount: orders.length,
+            results,
+            rawFirstOrder: orders[0] || null
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API: Debug - sample receiving status data from Amazon
 app.get('/api/purchase-orders/debug-receiving', async (req, res) => {
     try {
