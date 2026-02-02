@@ -3657,7 +3657,7 @@ app.get('/api/purchase-orders/debug-closed-pos', async (req, res) => {
 
         // Get some CLOSED PO numbers from our database
         const closedPOs = await pool.query(`
-            SELECT po_number FROM purchase_orders
+            SELECT po_number, po_date FROM purchase_orders
             WHERE po_status = 'Closed'
             ORDER BY po_date DESC
             LIMIT 10
@@ -3696,10 +3696,33 @@ app.get('/api/purchase-orders/debug-closed-pos', async (req, res) => {
             itemStatuses: (order.purchaseOrderStatus?.itemStatus || []).slice(0, 2)
         }));
 
+        // Also get stats on what states the general API returns
+        const generalUrl = 'https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrdersStatus?limit=100';
+        const generalResponse = await fetch(generalUrl, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+        const generalData = await generalResponse.json();
+        const generalOrders = generalData.payload?.ordersStatus || [];
+
+        // Count by state
+        const stateCount = {};
+        generalOrders.forEach(o => {
+            const state = o.purchaseOrderState || 'unknown';
+            stateCount[state] = (stateCount[state] || 0) + 1;
+        });
+
         res.json({
+            closedPOsFromDB: closedPOs.rows,
             queriedPONumbers: poNumbers,
             returnedOrdersCount: orders.length,
             results,
+            generalAPIStats: {
+                totalReturned: generalOrders.length,
+                byState: stateCount
+            },
             rawFirstOrder: orders[0] || null
         });
     } catch (err) {
