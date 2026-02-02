@@ -4130,12 +4130,12 @@ app.get('/api/vendor-analytics/data', async (req, res) => {
     }
 });
 
-// API: Backfill real-time reports for daily data (up to 30 days back)
+// API: Backfill real-time reports for daily data
+// Note: RT reports only have data for recent periods (7-14 days max)
 app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
     try {
-        const { daysBack = 30 } = req.body;
-        const maxDaysBack = Math.min(daysBack, 30); // Amazon limits to 30 days
-
+        // RT reports only support recent data - don't try to go back 30 days
+        // Sales: 14 day max span, Inventory: 7 day max span
         const results = {
             salesReport: { success: 0, failed: 0, errors: [] },
             inventoryReport: { success: 0, failed: 0, errors: [] }
@@ -4144,7 +4144,6 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
         const accessToken = await getValidAccessToken();
         const marketplaceId = 'A2EUQ1WTGCTBG2'; // Canada
 
-        // Process in chunks - 14 days for sales, 7 days for inventory
         const today = new Date();
 
         // Helper to create and process a report
@@ -4258,39 +4257,31 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
             }
         }
 
-        // Fetch sales reports in 14-day chunks - use millisecond arithmetic for accuracy
-        for (let daysAgo = maxDaysBack; daysAgo > 0; daysAgo -= 14) {
-            const daysBackEnd = Math.max(0, daysAgo - 14);
-            const chunkEnd = new Date(today.getTime() - daysBackEnd * 24 * 60 * 60 * 1000);
-            const chunkStart = new Date(today.getTime() - daysAgo * 24 * 60 * 60 * 1000);
-
-            const result = await fetchReportChunk('GET_VENDOR_REAL_TIME_SALES_REPORT', chunkStart, chunkEnd);
-            if (result.success) {
-                results.salesReport.success++;
-            } else {
-                results.salesReport.failed++;
-                results.salesReport.errors.push(`${chunkStart.toISOString().split('T')[0]}: ${result.error}`);
-            }
+        // Fetch RT Sales report - max 14 day span, only recent data available
+        const salesStart = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
+        const salesResult = await fetchReportChunk('GET_VENDOR_REAL_TIME_SALES_REPORT', salesStart, today);
+        if (salesResult.success) {
+            results.salesReport.success = 1;
+            results.salesReport.itemCount = salesResult.itemCount;
+        } else {
+            results.salesReport.failed = 1;
+            results.salesReport.errors.push(salesResult.error);
         }
 
-        // Fetch inventory reports in 7-day chunks - use millisecond arithmetic for accuracy
-        for (let daysAgo = maxDaysBack; daysAgo > 0; daysAgo -= 7) {
-            const daysBackEnd = Math.max(0, daysAgo - 7);
-            const chunkEnd = new Date(today.getTime() - daysBackEnd * 24 * 60 * 60 * 1000);
-            const chunkStart = new Date(today.getTime() - daysAgo * 24 * 60 * 60 * 1000);
-
-            const result = await fetchReportChunk('GET_VENDOR_REAL_TIME_INVENTORY_REPORT', chunkStart, chunkEnd);
-            if (result.success) {
-                results.inventoryReport.success++;
-            } else {
-                results.inventoryReport.failed++;
-                results.inventoryReport.errors.push(`${chunkStart.toISOString().split('T')[0]}: ${result.error}`);
-            }
+        // Fetch RT Inventory report - max 7 day span, only recent data available
+        const inventoryStart = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+        const inventoryResult = await fetchReportChunk('GET_VENDOR_REAL_TIME_INVENTORY_REPORT', inventoryStart, today);
+        if (inventoryResult.success) {
+            results.inventoryReport.success = 1;
+            results.inventoryReport.itemCount = inventoryResult.itemCount;
+        } else {
+            results.inventoryReport.failed = 1;
+            results.inventoryReport.errors.push(inventoryResult.error);
         }
 
         res.json({
             success: true,
-            message: `Backfilled ${maxDaysBack} days of real-time data`,
+            message: `Synced real-time data (last 14 days sales, last 7 days inventory)`,
             results
         });
 
