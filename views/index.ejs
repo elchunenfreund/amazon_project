@@ -270,7 +270,7 @@
                     </button>
 
                     <!-- Date Range Picker Dropdown -->
-                    <div id="dateRangePicker" class="hidden absolute top-full left-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-[200] min-w-[340px]">
+                    <div id="dateRangePicker" class="hidden fixed bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-[9999] min-w-[340px]">
                         <!-- Quick Presets -->
                         <div class="flex flex-wrap gap-2 mb-4">
                             <button onclick="setDatePreset('all')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="all">All</button>
@@ -2564,8 +2564,13 @@
 
         function toggleDateRangePicker() {
             const picker = document.getElementById('dateRangePicker');
+            const btn = document.getElementById('dateRangeBtn');
             picker.classList.toggle('hidden');
             if (!picker.classList.contains('hidden')) {
+                // Position the picker below the button using fixed positioning
+                const rect = btn.getBoundingClientRect();
+                picker.style.top = (rect.bottom + 8) + 'px';
+                picker.style.left = rect.left + 'px';
                 renderCalendar();
             }
         }
