@@ -4194,6 +4194,13 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                             'Content-Type': 'application/json'
                         }
                     });
+
+                    // Check for non-JSON responses
+                    const statusContentType = statusResp.headers.get('content-type') || '';
+                    if (!statusContentType.includes('application/json')) {
+                        const text = await statusResp.text();
+                        throw new Error(`Status API returned non-JSON (HTTP ${statusResp.status}): ${text.substring(0, 200)}`);
+                    }
                     const statusData = await statusResp.json();
 
                     if (statusData.processingStatus === 'DONE') {
@@ -4216,6 +4223,13 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                         'Content-Type': 'application/json'
                     }
                 });
+
+                // Check for non-JSON responses
+                const docContentType = docResp.headers.get('content-type') || '';
+                if (!docContentType.includes('application/json')) {
+                    const text = await docResp.text();
+                    throw new Error(`Document API returned non-JSON (HTTP ${docResp.status}): ${text.substring(0, 200)}`);
+                }
                 const docData = await docResp.json();
 
                 // Fetch the actual report content
