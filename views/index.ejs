@@ -270,7 +270,7 @@
                     </button>
 
                     <!-- Date Range Picker Dropdown -->
-                    <div id="dateRangePicker" class="hidden fixed bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-[9999] min-w-[340px]">
+                    <div id="dateRangePicker" class="hidden fixed bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 z-[99999] min-w-[340px]">
                         <!-- Quick Presets -->
                         <div class="flex flex-wrap gap-2 mb-4">
                             <button onclick="setDatePreset('all')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="all">All</button>
@@ -278,16 +278,16 @@
                             <button onclick="setDatePreset('48h')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="48h">48h</button>
                             <button onclick="setDatePreset('7d')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="7d">7 Days</button>
                             <button onclick="setDatePreset('30d')" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="30d">30 Days</button>
-                            <button onclick="showCustomCalendar()" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="custom">Custom Range</button>
+                            <button onclick="showCustomCalendar(event)" class="preset-btn px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 hover:bg-orange-100 hover:text-orange-700 transition-all" data-preset="custom">Custom Range</button>
                         </div>
 
                         <!-- Calendar Section (hidden by default) -->
                         <div id="calendarSection" class="hidden">
                             <!-- Calendar Header -->
                             <div class="flex items-center justify-between mb-2">
-                                <button onclick="changeCalendarMonth(-1)" class="p-1 hover:bg-slate-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
+                                <button onclick="changeCalendarMonth(-1); event.stopPropagation();" class="p-1 hover:bg-slate-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg></button>
                                 <span id="calendarMonthYear" class="font-bold text-slate-700"></span>
-                                <button onclick="changeCalendarMonth(1)" class="p-1 hover:bg-slate-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
+                                <button onclick="changeCalendarMonth(1); event.stopPropagation();" class="p-1 hover:bg-slate-100 rounded-lg"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg></button>
                             </div>
 
                             <!-- Calendar Grid -->
@@ -309,8 +309,8 @@
 
                             <!-- Apply/Clear Buttons -->
                             <div class="flex gap-2 mt-3">
-                                <button onclick="clearDateRange()" class="flex-1 px-3 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 transition-all text-sm">Clear</button>
-                                <button onclick="applyDateRangeAndClose()" class="flex-1 px-3 py-2 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 transition-all text-sm">Apply Filter</button>
+                                <button onclick="clearDateRange(); event.stopPropagation();" class="flex-1 px-3 py-2 bg-slate-100 text-slate-700 font-bold rounded-lg hover:bg-slate-200 transition-all text-sm">Clear</button>
+                                <button onclick="applyDateRangeAndClose(); event.stopPropagation();" class="flex-1 px-3 py-2 bg-orange-600 text-white font-bold rounded-lg hover:bg-orange-700 transition-all text-sm">Apply Filter</button>
                             </div>
                         </div>
                     </div>
@@ -2592,7 +2592,10 @@
             }
         }
 
-        function showCustomCalendar() {
+        function showCustomCalendar(event) {
+            if (event) {
+                event.stopPropagation();
+            }
             const calendarSection = document.getElementById('calendarSection');
             if (calendarSection) {
                 calendarSection.classList.remove('hidden');
@@ -2601,12 +2604,26 @@
             }
         }
 
-        // Close picker when clicking outside
-        document.addEventListener('click', function(e) {
+        // Close picker when clicking outside (but not when clicking inside the calendar)
+        // Set up after DOM is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            // Use mousedown instead of click to prevent issues with date selection
+            document.addEventListener('mousedown', function(e) {
+                const picker = document.getElementById('dateRangePicker');
+                const btn = document.getElementById('dateRangeBtn');
+                // Don't close if clicking inside the picker or button
+                if (picker && !picker.classList.contains('hidden') &&
+                    !picker.contains(e.target) && !btn.contains(e.target)) {
+                    picker.classList.add('hidden');
+                }
+            });
+
+            // Prevent clicks inside the picker from closing it
             const picker = document.getElementById('dateRangePicker');
-            const btn = document.getElementById('dateRangeBtn');
-            if (picker && !picker.contains(e.target) && !btn.contains(e.target)) {
-                picker.classList.add('hidden');
+            if (picker) {
+                picker.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                });
             }
         });
 
@@ -2666,7 +2683,7 @@
                     classes += ' border-2 border-orange-400 font-bold';
                 }
 
-                daysContainer.innerHTML += `<div class="${classes}" onclick="selectDate(${year}, ${month}, ${day})">${day}</div>`;
+                daysContainer.innerHTML += `<div class="${classes}" onclick="selectDate(${year}, ${month}, ${day}); event.stopPropagation();">${day}</div>`;
             }
 
             updateSelectedRangeDisplay();
@@ -2709,6 +2726,11 @@
 
             renderCalendar();
             // Don't close the picker - keep it open so user can see both dates selected
+            // Make sure picker stays visible
+            const picker = document.getElementById('dateRangePicker');
+            if (picker) {
+                picker.classList.remove('hidden');
+            }
         }
 
         function setDatePreset(preset) {
