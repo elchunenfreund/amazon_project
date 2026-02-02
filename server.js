@@ -2521,11 +2521,12 @@ app.get('/purchase-orders', async (req, res) => {
         const endDate = req.query.endDate || new Date().toISOString().split('T')[0];
         const startDate = req.query.startDate || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-        // Get POs from database filtered by date
+        // Get POs from database filtered by date (use ship_window_start as fallback for NULL po_date)
         const posResult = await pool.query(
             `SELECT * FROM purchase_orders
-             WHERE po_date >= $1 AND po_date <= $2
-             ORDER BY po_date DESC`,
+             WHERE COALESCE(po_date, ship_window_start::date, created_at::date) >= $1
+               AND COALESCE(po_date, ship_window_start::date, created_at::date) <= $2
+             ORDER BY COALESCE(po_date, ship_window_start::date, created_at::date) DESC`,
             [startDate, endDate]
         );
 
@@ -3601,6 +3602,44 @@ app.get('/api/charts/multi-series', async (req, res) => {
         });
     } catch (err) {
         console.error('Multi-series chart error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// API: Debug - check PO database status
+app.get('/api/purchase-orders/debug', async (req, res) => {
+    try {
+        const stats = await pool.query(`
+            SELECT
+                COUNT(*) as total_pos,
+                COUNT(po_date) as pos_with_date,
+                COUNT(*) - COUNT(po_date) as pos_without_date,
+                MIN(po_date) as earliest_date,
+                MAX(po_date) as latest_date,
+                MIN(created_at) as first_synced,
+                MAX(created_at) as last_synced
+            FROM purchase_orders
+        `);
+
+        const recent = await pool.query(`
+            SELECT po_number, po_date, po_status, ship_window_start, created_at
+            FROM purchase_orders
+            ORDER BY created_at DESC
+            LIMIT 5
+        `);
+
+        const lineItems = await pool.query(`
+            SELECT COUNT(*) as total_line_items,
+                   COUNT(received_quantity) as items_with_receiving
+            FROM po_line_items
+        `);
+
+        res.json({
+            stats: stats.rows[0],
+            lineItemStats: lineItems.rows[0],
+            recentPOs: recent.rows
+        });
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
