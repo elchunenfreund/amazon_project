@@ -3606,6 +3606,53 @@ app.get('/api/charts/multi-series', async (req, res) => {
     }
 });
 
+// API: Debug - sample receiving status data from Amazon
+app.get('/api/purchase-orders/debug-receiving', async (req, res) => {
+    try {
+        const accessToken = await getValidAccessToken();
+        const url = 'https://sellingpartnerapi-na.amazon.com/vendor/orders/v1/purchaseOrdersStatus?limit=5';
+
+        const response = await fetch(url, {
+            headers: {
+                'x-amz-access-token': accessToken,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+            return res.status(response.status).json({ error: 'API Error', details: data });
+        }
+
+        // Extract sample item statuses to see what identifiers are available
+        const samples = (data.payload?.ordersStatus || []).slice(0, 3).map(order => ({
+            poNumber: order.purchaseOrderNumber,
+            itemStatuses: (order.purchaseOrderStatus?.itemStatus || []).slice(0, 2).map(item => ({
+                amazonProductIdentifier: item.amazonProductIdentifier,
+                buyerProductIdentifier: item.buyerProductIdentifier,
+                vendorProductIdentifier: item.vendorProductIdentifier,
+                hasReceivingStatus: !!item.receivingStatus,
+                receivedQty: item.receivingStatus?.receivedQuantity?.amount,
+                receiveStatus: item.receivingStatus?.receiveStatus
+            }))
+        }));
+
+        // Also get sample from our database to compare
+        const dbSample = await pool.query(`
+            SELECT po_number, asin, vendor_sku FROM po_line_items LIMIT 5
+        `);
+
+        res.json({
+            apiSamples: samples,
+            dbSamples: dbSample.rows,
+            totalOrdersInResponse: data.payload?.ordersStatus?.length || 0
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // API: Debug - check PO database status
 app.get('/api/purchase-orders/debug', async (req, res) => {
     try {
@@ -3933,7 +3980,8 @@ app.post('/api/purchase-orders/sync-status', async (req, res) => {
                 const itemStatuses = orderStatus.purchaseOrderStatus?.itemStatus || [];
 
                 for (const itemStatus of itemStatuses) {
-                    const asin = itemStatus.buyerProductIdentifier; // This is the ASIN
+                    // Try amazonProductIdentifier first (ASIN), then buyerProductIdentifier as fallback
+                    const asin = itemStatus.amazonProductIdentifier || itemStatus.buyerProductIdentifier;
 
                     // Get receiving status from itemStatus
                     const receivingStatus = itemStatus.receivingStatus;
