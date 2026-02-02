@@ -2407,13 +2407,16 @@ app.get('/vendor-analytics', async (req, res) => {
             asinTrackerData[row.asin] = row;
         });
 
-        // Get last ordered date AND PO count per ASIN from po_line_items
+        // Get last ordered date, PO count, and receiving stats per ASIN from po_line_items
         const lastOrderResult = await pool.query(`
             SELECT
                 pli.asin,
                 MAX(po.po_date) as last_ordered,
                 COUNT(DISTINCT pli.po_number) as po_count,
-                SUM(pli.ordered_quantity) as total_ordered
+                SUM(pli.ordered_quantity) as total_ordered,
+                SUM(pli.acknowledged_quantity) as total_acknowledged,
+                SUM(pli.received_quantity) as total_received,
+                MAX(pli.last_receiving_date) as last_receiving_date
             FROM po_line_items pli
             JOIN purchase_orders po ON pli.po_number = po.po_number
             WHERE pli.asin IS NOT NULL
@@ -2425,7 +2428,10 @@ app.get('/vendor-analytics', async (req, res) => {
                 lastOrderedByAsin[row.asin] = {
                     date: row.last_ordered,
                     poCount: parseInt(row.po_count) || 0,
-                    totalOrdered: parseInt(row.total_ordered) || 0
+                    totalOrdered: parseInt(row.total_ordered) || 0,
+                    totalAcknowledged: parseInt(row.total_acknowledged) || 0,
+                    totalReceived: parseInt(row.total_received) || 0,
+                    lastReceivingDate: row.last_receiving_date
                 };
             }
         });
@@ -3637,7 +3643,9 @@ app.get('/api/purchase-orders/by-asin/:asin', async (req, res) => {
 
         const result = await pool.query(`
             SELECT po.po_number, po.po_date, po.po_status,
-                   pli.ordered_quantity, pli.acknowledged_quantity, pli.vendor_sku, pli.net_cost_amount
+                   pli.ordered_quantity, pli.acknowledged_quantity,
+                   pli.received_quantity, pli.receiving_status, pli.last_receiving_date,
+                   pli.vendor_sku, pli.net_cost_amount
             FROM purchase_orders po
             JOIN po_line_items pli ON po.po_number = pli.po_number
             WHERE pli.asin = $1

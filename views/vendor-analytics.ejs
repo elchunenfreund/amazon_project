@@ -140,6 +140,10 @@
                     <input type="checkbox" class="col-toggle w-4 h-4" data-col="last-ordered" checked onchange="toggleColumn('last-ordered')">
                     <span class="text-xs font-medium text-slate-700">Last Ordered</span>
                 </label>
+                <label class="flex items-center gap-1 px-3 py-1 bg-slate-100 rounded-full cursor-pointer hover:bg-slate-200">
+                    <input type="checkbox" class="col-toggle w-4 h-4" data-col="received" checked onchange="toggleColumn('received')">
+                    <span class="text-xs font-medium text-slate-700">Received</span>
+                </label>
             </div>
         </div>
 
@@ -192,13 +196,18 @@
                                 <div class="text-xs font-normal text-slate-400">PO Date & Count</div>
                                 <div class="text-[10px] font-normal text-emerald-400 mt-1">Purchase Orders</div>
                             </th>
+                            <th class="px-3 py-3 text-center font-bold bg-slate-900 col-received" style="min-width: 120px;">
+                                <div>Received</div>
+                                <div class="text-xs font-normal text-slate-400">Units by Amazon</div>
+                                <div class="text-[10px] font-normal text-emerald-400 mt-1">PO Status</div>
+                            </th>
                             <th class="px-4 py-3 text-center font-bold bg-slate-900">Actions</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-slate-200">
                         <% if (asins.length === 0) { %>
                         <tr>
-                            <td colspan="11" class="px-4 py-12 text-center text-slate-500">
+                            <td colspan="12" class="px-4 py-12 text-center text-slate-500">
                                 <p class="text-4xl mb-4">📊</p>
                                 <p class="font-medium">No ASINs tracked yet</p>
                                 <p class="text-sm">Add ASINs on the Products page to see analytics</p>
@@ -405,6 +414,32 @@
                                 <% } %>
                             </td>
 
+                            <!-- Received Column -->
+                            <td class="px-3 py-3 text-center col-received">
+                                <% if (lastOrderedData && lastOrderedData.totalReceived > 0) { %>
+                                    <div class="metric-item">
+                                        <div class="metric-label">Received</div>
+                                        <div class="metric-value <%= lastOrderedData.totalReceived >= lastOrderedData.totalOrdered ? 'text-green-600' : 'text-amber-600' %>">
+                                            <%= lastOrderedData.totalReceived.toLocaleString() %>
+                                        </div>
+                                    </div>
+                                    <% if (lastOrderedData.totalOrdered > 0) { %>
+                                    <div class="text-xs text-slate-500 mt-1">
+                                        <%= Math.round((lastOrderedData.totalReceived / lastOrderedData.totalOrdered) * 100) %>% of ordered
+                                    </div>
+                                    <% } %>
+                                    <% if (lastOrderedData.lastReceivingDate) { %>
+                                    <div class="text-[10px] text-slate-400 mt-1">
+                                        Last: <%= new Date(lastOrderedData.lastReceivingDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) %>
+                                    </div>
+                                    <% } %>
+                                <% } else if (lastOrderedData && lastOrderedData.totalOrdered > 0) { %>
+                                    <span class="text-slate-400 text-xs">Pending</span>
+                                <% } else { %>
+                                    <span class="text-slate-400">-</span>
+                                <% } %>
+                            </td>
+
                             <!-- Actions Column -->
                             <td class="px-4 py-3 text-center">
                                 <div class="flex gap-1 justify-center">
@@ -422,7 +457,7 @@
                         </tr>
                         <!-- Inline Chart Row (hidden by default) -->
                         <tr id="chart-row-<%= asin %>" class="chart-row hidden bg-slate-50">
-                            <td colspan="12" class="p-4">
+                            <td colspan="13" class="p-4">
                                 <div class="bg-white rounded-lg border border-slate-200 p-4">
                                     <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
                                         <div class="flex flex-wrap gap-1">
@@ -1195,7 +1230,27 @@
                     return;
                 }
 
-                const rows = data.purchaseOrders.map(po => `
+                // Calculate totals
+                let totalOrdered = 0;
+                let totalAccepted = 0;
+                let totalReceived = 0;
+                data.purchaseOrders.forEach(po => {
+                    totalOrdered += po.ordered_quantity || 0;
+                    totalAccepted += po.acknowledged_quantity || 0;
+                    totalReceived += po.received_quantity || 0;
+                });
+
+                const rows = data.purchaseOrders.map(po => {
+                    const received = po.received_quantity || 0;
+                    const ordered = po.ordered_quantity || 0;
+                    const receivedClass = received === 0 ? 'text-slate-400' :
+                                          received < ordered ? 'text-amber-600 font-medium' :
+                                          'text-green-600 font-medium';
+                    const lastRecDate = po.last_receiving_date
+                        ? new Date(po.last_receiving_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+                        : '';
+
+                    return `
                     <tr class="hover:bg-slate-50">
                         <td class="px-3 py-2 font-mono font-bold text-blue-600">
                             <a href="/purchase-orders" class="hover:underline">${po.po_number}</a>
@@ -1209,12 +1264,16 @@
                                 'bg-blue-100 text-blue-700'
                             }">${po.po_status}</span>
                         </td>
-                        <td class="px-3 py-2 text-right">${po.ordered_quantity || '-'}</td>
+                        <td class="px-3 py-2 text-right">${ordered || '-'}</td>
                         <td class="px-3 py-2 text-right">${po.acknowledged_quantity || '-'}</td>
+                        <td class="px-3 py-2 text-right ${receivedClass}">${received || '-'}</td>
+                        <td class="px-3 py-2 text-xs text-slate-500">${lastRecDate || '-'}</td>
                         <td class="px-3 py-2 text-right">${po.net_cost_amount ? '$' + parseFloat(po.net_cost_amount).toFixed(2) : '-'}</td>
-                        <td class="px-3 py-2 text-xs text-slate-500">${po.vendor_sku || '-'}</td>
                     </tr>
-                `).join('');
+                `}).join('');
+
+                const fulfillmentPct = totalOrdered > 0 ? Math.round((totalReceived / totalOrdered) * 100) : 0;
+                const totalReceivedClass = totalReceived >= totalOrdered ? 'text-green-600' : 'text-amber-600';
 
                 document.getElementById('asinPOsContent').innerHTML = `
                     <div class="overflow-x-auto">
@@ -1226,17 +1285,29 @@
                                     <th class="px-3 py-2 text-left">Status</th>
                                     <th class="px-3 py-2 text-right">Ordered</th>
                                     <th class="px-3 py-2 text-right">Accepted</th>
+                                    <th class="px-3 py-2 text-right">Received</th>
+                                    <th class="px-3 py-2 text-left">Last Recv</th>
                                     <th class="px-3 py-2 text-right">Unit Cost</th>
-                                    <th class="px-3 py-2 text-left">Vendor SKU</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-200">
                                 ${rows}
                             </tbody>
+                            <tfoot class="bg-slate-50 font-medium">
+                                <tr>
+                                    <td class="px-3 py-2" colspan="3">Totals</td>
+                                    <td class="px-3 py-2 text-right">${totalOrdered}</td>
+                                    <td class="px-3 py-2 text-right">${totalAccepted}</td>
+                                    <td class="px-3 py-2 text-right ${totalReceivedClass}">${totalReceived}</td>
+                                    <td class="px-3 py-2" colspan="2"></td>
+                                </tr>
+                            </tfoot>
                         </table>
                     </div>
                     <div class="mt-4 text-sm text-slate-500">
                         Total: ${data.purchaseOrders.length} purchase order${data.purchaseOrders.length !== 1 ? 's' : ''}
+                        <span class="mx-2">|</span>
+                        Fulfillment: <span class="${totalReceivedClass}">${fulfillmentPct}%</span> received
                     </div>
                 `;
             } catch (err) {
