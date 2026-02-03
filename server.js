@@ -659,6 +659,345 @@ app.get('/products', async (req, res) => {
     }
 });
 
+// ============ API ENDPOINTS FOR REACT SPA ============
+
+// GET /api/products - Get all products
+app.get('/api/products', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/asins/latest - Get latest check data for all ASINs (for Dashboard)
+app.get('/api/asins/latest', async (req, res) => {
+    try {
+        // Get latest daily report for each ASIN
+        const reportsResult = await pool.query(`
+            SELECT DISTINCT ON (asin) *
+            FROM daily_reports
+            ORDER BY asin, check_date DESC, check_time DESC
+        `);
+
+        // Get product metadata
+        const metaResult = await pool.query('SELECT asin, comment, snooze_until FROM products');
+        const metaMap = {};
+        metaResult.rows.forEach(row => {
+            metaMap[row.asin] = { comment: row.comment, snooze_until: row.snooze_until };
+        });
+
+        // Combine data
+        const combined = reportsResult.rows.map(report => ({
+            ...report,
+            comment: metaMap[report.asin]?.comment || null,
+            snoozed: metaMap[report.asin]?.snooze_until ? new Date(metaMap[report.asin].snooze_until) > new Date() : false
+        }));
+
+        res.json(combined);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/asins/:asin/history - Get history for a specific ASIN
+app.get('/api/asins/:asin/history', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const result = await pool.query(
+            'SELECT * FROM daily_reports WHERE asin = $1 ORDER BY check_date DESC, check_time DESC',
+            [asin]
+        );
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/vendor-reports - Get vendor reports with filters
+app.get('/api/vendor-reports', async (req, res) => {
+    try {
+        const { startDate, endDate, asin, reportType } = req.query;
+        let query = 'SELECT * FROM vendor_reports WHERE 1=1';
+        const params = [];
+        let paramIndex = 1;
+
+        if (startDate) {
+            query += ` AND report_date >= $${paramIndex++}`;
+            params.push(startDate);
+        }
+        if (endDate) {
+            query += ` AND report_date <= $${paramIndex++}`;
+            params.push(endDate);
+        }
+        if (asin) {
+            query += ` AND asin = $${paramIndex++}`;
+            params.push(asin);
+        }
+        if (reportType) {
+            query += ` AND report_type = $${paramIndex++}`;
+            params.push(reportType);
+        }
+
+        query += ' ORDER BY report_date DESC';
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/vendor-reports/asins - Get list of ASINs with vendor data
+app.get('/api/vendor-reports/asins', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT DISTINCT asin FROM vendor_reports ORDER BY asin');
+        res.json(result.rows.map(r => r.asin));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/purchase-orders - Get purchase orders with filters
+app.get('/api/purchase-orders', async (req, res) => {
+    try {
+        const { startDate, endDate, state, vendorCode } = req.query;
+        let query = 'SELECT * FROM purchase_orders WHERE 1=1';
+        const params = [];
+        let paramIndex = 1;
+
+        if (startDate) {
+            query += ` AND order_date >= $${paramIndex++}`;
+            params.push(startDate);
+        }
+        if (endDate) {
+            query += ` AND order_date <= $${paramIndex++}`;
+            params.push(endDate);
+        }
+        if (state) {
+            query += ` AND po_state = $${paramIndex++}`;
+            params.push(state);
+        }
+        if (vendorCode) {
+            query += ` AND vendor_code = $${paramIndex++}`;
+            params.push(vendorCode);
+        }
+
+        query += ' ORDER BY order_date DESC';
+        const result = await pool.query(query, params);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/purchase-orders/:poNumber - Get single PO with line items
+app.get('/api/purchase-orders/:poNumber', async (req, res) => {
+    try {
+        const { poNumber } = req.params;
+        const poResult = await pool.query('SELECT * FROM purchase_orders WHERE po_number = $1', [poNumber]);
+        if (poResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Purchase order not found' });
+        }
+
+        const itemsResult = await pool.query('SELECT * FROM po_line_items WHERE po_number = $1', [poNumber]);
+
+        res.json({
+            ...poResult.rows[0],
+            line_items: itemsResult.rows
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/purchase-orders/:poNumber/items - Get line items for a PO
+app.get('/api/purchase-orders/:poNumber/items', async (req, res) => {
+    try {
+        const { poNumber } = req.params;
+        const result = await pool.query('SELECT * FROM po_line_items WHERE po_number = $1', [poNumber]);
+        res.json(result.rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/purchase-orders/calendar/:year/:month - Get POs for calendar view
+app.get('/api/purchase-orders/calendar/:year/:month', async (req, res) => {
+    try {
+        const { year, month } = req.params;
+        const startDate = `${year}-${month.padStart(2, '0')}-01`;
+        const endDate = new Date(parseInt(year), parseInt(month), 0).toISOString().split('T')[0];
+
+        const result = await pool.query(
+            `SELECT * FROM purchase_orders
+             WHERE order_date >= $1 AND order_date <= $2
+             ORDER BY order_date`,
+            [startDate, endDate]
+        );
+
+        // Group by date
+        const grouped = {};
+        result.rows.forEach(po => {
+            const dateStr = po.order_date.toISOString().split('T')[0];
+            if (!grouped[dateStr]) grouped[dateStr] = [];
+            grouped[dateStr].push(po);
+        });
+
+        res.json(grouped);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// GET /api/catalog/:asin - Get catalog item
+app.get('/api/catalog/:asin', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const result = await pool.query('SELECT * FROM catalog_details WHERE asin = $1', [asin]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Catalog item not found' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/catalog/:asin/refresh - Refresh catalog item from SP-API
+app.post('/api/catalog/:asin/refresh', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        // For now, just return the existing data or 404
+        // Full SP-API integration would go here
+        const result = await pool.query('SELECT * FROM catalog_details WHERE asin = $1', [asin]);
+        if (result.rows.length === 0) {
+            return res.status(404).json({ error: 'Catalog item not found' });
+        }
+        res.json(result.rows[0]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/scraper/start - Start the scraper
+app.post('/api/scraper/start', (req, res) => {
+    if (currentScraperProcess) {
+        return res.status(400).json({ error: 'Scraper is already running' });
+    }
+    // The scraper start logic is handled by socket.io in the original code
+    res.json({ success: true, message: 'Use socket.io to start scraper' });
+});
+
+// POST /api/scraper/stop - Stop the scraper
+app.post('/api/scraper/stop', (req, res) => {
+    if (currentScraperProcess) {
+        currentScraperProcess.kill();
+        currentScraperProcess = null;
+        res.json({ success: true });
+    } else {
+        res.json({ success: false, message: 'No scraper running' });
+    }
+});
+
+// GET /api/scraper/status - Get scraper status
+app.get('/api/scraper/status', (req, res) => {
+    res.json({ running: !!currentScraperProcess });
+});
+
+// POST /api/asins/bulk - Bulk add ASINs
+app.post('/api/asins/bulk', async (req, res) => {
+    try {
+        const { asins } = req.body;
+        if (!Array.isArray(asins) || asins.length === 0) {
+            return res.status(400).json({ error: 'ASINs array is required' });
+        }
+
+        let added = 0;
+        for (const asin of asins) {
+            const trimmed = asin.trim().toUpperCase();
+            if (trimmed) {
+                try {
+                    await pool.query(
+                        'INSERT INTO products (asin) VALUES ($1) ON CONFLICT (asin) DO NOTHING',
+                        [trimmed]
+                    );
+                    added++;
+                } catch (e) {
+                    // Ignore duplicates
+                }
+            }
+        }
+
+        res.json({ success: true, added });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// PUT /api/asins/:asin/comment - Update ASIN comment
+app.put('/api/asins/:asin/comment', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const { comment } = req.body;
+
+        await pool.query(
+            'UPDATE products SET comment = $1 WHERE asin = $2',
+            [comment, asin]
+        );
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/asins/:asin/snooze - Toggle ASIN snooze
+app.post('/api/asins/:asin/snooze', async (req, res) => {
+    try {
+        const { asin } = req.params;
+
+        // Get current snooze status
+        const current = await pool.query('SELECT snooze_until FROM products WHERE asin = $1', [asin]);
+        if (current.rows.length === 0) {
+            return res.status(404).json({ error: 'ASIN not found' });
+        }
+
+        const isCurrentlySnoozed = current.rows[0].snooze_until && new Date(current.rows[0].snooze_until) > new Date();
+
+        if (isCurrentlySnoozed) {
+            // Un-snooze
+            await pool.query('UPDATE products SET snooze_until = NULL WHERE asin = $1', [asin]);
+            res.json({ success: true, snoozed: false });
+        } else {
+            // Snooze for 7 days
+            const snoozeUntil = new Date();
+            snoozeUntil.setDate(snoozeUntil.getDate() + 7);
+            await pool.query('UPDATE products SET snooze_until = $1 WHERE asin = $2', [snoozeUntil, asin]);
+            res.json({ success: true, snoozed: true });
+        }
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// POST /api/products/bulk-delete - Bulk delete products
+app.post('/api/products/bulk-delete', async (req, res) => {
+    try {
+        const { ids } = req.body;
+        if (!Array.isArray(ids) || ids.length === 0) {
+            return res.status(400).json({ error: 'IDs array is required' });
+        }
+
+        await pool.query('DELETE FROM products WHERE id = ANY($1)', [ids]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ============ END REACT SPA API ENDPOINTS ============
+
 // Get product table columns (must come before /:asin route)
 app.get('/api/products/columns', async (req, res) => {
     try {
