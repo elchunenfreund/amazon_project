@@ -70,11 +70,15 @@ export function ProductsTable({
           const snoozed = row.original.snoozed
           const snoozeUntil = row.original.snooze_until
           if (!snoozed) return <span className="text-muted">No</span>
-          return (
-            <span className="text-warning">
-              Yes{snoozeUntil ? ` (until ${format(new Date(snoozeUntil), 'MMM d')})` : ''}
-            </span>
-          )
+          try {
+            return (
+              <span className="text-warning">
+                Yes{snoozeUntil ? ` (until ${format(new Date(snoozeUntil), 'MMM d')})` : ''}
+              </span>
+            )
+          } catch {
+            return <span className="text-warning">Yes</span>
+          }
         },
       },
       {
@@ -82,11 +86,16 @@ export function ProductsTable({
         header: 'Created',
         cell: ({ row }) => {
           const date = row.original.created_at
-          return (
-            <span className="text-sm text-muted">
-              {format(new Date(date), 'MMM d, yyyy')}
-            </span>
-          )
+          if (!date) return <span className="text-muted">-</span>
+          try {
+            return (
+              <span className="text-sm text-muted">
+                {format(new Date(date), 'MMM d, yyyy')}
+              </span>
+            )
+          } catch {
+            return <span className="text-muted">-</span>
+          }
         },
       },
       {
@@ -94,11 +103,16 @@ export function ProductsTable({
         header: 'Updated',
         cell: ({ row }) => {
           const date = row.original.updated_at
-          return (
-            <span className="text-sm text-muted">
-              {format(new Date(date), 'MMM d, yyyy')}
-            </span>
-          )
+          if (!date) return <span className="text-muted">-</span>
+          try {
+            return (
+              <span className="text-sm text-muted">
+                {format(new Date(date), 'MMM d, yyyy')}
+              </span>
+            )
+          } catch {
+            return <span className="text-muted">-</span>
+          }
         },
       },
       {

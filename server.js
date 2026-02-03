@@ -714,7 +714,13 @@ app.get('/api/asins/latest', async (req, res) => {
         `);
         const salesMap = {};
         salesResult.rows.forEach(row => {
-            salesMap[row.asin] = row.data;
+            const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            salesMap[row.asin] = {
+                shippedUnits: data.shippedUnits || 0,
+                shippedRevenue: data.shippedRevenue?.amount ? parseFloat(data.shippedRevenue.amount) : (data.shippedCogs?.amount ? parseFloat(data.shippedCogs.amount) : 0),
+                orderedUnits: data.orderedUnits || 0,
+                orderedRevenue: data.orderedRevenue?.amount ? parseFloat(data.orderedRevenue.amount) : 0
+            };
         });
 
         // Get latest traffic data from vendor reports
@@ -726,7 +732,10 @@ app.get('/api/asins/latest', async (req, res) => {
         `);
         const trafficMap = {};
         trafficResult.rows.forEach(row => {
-            trafficMap[row.asin] = row.data;
+            const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            trafficMap[row.asin] = {
+                glanceViews: data.glanceViews || 0
+            };
         });
 
         // Get receiving data from PO line items
