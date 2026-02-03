@@ -1015,7 +1015,7 @@ app.get('/api/vendor-reports', async (req, res) => {
                 asin: row.asin,
                 report_date: row.report_date,
                 report_type: row.report_type,
-                shipped_cogs: extractNumber(data.shippedCOGS) ?? extractNumber(data.shipped_cogs),
+                shipped_cogs: extractNumber(data.shippedCogs) ?? extractNumber(data.shipped_cogs),
                 shipped_units: extractNumber(data.shippedUnits) ?? extractNumber(data.shipped_units),
                 ordered_units: extractNumber(data.orderedUnits) ?? extractNumber(data.ordered_units),
                 ordered_revenue: extractNumber(data.orderedRevenue) ?? extractNumber(data.ordered_revenue),

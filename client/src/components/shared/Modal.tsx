@@ -18,7 +18,7 @@ interface ModalProps {
   children: ReactNode
   footer?: ReactNode
   className?: string
-  size?: 'sm' | 'md' | 'lg' | 'xl' | 'full'
+  size?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | '3xl' | '4xl' | 'full'
 }
 
 const sizeClasses = {
@@ -26,7 +26,10 @@ const sizeClasses = {
   md: 'max-w-md',
   lg: 'max-w-lg',
   xl: 'max-w-xl',
-  full: 'max-w-4xl',
+  '2xl': 'max-w-2xl',
+  '3xl': 'max-w-3xl',
+  '4xl': 'max-w-4xl',
+  full: 'max-w-6xl',
 }
 
 export function Modal({

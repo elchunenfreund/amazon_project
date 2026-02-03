@@ -77,7 +77,7 @@ function HistoryModal({ asin, open, onOpenChange }: { asin: string; open: boolea
       onOpenChange={onOpenChange}
       title={`History for ${asin}`}
       description="Price, availability, and sales history"
-      size="lg"
+      size="full"
     >
       {isLoading ? (
         <div className="flex items-center justify-center py-8">
