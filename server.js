@@ -782,12 +782,32 @@ app.get('/api/asins/latest', async (req, res) => {
             if (availText.includes('in stock')) availability_status = 'in_stock';
             else if (availText.includes('back order') || availText.includes('backorder')) availability_status = 'back_order';
 
-            // Detect changes between latest and previous
+            // Detect changes between latest and previous (normalize values for comparison)
             const changedFields = [];
             if (previous) {
-                if (latest.availability !== previous.availability) changedFields.push('availability');
-                if (currentPrice !== previousPrice) changedFields.push('price');
-                if (latest.seller !== previous.seller) changedFields.push('seller');
+                // Normalize availability for comparison
+                const normalizeAvail = (avail) => {
+                    if (!avail) return 'unknown';
+                    const lower = avail.toLowerCase();
+                    if (lower.includes('in stock')) return 'in_stock';
+                    if (lower.includes('back order') || lower.includes('backorder')) return 'back_order';
+                    if (lower.includes('unavailable') || lower.includes('out of stock')) return 'unavailable';
+                    return 'unknown';
+                };
+                const currentAvail = normalizeAvail(latest.availability);
+                const previousAvail = normalizeAvail(previous.availability);
+                if (currentAvail !== previousAvail) changedFields.push('availability');
+
+                // Price comparison - only flag if both exist and differ meaningfully
+                if (currentPrice != null && previousPrice != null && Math.abs(currentPrice - previousPrice) >= 0.01) {
+                    changedFields.push('price');
+                }
+
+                // Seller comparison - normalize and compare
+                const normalizeSeller = (seller) => (seller || '').toLowerCase().trim();
+                if (normalizeSeller(latest.seller) !== normalizeSeller(previous.seller)) {
+                    changedFields.push('seller');
+                }
             }
 
             return {

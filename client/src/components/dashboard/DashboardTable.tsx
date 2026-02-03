@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import type { ColumnDef } from '@tanstack/react-table'
-import { ExternalLink, MoreHorizontal, History, Edit, Trash2, Moon, TrendingUp, TrendingDown, AlertCircle, Loader2 } from 'lucide-react'
+import { ExternalLink, MoreHorizontal, History, Edit, Trash2, Moon, TrendingUp, TrendingDown } from 'lucide-react'
 import { DataTable } from '@/components/shared'
 import { AvailabilityBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
@@ -12,126 +12,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubTrigger,
-  DropdownMenuSubContent,
-  DropdownMenuPortal,
 } from '@/components/ui/dropdown-menu'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import type { AsinReport, DailyReport } from '@/lib/api'
-import { asinsApi } from '@/lib/api'
+import type { AsinReport } from '@/lib/api'
 import { cn } from '@/lib/utils'
-
-// History dropdown component
-function HistoryDropdown({ asin }: { asin: string }) {
-  const [history, setHistory] = useState<DailyReport[] | null>(null)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const loadHistory = async () => {
-    if (history) return // Already loaded
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await asinsApi.getHistory(asin)
-      setHistory(data.slice(0, 5)) // Get last 5 entries
-    } catch (e) {
-      setError('Failed to load history')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  return (
-    <DropdownMenuSub>
-      <DropdownMenuSubTrigger onPointerEnter={loadHistory}>
-        <History className="mr-2 h-4 w-4" />
-        View History
-      </DropdownMenuSubTrigger>
-      <DropdownMenuPortal>
-        <DropdownMenuSubContent className="w-80">
-          {loading && (
-            <div className="flex items-center justify-center p-4">
-              <Loader2 className="h-4 w-4 animate-spin mr-2" />
-              Loading...
-            </div>
-          )}
-          {error && (
-            <div className="p-4 text-sm text-red-600">{error}</div>
-          )}
-          {history && history.length === 0 && (
-            <div className="p-4 text-sm text-muted">No history available</div>
-          )}
-          {history && history.length > 0 && (
-            <>
-              <div className="p-2 space-y-2">
-                {history.map((entry) => (
-                  <div key={entry.id} className="text-xs border-b border-border pb-2 last:border-0">
-                    <div className="flex justify-between text-muted mb-1">
-                      <span>{entry.check_date}</span>
-                      <span>{entry.check_time?.slice(0, 5)}</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1">
-                      <span>Price: {entry.price ? `$${entry.price}` : '-'}</span>
-                      <span>Seller: {entry.seller?.slice(0, 15) || '-'}</span>
-                      <span>Status: {entry.available ? 'In Stock' : 'Unavailable'}</span>
-                      <span>Rank: {entry.ranking ? `#${entry.ranking}` : '-'}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem asChild>
-                <Link to={`/history/${asin}`} className="justify-center">
-                  View Full History
-                </Link>
-              </DropdownMenuItem>
-            </>
-          )}
-        </DropdownMenuSubContent>
-      </DropdownMenuPortal>
-    </DropdownMenuSub>
-  )
-}
-
-// Change indicator component
-function ChangeIndicator({ field, changed, previousValue, currentValue }: {
-  field: string
-  changed: boolean
-  previousValue?: string | number | null
-  currentValue?: string | number | null
-}) {
-  if (!changed) return null
-
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-500 text-white text-[10px] font-bold ml-1 cursor-help">
-            !
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs">
-          <div className="text-xs">
-            <span className="font-semibold">{field} changed</span>
-            {previousValue != null && currentValue != null && (
-              <div className="mt-1">
-                <span className="line-through text-muted-foreground">{previousValue}</span>
-                {' → '}
-                <span className="font-medium">{currentValue}</span>
-              </div>
-            )}
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
-}
 
 interface DashboardTableProps {
   data: AsinReport[]
@@ -159,33 +42,10 @@ export function DashboardTable({
         header: 'ASIN',
         cell: ({ row }) => {
           const asin = row.original.asin
-          const hasChanges = row.original.has_changes
-          const changedFields = row.original.changed_fields || []
           const snoozed = row.original.snoozed
           return (
             <div className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                {hasChanges && (
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="cursor-help">
-                          <AlertCircle className="h-4 w-4 text-amber-500" />
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="right">
-                        <div className="text-xs">
-                          <div className="font-semibold mb-1">Changed fields:</div>
-                          <ul className="list-disc list-inside">
-                            {changedFields.map((field) => (
-                              <li key={field} className="capitalize">{field}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                )}
                 <span className="font-mono font-medium">{asin}</span>
                 <a
                   href={`https://www.amazon.com/dp/${asin}`}
@@ -219,22 +79,37 @@ export function DashboardTable({
         },
       },
       {
+        id: 'changes',
+        header: 'Changes',
+        cell: ({ row }) => {
+          const changedFields = row.original.changed_fields || []
+          if (changedFields.length === 0) {
+            return <span className="text-muted text-sm">-</span>
+          }
+          return (
+            <div className="flex flex-wrap gap-1">
+              {changedFields.map((field) => (
+                <Badge
+                  key={field}
+                  variant="destructive"
+                  className="text-xs capitalize"
+                >
+                  {field}
+                </Badge>
+              ))}
+            </div>
+          )
+        },
+      },
+      {
         accessorKey: 'available',
         header: 'Status',
         cell: ({ row }) => {
           const available = row.original.available
           const changed = row.original.changed_fields?.includes('availability')
           return (
-            <div className="flex items-center gap-1">
-              <div className={cn(changed && 'ring-2 ring-red-500 ring-offset-1 rounded')}>
-                <AvailabilityBadge available={available} />
-              </div>
-              <ChangeIndicator
-                field="Availability"
-                changed={!!changed}
-                previousValue={available ? 'Unavailable' : 'In Stock'}
-                currentValue={available ? 'In Stock' : 'Unavailable'}
-              />
+            <div className={cn(changed && 'ring-2 ring-red-500 ring-offset-1 rounded')}>
+              <AvailabilityBadge available={available} />
             </div>
           )
         },
@@ -246,18 +121,12 @@ export function DashboardTable({
           const seller = row.original.seller
           const changed = row.original.changed_fields?.includes('seller')
           return (
-            <div className="flex items-center gap-1">
-              <span className={cn(
-                "text-sm",
-                changed && 'ring-2 ring-red-500 ring-offset-1 rounded px-1 bg-red-50'
-              )}>
-                {seller || '-'}
-              </span>
-              <ChangeIndicator
-                field="Seller"
-                changed={!!changed}
-              />
-            </div>
+            <span className={cn(
+              "text-sm",
+              changed && 'ring-2 ring-red-500 ring-offset-1 rounded px-1 bg-red-50'
+            )}>
+              {seller || '-'}
+            </span>
           )
         },
       },
@@ -266,7 +135,6 @@ export function DashboardTable({
         header: 'Price',
         cell: ({ row }) => {
           const price = row.original.price
-          const previousPrice = row.original.previous_price
           const priceChange = row.original.price_change
           const changed = row.original.changed_fields?.includes('price')
 
@@ -291,12 +159,6 @@ export function DashboardTable({
                   ${Math.abs(priceChange).toFixed(2)}
                 </span>
               )}
-              <ChangeIndicator
-                field="Price"
-                changed={!!changed}
-                previousValue={previousPrice ? `$${previousPrice.toFixed(2)}` : undefined}
-                currentValue={`$${price.toFixed(2)}`}
-              />
             </div>
           )
         },
@@ -415,7 +277,12 @@ export function DashboardTable({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <HistoryDropdown asin={asin} />
+                <DropdownMenuItem asChild>
+                  <Link to={`/history/${asin}`}>
+                    <History className="mr-2 h-4 w-4" />
+                    View History
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => onEdit?.(row.original)}>
                   <Edit className="mr-2 h-4 w-4" />
                   Edit
