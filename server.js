@@ -901,25 +901,56 @@ app.get('/api/asins/latest', async (req, res) => {
 app.get('/api/asins/:asin/history', async (req, res) => {
     try {
         const { asin } = req.params;
-        const result = await pool.query(
+
+        // Get daily reports (scraping data)
+        const dailyResult = await pool.query(
             'SELECT * FROM daily_reports WHERE asin = $1 ORDER BY check_date DESC',
             [asin]
         );
 
-        // Transform to match React app expected format
-        const transformed = result.rows.map(row => ({
-            id: row.id,
-            asin: row.asin,
-            title: row.header,
-            available: row.availability?.toLowerCase().includes('in stock'),
-            seller: row.seller,
-            price: row.price ? parseFloat(row.price.replace(/[^0-9.]/g, '')) : null,
-            ranking: row.ranking ? parseInt(row.ranking.replace(/[^0-9]/g, '')) : null,
-            buy_box: null,
-            check_date: row.check_date ? new Date(row.check_date).toISOString().split('T')[0] : null,
-            check_time: row.check_date ? new Date(row.check_date).toISOString().split('T')[1]?.slice(0, 8) : null,
-            created_at: row.check_date
-        }));
+        // Get vendor reports (sales/traffic data) for the same ASIN
+        const vendorResult = await pool.query(
+            'SELECT report_date::date::text as report_date, shipped_cogs, shipped_units, ordered_units, ordered_revenue, glance_views FROM vendor_reports WHERE asin = $1 ORDER BY report_date DESC',
+            [asin]
+        );
+
+        // Create a map of vendor data by date
+        const vendorByDate = {};
+        vendorResult.rows.forEach(row => {
+            vendorByDate[row.report_date] = {
+                shipped_cogs: row.shipped_cogs ? parseFloat(row.shipped_cogs) : null,
+                shipped_units: row.shipped_units ? parseInt(row.shipped_units) : null,
+                ordered_units: row.ordered_units ? parseInt(row.ordered_units) : null,
+                ordered_revenue: row.ordered_revenue ? parseFloat(row.ordered_revenue) : null,
+                glance_views: row.glance_views ? parseInt(row.glance_views) : null
+            };
+        });
+
+        // Transform and merge with vendor data
+        const transformed = dailyResult.rows.map(row => {
+            const checkDate = row.check_date ? new Date(row.check_date).toISOString().split('T')[0] : null;
+            const vendorData = checkDate ? vendorByDate[checkDate] : null;
+
+            return {
+                id: row.id,
+                asin: row.asin,
+                title: row.header,
+                available: row.availability?.toLowerCase().includes('in stock'),
+                seller: row.seller,
+                price: row.price ? parseFloat(row.price.replace(/[^0-9.]/g, '')) : null,
+                ranking: row.ranking ? parseInt(row.ranking.replace(/[^0-9]/g, '')) : null,
+                buy_box: null,
+                check_date: checkDate,
+                check_time: row.check_date ? new Date(row.check_date).toISOString().split('T')[1]?.slice(0, 8) : null,
+                created_at: row.check_date,
+                // Vendor data
+                shipped_cogs: vendorData?.shipped_cogs ?? null,
+                shipped_units: vendorData?.shipped_units ?? null,
+                ordered_units: vendorData?.ordered_units ?? null,
+                ordered_revenue: vendorData?.ordered_revenue ?? null,
+                glance_views: vendorData?.glance_views ?? null
+            };
+        });
 
         res.json(transformed);
     } catch (err) {

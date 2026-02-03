@@ -67,6 +67,12 @@ export interface DailyReport {
   ranking?: number
   buy_box?: string
   created_at: string
+  // Vendor data (from vendor_reports)
+  shipped_cogs?: number | null
+  shipped_units?: number | null
+  ordered_units?: number | null
+  ordered_revenue?: number | null
+  glance_views?: number | null
 }
 
 export const productsApi = {
