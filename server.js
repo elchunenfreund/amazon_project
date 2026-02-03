@@ -909,10 +909,11 @@ app.get('/api/asins/:asin/history', async (req, res) => {
         );
 
         // Get vendor reports (sales/traffic data) for the same ASIN
-        // Data is stored in a JSON column, so we extract fields from it
+        // Data is stored in a JSON column with startDate/endDate for the period
         const vendorResult = await pool.query(
             `SELECT
-                report_date::date::text as report_date,
+                data->>'startDate' as start_date,
+                data->>'endDate' as end_date,
                 (data->'shippedCogs'->>'amount')::numeric as shipped_cogs,
                 (data->>'shippedUnits')::int as shipped_units,
                 (data->>'orderedUnits')::int as ordered_units,
@@ -924,22 +925,31 @@ app.get('/api/asins/:asin/history', async (req, res) => {
             [asin]
         );
 
-        // Create a map of vendor data by date
-        const vendorByDate = {};
-        vendorResult.rows.forEach(row => {
-            vendorByDate[row.report_date] = {
-                shipped_cogs: row.shipped_cogs ? parseFloat(row.shipped_cogs) : null,
-                shipped_units: row.shipped_units ? parseInt(row.shipped_units) : null,
-                ordered_units: row.ordered_units ? parseInt(row.ordered_units) : null,
-                ordered_revenue: row.ordered_revenue ? parseFloat(row.ordered_revenue) : null,
-                glance_views: row.glance_views ? parseInt(row.glance_views) : null
-            };
-        });
+        // Create a map of vendor data by date range
+        const vendorRanges = vendorResult.rows.map(row => ({
+            start: row.start_date,
+            end: row.end_date,
+            shipped_cogs: row.shipped_cogs ? parseFloat(row.shipped_cogs) : null,
+            shipped_units: row.shipped_units ? parseInt(row.shipped_units) : null,
+            ordered_units: row.ordered_units ? parseInt(row.ordered_units) : null,
+            ordered_revenue: row.ordered_revenue ? parseFloat(row.ordered_revenue) : null,
+            glance_views: row.glance_views ? parseInt(row.glance_views) : null
+        }));
+
+        // Function to find vendor data for a given date
+        const findVendorDataForDate = (dateStr) => {
+            for (const range of vendorRanges) {
+                if (range.start && range.end && dateStr >= range.start && dateStr <= range.end) {
+                    return range;
+                }
+            }
+            return null;
+        };
 
         // Transform and merge with vendor data
         const transformed = dailyResult.rows.map(row => {
             const checkDate = row.check_date ? new Date(row.check_date).toISOString().split('T')[0] : null;
-            const vendorData = checkDate ? vendorByDate[checkDate] : null;
+            const vendorData = checkDate ? findVendorDataForDate(checkDate) : null;
 
             return {
                 id: row.id,

@@ -473,7 +473,7 @@ export function DashboardTable({
         cell: ({ row }) => {
           const title = row.original.title
           return (
-            <span className="line-clamp-2 max-w-xs" title={title ?? ''}>
+            <span className="line-clamp-1 max-w-[150px] text-xs" title={title ?? ''}>
               {title || '-'}
             </span>
           )

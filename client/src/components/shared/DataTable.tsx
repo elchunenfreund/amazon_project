@@ -12,7 +12,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Minimize2, Maximize2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   Table,
@@ -55,6 +55,7 @@ interface DataTableProps<TData, TValue> {
   onRowSelectionChange?: (rows: TData[]) => void
   rowSelection?: RowSelectionState
   getRowClassName?: (row: { original: TData }) => string
+  compactMode?: boolean
 }
 
 const DEFAULT_PAGE_SIZES = [20, 50, 100, 500, 1000]
@@ -73,6 +74,7 @@ export function DataTable<TData, TValue>({
   onRowSelectionChange,
   rowSelection: controlledRowSelection,
   getRowClassName,
+  compactMode: initialCompactMode = true,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -80,6 +82,7 @@ export function DataTable<TData, TValue>({
   const [internalRowSelection, setInternalRowSelection] = useState<RowSelectionState>({})
   const [globalFilter, setGlobalFilter] = useState('')
   const [currentPageSize, setCurrentPageSize] = useState(pageSize)
+  const [compactMode, setCompactMode] = useState(initialCompactMode)
 
   // Scroll shadow state
   const scrollContainerRef = useRef<HTMLDivElement>(null)
@@ -214,32 +217,44 @@ export function DataTable<TData, TValue>({
           />
         )}
 
-        {enableColumnVisibility && (
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="outline" className="ml-auto">
-                Columns <ChevronDown className="ml-2 h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
-              {table
-                .getAllColumns()
-                .filter((column) => column.getCanHide())
-                .map((column) => {
-                  return (
-                    <DropdownMenuCheckboxItem
-                      key={column.id}
-                      className="capitalize"
-                      checked={column.getIsVisible()}
-                      onCheckedChange={(value) => column.toggleVisibility(!!value)}
-                    >
-                      {column.id}
-                    </DropdownMenuCheckboxItem>
-                  )
-                })}
-            </DropdownMenuContent>
-          </DropdownMenu>
-        )}
+        <div className="flex items-center gap-2 ml-auto">
+          {/* Compact mode toggle */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCompactMode(!compactMode)}
+            title={compactMode ? "Expand view" : "Compact view"}
+          >
+            {compactMode ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
+          </Button>
+
+          {enableColumnVisibility && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  Columns <ChevronDown className="ml-2 h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="max-h-80 overflow-y-auto">
+                {table
+                  .getAllColumns()
+                  .filter((column) => column.getCanHide())
+                  .map((column) => {
+                    return (
+                      <DropdownMenuCheckboxItem
+                        key={column.id}
+                        className="capitalize"
+                        checked={column.getIsVisible()}
+                        onCheckedChange={(value) => column.toggleVisibility(!!value)}
+                      >
+                        {column.id}
+                      </DropdownMenuCheckboxItem>
+                    )
+                  })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -268,19 +283,19 @@ export function DataTable<TData, TValue>({
         />
         <div
           ref={scrollContainerRef}
-          className="overflow-x-auto rounded-md border border-border"
+          className="overflow-x-auto rounded-md border border-border w-full"
         >
-        <Table>
+        <Table className={cn(compactMode && "text-xs")}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
                 {headerGroup.headers.map((header) => {
                   return (
-                    <TableHead key={header.id}>
+                    <TableHead key={header.id} className={cn(compactMode && "py-1 px-2 text-xs")}>
                       {header.isPlaceholder ? null : (
                         <div
                           className={cn(
-                            'flex items-center gap-2',
+                            'flex items-center gap-1 whitespace-nowrap',
                             header.column.getCanSort() && 'cursor-pointer select-none'
                           )}
                           onClick={header.column.getToggleSortingHandler()}
@@ -292,11 +307,11 @@ export function DataTable<TData, TValue>({
                           {header.column.getCanSort() && (
                             <span className="text-muted-foreground">
                               {header.column.getIsSorted() === 'desc' ? (
-                                <ChevronDown className="h-4 w-4" />
+                                <ChevronDown className={cn(compactMode ? "h-3 w-3" : "h-4 w-4")} />
                               ) : header.column.getIsSorted() === 'asc' ? (
-                                <ChevronUp className="h-4 w-4" />
+                                <ChevronUp className={cn(compactMode ? "h-3 w-3" : "h-4 w-4")} />
                               ) : (
-                                <ChevronsUpDown className="h-4 w-4" />
+                                <ChevronsUpDown className={cn(compactMode ? "h-3 w-3" : "h-4 w-4")} />
                               )}
                             </span>
                           )}
@@ -324,7 +339,7 @@ export function DataTable<TData, TValue>({
                     data-state={row.getIsSelected() && 'selected'}
                   >
                     {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id}>
+                      <TableCell key={cell.id} className={cn(compactMode && "py-1 px-2")}>
                         {flexRender(cell.column.columnDef.cell, cell.getContext())}
                       </TableCell>
                     ))}
