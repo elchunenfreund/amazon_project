@@ -671,7 +671,7 @@ app.use('/api/auth', createAuthRoutes(pool));
 // GET /api/products - Get all products
 app.get('/api/products', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
+        const result = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
         res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -681,15 +681,30 @@ app.get('/api/products', async (req, res) => {
 // GET /api/asins/latest - Get latest check data for all ASINs (for Dashboard)
 app.get('/api/asins/latest', async (req, res) => {
     try {
+        const { startDate, endDate } = req.query;
+
+        // Build date filter clause
+        let dateFilter = '';
+        const params = [];
+        if (startDate) {
+            params.push(startDate);
+            dateFilter += ` AND check_date >= $${params.length}`;
+        }
+        if (endDate) {
+            params.push(endDate);
+            dateFilter += ` AND check_date <= $${params.length}`;
+        }
+
         // Get latest TWO daily reports for each ASIN (for price change comparison)
         const reportsResult = await pool.query(`
             WITH ranked_reports AS (
                 SELECT *,
                     ROW_NUMBER() OVER (PARTITION BY asin ORDER BY check_date DESC) as rn
                 FROM daily_reports
+                WHERE 1=1 ${dateFilter}
             )
             SELECT * FROM ranked_reports WHERE rn <= 2
-        `);
+        `, params);
 
         // Group reports by ASIN
         const reportsByAsin = {};
@@ -905,6 +920,17 @@ app.get('/api/vendor-reports', async (req, res) => {
         query += ' ORDER BY report_date DESC';
         const result = await pool.query(query, params);
 
+        // Helper to extract numeric value from potentially nested objects
+        const extractNumber = (val) => {
+            if (val === null || val === undefined) return null;
+            if (typeof val === 'number') return val;
+            if (typeof val === 'string') return parseFloat(val) || null;
+            if (typeof val === 'object' && val.amount !== undefined) {
+                return typeof val.amount === 'number' ? val.amount : parseFloat(val.amount) || null;
+            }
+            return null;
+        };
+
         // Transform to match React app expected format - extract from JSONB data column
         const transformed = result.rows.map(row => {
             const data = row.data || {};
@@ -913,13 +939,13 @@ app.get('/api/vendor-reports', async (req, res) => {
                 asin: row.asin,
                 report_date: row.report_date,
                 report_type: row.report_type,
-                shipped_cogs: data.shippedCOGS || data.shipped_cogs || null,
-                shipped_units: data.shippedUnits || data.shipped_units || null,
-                ordered_units: data.orderedUnits || data.ordered_units || null,
-                ordered_revenue: data.orderedRevenue || data.ordered_revenue || null,
-                sellable_on_hand_inventory: data.sellableOnHandInventory || data.sellable_on_hand_inventory || null,
-                glance_views: data.glanceViews || data.glance_views || null,
-                conversion_rate: data.conversionRate || data.conversion_rate || null,
+                shipped_cogs: extractNumber(data.shippedCOGS) ?? extractNumber(data.shipped_cogs),
+                shipped_units: extractNumber(data.shippedUnits) ?? extractNumber(data.shipped_units),
+                ordered_units: extractNumber(data.orderedUnits) ?? extractNumber(data.ordered_units),
+                ordered_revenue: extractNumber(data.orderedRevenue) ?? extractNumber(data.ordered_revenue),
+                sellable_on_hand_inventory: extractNumber(data.sellableOnHandInventory) ?? extractNumber(data.sellable_on_hand_inventory),
+                glance_views: extractNumber(data.glanceViews) ?? extractNumber(data.glance_views),
+                conversion_rate: extractNumber(data.conversionRate) ?? extractNumber(data.conversion_rate),
                 created_at: row.created_at
             };
         });
@@ -1218,12 +1244,12 @@ app.post('/api/asins/:asin/snooze', async (req, res) => {
 // POST /api/products/bulk-delete - Bulk delete products
 app.post('/api/products/bulk-delete', async (req, res) => {
     try {
-        const { ids } = req.body;
-        if (!Array.isArray(ids) || ids.length === 0) {
-            return res.status(400).json({ error: 'IDs array is required' });
+        const { asins } = req.body;
+        if (!Array.isArray(asins) || asins.length === 0) {
+            return res.status(400).json({ error: 'ASINs array is required' });
         }
 
-        await pool.query('DELETE FROM products WHERE id = ANY($1)', [ids]);
+        await pool.query('DELETE FROM products WHERE asin = ANY($1)', [asins]);
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ error: err.message });

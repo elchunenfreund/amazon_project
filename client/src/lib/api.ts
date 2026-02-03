@@ -44,13 +44,14 @@ async function request<T>(
 
 // Products API
 export interface Product {
-  id: number
   asin: string
+  header?: string  // Product title
+  sku?: string
   comment?: string
   snoozed?: boolean
   snooze_until?: string
   created_at: string
-  updated_at: string
+  updated_at?: string
 }
 
 export interface DailyReport {
@@ -70,7 +71,7 @@ export interface DailyReport {
 export const productsApi = {
   getAll: () => request<Product[]>('/products'),
 
-  get: (id: number) => request<Product>(`/products/${id}`),
+  get: (asin: string) => request<Product>(`/products/${asin}`),
 
   create: (data: { asin: string; comment?: string }) =>
     request<Product>('/products', {
@@ -78,21 +79,21 @@ export const productsApi = {
       body: JSON.stringify(data),
     }),
 
-  update: (id: number, data: Partial<Product>) =>
-    request<Product>(`/products/${id}`, {
+  update: (asin: string, data: Partial<Product>) =>
+    request<Product>(`/products/${asin}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
 
-  delete: (id: number) =>
-    request<void>(`/products/${id}`, {
+  delete: (asin: string) =>
+    request<void>(`/products/${asin}`, {
       method: 'DELETE',
     }),
 
-  bulkDelete: (ids: number[]) =>
+  bulkDelete: (asins: string[]) =>
     request<void>('/products/bulk-delete', {
       method: 'POST',
-      body: JSON.stringify({ ids }),
+      body: JSON.stringify({ asins }),
     }),
 }
 
@@ -126,8 +127,19 @@ export interface AsinReport {
   changed_fields?: string[]
 }
 
+export interface AsinFilters {
+  startDate?: string
+  endDate?: string
+}
+
 export const asinsApi = {
-  getLatest: () => request<AsinReport[]>('/asins/latest'),
+  getLatest: (filters?: AsinFilters) => {
+    const params = new URLSearchParams()
+    if (filters?.startDate) params.set('startDate', filters.startDate)
+    if (filters?.endDate) params.set('endDate', filters.endDate)
+    const query = params.toString()
+    return request<AsinReport[]>(`/asins/latest${query ? `?${query}` : ''}`)
+  },
 
   add: (data: { asin: string; comment?: string }) =>
     request<{ success: boolean }>('/asins', {

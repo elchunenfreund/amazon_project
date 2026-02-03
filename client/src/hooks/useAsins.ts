@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { asinsApi } from '@/lib/api'
+import { asinsApi, type AsinFilters } from '@/lib/api'
 
-export function useLatestAsins() {
+export function useLatestAsins(filters?: AsinFilters) {
   return useQuery({
-    queryKey: ['asins', 'latest'],
-    queryFn: asinsApi.getLatest,
+    queryKey: ['asins', 'latest', filters],
+    queryFn: () => asinsApi.getLatest(filters),
   })
 }
 

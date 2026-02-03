@@ -1,7 +1,8 @@
 import { useState, useMemo } from 'react'
+import type { DateRange } from 'react-day-picker'
 import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff, Filter } from 'lucide-react'
 import { PageWrapper, PageHeader } from '@/components/layout'
-import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal } from '@/components/shared'
+import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal, DateRangePicker } from '@/components/shared'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -18,10 +19,17 @@ import {
   ExcelUploadModal,
   ScraperProgress,
 } from '@/components/dashboard'
-import type { AsinReport } from '@/lib/api'
+import type { AsinReport, AsinFilters } from '@/lib/api'
 
 export function Dashboard() {
-  const { data: asins, isLoading, refetch } = useLatestAsins()
+  // Date filter state
+  const [dateRange, setDateRange] = useState<DateRange | undefined>()
+  const filters: AsinFilters = useMemo(() => ({
+    startDate: dateRange?.from?.toISOString().split('T')[0],
+    endDate: dateRange?.to?.toISOString().split('T')[0],
+  }), [dateRange])
+
+  const { data: asins, isLoading, refetch } = useLatestAsins(filters)
   const { data: scraperStatus } = useScraperStatus()
   const deleteAsin = useDeleteAsin()
   const toggleSnooze = useToggleAsinSnooze()
@@ -254,6 +262,13 @@ export function Dashboard() {
           <span className="text-sm text-muted">Filters:</span>
         </div>
 
+        {/* Date Range Filter */}
+        <DateRangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          placeholder="Select date range"
+        />
+
         {/* Status Filter */}
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[150px]">
@@ -284,13 +299,14 @@ export function Dashboard() {
         </Select>
 
         {/* Clear filters */}
-        {(statusFilter !== 'all' || sellerFilter !== 'all') && (
+        {(statusFilter !== 'all' || sellerFilter !== 'all' || dateRange) && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setStatusFilter('all')
               setSellerFilter('all')
+              setDateRange(undefined)
             }}
           >
             Clear filters

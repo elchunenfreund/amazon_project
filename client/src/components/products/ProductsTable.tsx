@@ -18,7 +18,7 @@ interface ProductsTableProps {
   data: Product[]
   isLoading?: boolean
   onEdit?: (product: Product) => void
-  onDelete?: (id: number) => void
+  onDelete?: (asin: string) => void
   onSelectionChange?: (products: Product[]) => void
 }
 
@@ -48,6 +48,30 @@ export function ProductsTable({
                 <ExternalLink className="h-4 w-4" />
               </a>
             </div>
+          )
+        },
+      },
+      {
+        accessorKey: 'sku',
+        header: 'SKU',
+        cell: ({ row }) => {
+          const sku = row.original.sku
+          return (
+            <span className="font-mono text-sm text-muted" title={sku ?? ''}>
+              {sku || '-'}
+            </span>
+          )
+        },
+      },
+      {
+        accessorKey: 'header',
+        header: 'Title',
+        cell: ({ row }) => {
+          const title = row.original.header
+          return (
+            <span className="line-clamp-2 max-w-xs text-sm" title={title ?? ''}>
+              {title || '-'}
+            </span>
           )
         },
       },
@@ -141,7 +165,7 @@ export function ProductsTable({
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   className="text-danger focus:text-danger"
-                  onClick={() => onDelete?.(product.id)}
+                  onClick={() => onDelete?.(product.asin)}
                 >
                   <Trash2 className="mr-2 h-4 w-4" />
                   Delete

@@ -8,11 +8,11 @@ export function useProducts() {
   })
 }
 
-export function useProduct(id: number) {
+export function useProduct(asin: string) {
   return useQuery({
-    queryKey: ['products', id],
-    queryFn: () => productsApi.get(id),
-    enabled: !!id,
+    queryKey: ['products', asin],
+    queryFn: () => productsApi.get(asin),
+    enabled: !!asin,
   })
 }
 
@@ -32,8 +32,8 @@ export function useUpdateProduct() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: number; data: Partial<Product> }) =>
-      productsApi.update(id, data),
+    mutationFn: ({ asin, data }: { asin: string; data: Partial<Product> }) =>
+      productsApi.update(asin, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['products'] })
     },

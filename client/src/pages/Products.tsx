@@ -25,7 +25,7 @@ export function Products() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [bulkDeleteModalOpen, setBulkDeleteModalOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
-  const [productToDelete, setProductToDelete] = useState<number | null>(null)
+  const [productToDelete, setProductToDelete] = useState<string | null>(null)
   const [selectedProducts, setSelectedProducts] = useState<Product[]>([])
 
   const addForm = useForm<{ asin: string; comment: string }>({
@@ -42,8 +42,8 @@ export function Products() {
     setEditModalOpen(true)
   }
 
-  const handleDelete = (id: number) => {
-    setProductToDelete(id)
+  const handleDelete = (asin: string) => {
+    setProductToDelete(asin)
     setDeleteModalOpen(true)
   }
 
@@ -60,8 +60,8 @@ export function Products() {
   }
 
   const confirmBulkDelete = async () => {
-    const ids = selectedProducts.map((p) => p.id)
-    await bulkDelete.mutateAsync(ids)
+    const asins = selectedProducts.map((p) => p.asin)
+    await bulkDelete.mutateAsync(asins)
     setBulkDeleteModalOpen(false)
     setSelectedProducts([])
   }
@@ -75,7 +75,7 @@ export function Products() {
   const handleEditSubmit = async (data: { comment: string }) => {
     if (!selectedProduct) return
     await updateProduct.mutateAsync({
-      id: selectedProduct.id,
+      asin: selectedProduct.asin,
       data: { comment: data.comment },
     })
     setEditModalOpen(false)
