@@ -909,8 +909,18 @@ app.get('/api/asins/:asin/history', async (req, res) => {
         );
 
         // Get vendor reports (sales/traffic data) for the same ASIN
+        // Data is stored in a JSON column, so we extract fields from it
         const vendorResult = await pool.query(
-            'SELECT report_date::date::text as report_date, shipped_cogs, shipped_units, ordered_units, ordered_revenue, glance_views FROM vendor_reports WHERE asin = $1 ORDER BY report_date DESC',
+            `SELECT
+                report_date::date::text as report_date,
+                (data->'shippedCogs'->>'amount')::numeric as shipped_cogs,
+                (data->>'shippedUnits')::int as shipped_units,
+                (data->>'orderedUnits')::int as ordered_units,
+                (data->'orderedRevenue'->>'amount')::numeric as ordered_revenue,
+                (data->>'glanceViews')::int as glance_views
+            FROM vendor_reports
+            WHERE asin = $1
+            ORDER BY report_date DESC`,
             [asin]
         );
 
