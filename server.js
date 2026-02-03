@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const path = require('path');
 const { Server } = require('socket.io');
 const { spawn, exec } = require('child_process');
 const { Pool } = require('pg');
@@ -22,6 +23,7 @@ let currentScraperProcess = null;
 
 app.set('view engine', 'ejs');
 app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'client/dist')));
 app.use(express.json());
 
 // Session configuration for OAuth state management
@@ -5235,6 +5237,11 @@ app.get('/api/vendor-analytics/data-gaps', async (req, res) => {
         console.error('Data gaps check error:', err);
         res.status(500).json({ error: err.message });
     }
+});
+
+// SPA fallback - serve React app for all non-API routes
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'client/dist/index.html'));
 });
 
 server.listen(port, () => console.log(`Active on ${port}`));
