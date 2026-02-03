@@ -664,7 +664,7 @@ app.get('/products', async (req, res) => {
 // GET /api/products - Get all products
 app.get('/api/products', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
+        const result = await pool.query('SELECT * FROM products ORDER BY id DESC');
         res.json(result.rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -678,7 +678,7 @@ app.get('/api/asins/latest', async (req, res) => {
         const reportsResult = await pool.query(`
             SELECT DISTINCT ON (asin) *
             FROM daily_reports
-            ORDER BY asin, check_date DESC, check_time DESC
+            ORDER BY asin, check_date DESC
         `);
 
         // Get product metadata
@@ -688,9 +688,17 @@ app.get('/api/asins/latest', async (req, res) => {
             metaMap[row.asin] = { comment: row.comment, snooze_until: row.snooze_until };
         });
 
-        // Combine data
+        // Combine and transform data to match React app expected format
         const combined = reportsResult.rows.map(report => ({
-            ...report,
+            asin: report.asin,
+            title: report.header,
+            available: report.availability?.toLowerCase().includes('in stock'),
+            seller: report.seller,
+            price: report.price ? parseFloat(report.price.replace(/[^0-9.]/g, '')) : null,
+            ranking: report.ranking ? parseInt(report.ranking.replace(/[^0-9]/g, '')) : null,
+            buy_box: null,
+            check_date: report.check_date ? new Date(report.check_date).toISOString().split('T')[0] : null,
+            check_time: report.check_date ? new Date(report.check_date).toISOString().split('T')[1]?.slice(0, 8) : null,
             comment: metaMap[report.asin]?.comment || null,
             snoozed: metaMap[report.asin]?.snooze_until ? new Date(metaMap[report.asin].snooze_until) > new Date() : false
         }));
@@ -706,10 +714,26 @@ app.get('/api/asins/:asin/history', async (req, res) => {
     try {
         const { asin } = req.params;
         const result = await pool.query(
-            'SELECT * FROM daily_reports WHERE asin = $1 ORDER BY check_date DESC, check_time DESC',
+            'SELECT * FROM daily_reports WHERE asin = $1 ORDER BY check_date DESC',
             [asin]
         );
-        res.json(result.rows);
+
+        // Transform to match React app expected format
+        const transformed = result.rows.map(row => ({
+            id: row.id,
+            asin: row.asin,
+            title: row.header,
+            available: row.availability?.toLowerCase().includes('in stock'),
+            seller: row.seller,
+            price: row.price ? parseFloat(row.price.replace(/[^0-9.]/g, '')) : null,
+            ranking: row.ranking ? parseInt(row.ranking.replace(/[^0-9]/g, '')) : null,
+            buy_box: null,
+            check_date: row.check_date ? new Date(row.check_date).toISOString().split('T')[0] : null,
+            check_time: row.check_date ? new Date(row.check_date).toISOString().split('T')[1]?.slice(0, 8) : null,
+            created_at: row.check_date
+        }));
+
+        res.json(transformed);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -742,7 +766,27 @@ app.get('/api/vendor-reports', async (req, res) => {
 
         query += ' ORDER BY report_date DESC';
         const result = await pool.query(query, params);
-        res.json(result.rows);
+
+        // Transform to match React app expected format - extract from JSONB data column
+        const transformed = result.rows.map(row => {
+            const data = row.data || {};
+            return {
+                id: row.id,
+                asin: row.asin,
+                report_date: row.report_date,
+                report_type: row.report_type,
+                shipped_cogs: data.shippedCOGS || data.shipped_cogs || null,
+                shipped_units: data.shippedUnits || data.shipped_units || null,
+                ordered_units: data.orderedUnits || data.ordered_units || null,
+                ordered_revenue: data.orderedRevenue || data.ordered_revenue || null,
+                sellable_on_hand_inventory: data.sellableOnHandInventory || data.sellable_on_hand_inventory || null,
+                glance_views: data.glanceViews || data.glance_views || null,
+                conversion_rate: data.conversionRate || data.conversion_rate || null,
+                created_at: row.created_at
+            };
+        });
+
+        res.json(transformed);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -767,25 +811,28 @@ app.get('/api/purchase-orders', async (req, res) => {
         let paramIndex = 1;
 
         if (startDate) {
-            query += ` AND order_date >= $${paramIndex++}`;
+            query += ` AND po_date >= $${paramIndex++}`;
             params.push(startDate);
         }
         if (endDate) {
-            query += ` AND order_date <= $${paramIndex++}`;
+            query += ` AND po_date <= $${paramIndex++}`;
             params.push(endDate);
         }
         if (state) {
-            query += ` AND po_state = $${paramIndex++}`;
+            query += ` AND po_status = $${paramIndex++}`;
             params.push(state);
         }
-        if (vendorCode) {
-            query += ` AND vendor_code = $${paramIndex++}`;
-            params.push(vendorCode);
-        }
 
-        query += ' ORDER BY order_date DESC';
+        query += ' ORDER BY po_date DESC';
         const result = await pool.query(query, params);
-        res.json(result.rows);
+
+        // Transform to match React app expected format
+        const transformed = result.rows.map(row => ({
+            ...row,
+            order_date: row.po_date,
+            po_state: row.po_status
+        }));
+        res.json(transformed);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -831,17 +878,23 @@ app.get('/api/purchase-orders/calendar/:year/:month', async (req, res) => {
 
         const result = await pool.query(
             `SELECT * FROM purchase_orders
-             WHERE order_date >= $1 AND order_date <= $2
-             ORDER BY order_date`,
+             WHERE po_date >= $1 AND po_date <= $2
+             ORDER BY po_date`,
             [startDate, endDate]
         );
 
         // Group by date
         const grouped = {};
         result.rows.forEach(po => {
-            const dateStr = po.order_date.toISOString().split('T')[0];
-            if (!grouped[dateStr]) grouped[dateStr] = [];
-            grouped[dateStr].push(po);
+            if (po.po_date) {
+                const dateStr = new Date(po.po_date).toISOString().split('T')[0];
+                if (!grouped[dateStr]) grouped[dateStr] = [];
+                grouped[dateStr].push({
+                    ...po,
+                    order_date: po.po_date,
+                    po_state: po.po_status
+                });
+            }
         });
 
         res.json(grouped);
@@ -858,7 +911,12 @@ app.get('/api/catalog/:asin', async (req, res) => {
         if (result.rows.length === 0) {
             return res.status(404).json({ error: 'Catalog item not found' });
         }
-        res.json(result.rows[0]);
+        // Transform to match React app expected format
+        const row = result.rows[0];
+        res.json({
+            ...row,
+            updated_at: row.last_updated
+        });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
