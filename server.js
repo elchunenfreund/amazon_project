@@ -5240,7 +5240,7 @@ app.get('/api/vendor-analytics/data-gaps', async (req, res) => {
 });
 
 // SPA fallback - serve React app for all non-API routes
-app.get('*', (req, res) => {
+app.get('/{*path}', (req, res) => {
     res.sendFile(path.join(__dirname, 'client/dist/index.html'));
 });
 
