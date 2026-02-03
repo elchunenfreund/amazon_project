@@ -1,8 +1,7 @@
-import { useMemo } from 'react'
-import { Link } from 'react-router-dom'
+import { useState, useMemo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ExternalLink, MoreHorizontal, History, Edit, Trash2, Moon, TrendingUp, TrendingDown } from 'lucide-react'
-import { DataTable } from '@/components/shared'
+import { DataTable, Modal } from '@/components/shared'
 import { AvailabilityBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -13,8 +12,65 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import type { AsinReport } from '@/lib/api'
+import type { AsinReport, DailyReport } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useAsinHistory } from '@/hooks'
+
+// History Modal Component
+function HistoryModal({ asin, open, onOpenChange }: { asin: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+  const { data: history, isLoading } = useAsinHistory(asin)
+
+  return (
+    <Modal
+      open={open}
+      onOpenChange={onOpenChange}
+      title={`History for ${asin}`}
+      description="Price and availability history"
+      size="lg"
+    >
+      {isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        </div>
+      ) : !history?.length ? (
+        <p className="text-muted text-center py-8">No history available</p>
+      ) : (
+        <div className="max-h-96 overflow-y-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-white border-b">
+              <tr>
+                <th className="text-left py-2 px-2">Date</th>
+                <th className="text-left py-2 px-2">Status</th>
+                <th className="text-left py-2 px-2">Seller</th>
+                <th className="text-right py-2 px-2">Price</th>
+                <th className="text-right py-2 px-2">Rank</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((report: DailyReport, idx: number) => (
+                <tr key={idx} className="border-b hover:bg-slate-50">
+                  <td className="py-2 px-2">{report.check_date}</td>
+                  <td className="py-2 px-2">
+                    <span className={report.available ? 'text-green-600' : 'text-red-600'}>
+                      {report.available ? 'Available' : 'Unavailable'}
+                    </span>
+                  </td>
+                  <td className="py-2 px-2">{report.seller || '-'}</td>
+                  <td className="py-2 px-2 text-right">
+                    {report.price ? `$${report.price.toFixed(2)}` : '-'}
+                  </td>
+                  <td className="py-2 px-2 text-right">
+                    {report.ranking ? `#${report.ranking.toLocaleString()}` : '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Modal>
+  )
+}
 
 interface DashboardTableProps {
   data: AsinReport[]
@@ -35,6 +91,14 @@ export function DashboardTable({
   enableRowSelection = false,
   onRowSelectionChange,
 }: DashboardTableProps) {
+  const [historyModalOpen, setHistoryModalOpen] = useState(false)
+  const [selectedAsin, setSelectedAsin] = useState<string>('')
+
+  const handleViewHistory = (asin: string) => {
+    setSelectedAsin(asin)
+    setHistoryModalOpen(true)
+  }
+
   const columns = useMemo<ColumnDef<AsinReport>[]>(
     () => [
       {
@@ -277,6 +341,24 @@ export function DashboardTable({
         },
       },
       {
+        id: 'history',
+        header: 'History',
+        cell: ({ row }) => {
+          const asin = row.original.asin
+          return (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => handleViewHistory(asin)}
+              className="h-8 px-2"
+            >
+              <History className="h-4 w-4 mr-1" />
+              View
+            </Button>
+          )
+        },
+      },
+      {
         id: 'actions',
         header: 'Actions',
         enableHiding: false,
@@ -292,12 +374,6 @@ export function DashboardTable({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild>
-                  <Link to={`/history/${asin}`}>
-                    <History className="mr-2 h-4 w-4" />
-                    View History
-                  </Link>
-                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => onEdit?.(row.original)}>
                   <Edit className="mr-2 h-4 w-4" />
                   Edit
@@ -320,7 +396,7 @@ export function DashboardTable({
         },
       },
     ],
-    [onEdit, onDelete, onToggleSnooze, enableRowSelection]
+    [onEdit, onDelete, onToggleSnooze]
   )
 
   // Sort data to put changed items at the top
@@ -333,19 +409,26 @@ export function DashboardTable({
   }, [data])
 
   return (
-    <DataTable
-      columns={columns}
-      data={sortedData}
-      isLoading={isLoading}
-      searchPlaceholder="Search ASINs..."
-      searchColumn="asin"
-      enableColumnVisibility
-      pageSize={20}
-      enableRowSelection={enableRowSelection}
-      onRowSelectionChange={onRowSelectionChange}
-      getRowClassName={(row) =>
-        row.original.has_changes ? 'bg-amber-50 dark:bg-amber-950/20' : ''
-      }
-    />
+    <>
+      <DataTable
+        columns={columns}
+        data={sortedData}
+        isLoading={isLoading}
+        searchPlaceholder="Search ASINs..."
+        searchColumn="asin"
+        enableColumnVisibility
+        pageSize={20}
+        enableRowSelection={enableRowSelection}
+        onRowSelectionChange={onRowSelectionChange}
+        getRowClassName={(row) =>
+          row.original.has_changes ? 'bg-amber-50 dark:bg-amber-950/20' : ''
+        }
+      />
+      <HistoryModal
+        asin={selectedAsin}
+        open={historyModalOpen}
+        onOpenChange={setHistoryModalOpen}
+      />
+    </>
   )
 }

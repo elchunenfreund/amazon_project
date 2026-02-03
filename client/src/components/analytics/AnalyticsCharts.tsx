@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import {
   LineChart,
   Line,
@@ -12,6 +12,13 @@ import {
   ResponsiveContainer,
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { VendorReport } from '@/lib/api'
 
 interface AnalyticsChartsProps {
@@ -20,11 +27,25 @@ interface AnalyticsChartsProps {
 }
 
 export function AnalyticsCharts({ data, isLoading = false }: AnalyticsChartsProps) {
+  const [selectedAsin, setSelectedAsin] = useState<string>('all')
+
+  // Get unique ASINs for the dropdown
+  const uniqueAsins = useMemo(() => {
+    const asins = [...new Set(data.map(r => r.asin))].sort()
+    return asins
+  }, [data])
+
+  // Filter data by selected ASIN
+  const filteredData = useMemo(() => {
+    if (selectedAsin === 'all') return data
+    return data.filter(r => r.asin === selectedAsin)
+  }, [data, selectedAsin])
+
   const chartData = useMemo(() => {
-    if (!data.length) return []
+    if (!filteredData.length) return []
 
     // Group by date and aggregate
-    const grouped = data.reduce(
+    const grouped = filteredData.reduce(
       (acc, report) => {
         const date = report.report_date
         if (!acc[date]) {
@@ -34,19 +55,21 @@ export function AnalyticsCharts({ data, isLoading = false }: AnalyticsChartsProp
             shippedUnits: 0,
             orderedUnits: 0,
             glanceViews: 0,
+            orderedRevenue: 0,
           }
         }
         acc[date].shippedCogs += report.shipped_cogs ?? 0
         acc[date].shippedUnits += report.shipped_units ?? 0
         acc[date].orderedUnits += report.ordered_units ?? 0
         acc[date].glanceViews += report.glance_views ?? 0
+        acc[date].orderedRevenue += report.ordered_revenue ?? 0
         return acc
       },
-      {} as Record<string, { date: string; shippedCogs: number; shippedUnits: number; orderedUnits: number; glanceViews: number }>
+      {} as Record<string, { date: string; shippedCogs: number; shippedUnits: number; orderedUnits: number; glanceViews: number; orderedRevenue: number }>
     )
 
     return Object.values(grouped).sort((a, b) => a.date.localeCompare(b.date))
-  }, [data])
+  }, [filteredData])
 
   if (isLoading) {
     return (
@@ -76,7 +99,31 @@ export function AnalyticsCharts({ data, isLoading = false }: AnalyticsChartsProp
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
+    <div className="space-y-6">
+      {/* ASIN Selector */}
+      <div className="flex items-center gap-4">
+        <span className="text-sm font-medium">View charts for:</span>
+        <Select value={selectedAsin} onValueChange={setSelectedAsin}>
+          <SelectTrigger className="w-[250px]">
+            <SelectValue placeholder="All ASINs" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All ASINs (Aggregated)</SelectItem>
+            {uniqueAsins.map(asin => (
+              <SelectItem key={asin} value={asin}>
+                {asin}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedAsin !== 'all' && (
+          <span className="text-sm text-muted">
+            Showing data for {selectedAsin}
+          </span>
+        )}
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-2">
       {/* Shipped COGS Chart */}
       <Card>
         <CardHeader>
@@ -168,6 +215,41 @@ export function AnalyticsCharts({ data, isLoading = false }: AnalyticsChartsProp
           </ResponsiveContainer>
         </CardContent>
       </Card>
+
+      {/* Revenue Chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Ordered Revenue</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={chartData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis
+                dataKey="date"
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              />
+              <YAxis
+                tick={{ fontSize: 12 }}
+                tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+              />
+              <Tooltip
+                formatter={(value) => [`$${(value as number).toLocaleString()}`, 'Revenue']}
+                labelFormatter={(label) => new Date(label).toLocaleDateString()}
+              />
+              <Line
+                type="monotone"
+                dataKey="orderedRevenue"
+                stroke="#8b5cf6"
+                strokeWidth={2}
+                dot={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+      </div>
     </div>
   )
 }

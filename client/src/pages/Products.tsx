@@ -32,13 +32,13 @@ export function Products() {
     defaultValues: { asin: '', comment: '' },
   })
 
-  const editForm = useForm<{ comment: string }>({
-    defaultValues: { comment: '' },
+  const editForm = useForm<{ comment: string; sku: string }>({
+    defaultValues: { comment: '', sku: '' },
   })
 
   const handleEdit = (product: Product) => {
     setSelectedProduct(product)
-    editForm.reset({ comment: product.comment ?? '' })
+    editForm.reset({ comment: product.comment ?? '', sku: product.sku ?? '' })
     setEditModalOpen(true)
   }
 
@@ -72,11 +72,11 @@ export function Products() {
     setAddModalOpen(false)
   }
 
-  const handleEditSubmit = async (data: { comment: string }) => {
+  const handleEditSubmit = async (data: { comment: string; sku: string }) => {
     if (!selectedProduct) return
     await updateProduct.mutateAsync({
       asin: selectedProduct.asin,
-      data: { comment: data.comment },
+      data: { comment: data.comment, sku: data.sku },
     })
     setEditModalOpen(false)
   }
@@ -158,6 +158,14 @@ export function Products() {
           <div className="space-y-2">
             <Label htmlFor="edit-asin">ASIN</Label>
             <Input id="edit-asin" value={selectedProduct?.asin ?? ''} disabled />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="edit-sku">SKU</Label>
+            <Input
+              id="edit-sku"
+              placeholder="Enter SKU..."
+              {...editForm.register('sku')}
+            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="edit-comment">Comment</Label>

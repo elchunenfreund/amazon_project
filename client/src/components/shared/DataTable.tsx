@@ -270,7 +270,7 @@ export function DataTable<TData, TValue>({
           ref={scrollContainerRef}
           className="overflow-x-auto rounded-md border border-border"
         >
-        <Table style={{ minWidth: '1400px' }}>
+        <Table>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
