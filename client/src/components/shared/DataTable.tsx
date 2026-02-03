@@ -32,6 +32,13 @@ import {
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 interface DataTableProps<TData, TValue> {
@@ -44,8 +51,13 @@ interface DataTableProps<TData, TValue> {
   enableColumnVisibility?: boolean
   enablePagination?: boolean
   pageSize?: number
+  pageSizeOptions?: number[]
   onRowSelectionChange?: (rows: TData[]) => void
+  rowSelection?: RowSelectionState
+  getRowClassName?: (row: { original: TData }) => string
 }
+
+const DEFAULT_PAGE_SIZES = [20, 50, 100, 500, 1000]
 
 export function DataTable<TData, TValue>({
   columns,
@@ -56,14 +68,22 @@ export function DataTable<TData, TValue>({
   enableRowSelection = false,
   enableColumnVisibility = false,
   enablePagination = true,
-  pageSize = 10,
+  pageSize = 20,
+  pageSizeOptions = DEFAULT_PAGE_SIZES,
   onRowSelectionChange,
+  rowSelection: controlledRowSelection,
+  getRowClassName,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const [internalRowSelection, setInternalRowSelection] = useState<RowSelectionState>({})
   const [globalFilter, setGlobalFilter] = useState('')
+  const [currentPageSize, setCurrentPageSize] = useState(pageSize)
+
+  // Use controlled row selection if provided, otherwise use internal state
+  const rowSelection = controlledRowSelection ?? internalRowSelection
+  const setRowSelection = setInternalRowSelection
 
   const tableColumns = enableRowSelection
     ? [
@@ -123,13 +143,20 @@ export function DataTable<TData, TValue>({
     },
     initialState: {
       pagination: {
-        pageSize,
+        pageSize: currentPageSize,
       },
     },
   })
 
+  // Handle page size change
+  const handlePageSizeChange = (size: string) => {
+    const newSize = parseInt(size, 10)
+    setCurrentPageSize(newSize)
+    table.setPageSize(newSize)
+  }
+
   if (isLoading) {
-    return <DataTableSkeleton columns={columns.length} rows={pageSize} />
+    return <DataTableSkeleton columns={columns.length} rows={currentPageSize} />
   }
 
   return (
@@ -231,7 +258,10 @@ export function DataTable<TData, TValue>({
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="border-b border-border transition-colors hover:bg-slate-100/50 data-[state=selected]:bg-slate-100"
+                    className={cn(
+                      "border-b border-border transition-colors hover:bg-slate-100/50 data-[state=selected]:bg-slate-100",
+                      getRowClassName?.(row)
+                    )}
                     data-state={row.getIsSelected() && 'selected'}
                   >
                     {row.getVisibleCells().map((cell) => (
@@ -259,13 +289,30 @@ export function DataTable<TData, TValue>({
       {/* Pagination */}
       {enablePagination && (
         <div className="flex items-center justify-between px-2">
-          <div className="text-sm text-muted">
-            {enableRowSelection && (
-              <span>
-                {table.getFilteredSelectedRowModel().rows.length} of{' '}
-                {table.getFilteredRowModel().rows.length} row(s) selected.
-              </span>
-            )}
+          <div className="flex items-center gap-4">
+            <div className="text-sm text-muted">
+              {enableRowSelection && (
+                <span>
+                  {table.getFilteredSelectedRowModel().rows.length} of{' '}
+                  {table.getFilteredRowModel().rows.length} row(s) selected.
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted">Rows per page:</span>
+              <Select value={String(currentPageSize)} onValueChange={handlePageSizeChange}>
+                <SelectTrigger className="h-8 w-[70px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {pageSizeOptions.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           </div>
           <div className="flex items-center space-x-6 lg:space-x-8">
             <div className="flex items-center space-x-2">

@@ -8,6 +8,8 @@ const multer = require('multer');
 const ExcelJS = require('exceljs');
 const session = require('express-session');
 const crypto = require('crypto');
+const createAuthRoutes = require('./routes/auth');
+const { requireAuth } = require('./middleware/auth');
 
 const app = express();
 const server = http.createServer(app);
@@ -26,7 +28,7 @@ app.use(express.static('public'));
 app.use(express.static(path.join(__dirname, 'client/dist')));
 app.use(express.json());
 
-// Session configuration for OAuth state management
+// Session configuration for authentication
 app.use(session({
     secret: process.env.OAUTH_STATE_SECRET || crypto.randomBytes(32).toString('hex'),
     resave: false,
@@ -34,7 +36,7 @@ app.use(session({
     cookie: {
         secure: process.env.NODE_ENV === 'production', // HTTPS only in production
         httpOnly: true,
-        maxAge: 600000 // 10 minutes
+        maxAge: 24 * 60 * 60 * 1000 // 24 hours
     }
 }));
 
@@ -659,7 +661,12 @@ app.get('/products', async (req, res) => {
     }
 });
 
+// ============ AUTH ROUTES (No authentication required) ============
+app.use('/api/auth', createAuthRoutes(pool));
+
 // ============ API ENDPOINTS FOR REACT SPA ============
+// Note: Add requireAuth middleware to protect routes in production
+// Example: app.get('/api/products', requireAuth, async (req, res) => { ... })
 
 // GET /api/products - Get all products
 app.get('/api/products', async (req, res) => {
@@ -674,12 +681,22 @@ app.get('/api/products', async (req, res) => {
 // GET /api/asins/latest - Get latest check data for all ASINs (for Dashboard)
 app.get('/api/asins/latest', async (req, res) => {
     try {
-        // Get latest daily report for each ASIN
+        // Get latest TWO daily reports for each ASIN (for price change comparison)
         const reportsResult = await pool.query(`
-            SELECT DISTINCT ON (asin) *
-            FROM daily_reports
-            ORDER BY asin, check_date DESC
+            WITH ranked_reports AS (
+                SELECT *,
+                    ROW_NUMBER() OVER (PARTITION BY asin ORDER BY check_date DESC) as rn
+                FROM daily_reports
+            )
+            SELECT * FROM ranked_reports WHERE rn <= 2
         `);
+
+        // Group reports by ASIN
+        const reportsByAsin = {};
+        reportsResult.rows.forEach(row => {
+            if (!reportsByAsin[row.asin]) reportsByAsin[row.asin] = [];
+            reportsByAsin[row.asin].push(row);
+        });
 
         // Get product metadata
         const metaResult = await pool.query('SELECT asin, comment, snooze_until FROM products');
@@ -688,23 +705,114 @@ app.get('/api/asins/latest', async (req, res) => {
             metaMap[row.asin] = { comment: row.comment, snooze_until: row.snooze_until };
         });
 
-        // Combine and transform data to match React app expected format
-        const combined = reportsResult.rows.map(report => ({
-            asin: report.asin,
-            title: report.header,
-            available: report.availability?.toLowerCase().includes('in stock'),
-            seller: report.seller,
-            price: report.price ? parseFloat(report.price.replace(/[^0-9.]/g, '')) : null,
-            ranking: report.ranking ? parseInt(report.ranking.replace(/[^0-9]/g, '')) : null,
-            buy_box: null,
-            check_date: report.check_date ? new Date(report.check_date).toISOString().split('T')[0] : null,
-            check_time: report.check_date ? new Date(report.check_date).toISOString().split('T')[1]?.slice(0, 8) : null,
-            comment: metaMap[report.asin]?.comment || null,
-            snoozed: metaMap[report.asin]?.snooze_until ? new Date(metaMap[report.asin].snooze_until) > new Date() : false
-        }));
+        // Get latest sales data from vendor reports
+        const salesResult = await pool.query(`
+            SELECT DISTINCT ON (asin) asin, data
+            FROM vendor_reports
+            WHERE report_type = 'GET_VENDOR_SALES_REPORT'
+            ORDER BY asin, report_date DESC
+        `);
+        const salesMap = {};
+        salesResult.rows.forEach(row => {
+            salesMap[row.asin] = row.data;
+        });
+
+        // Get latest traffic data from vendor reports
+        const trafficResult = await pool.query(`
+            SELECT DISTINCT ON (asin) asin, data
+            FROM vendor_reports
+            WHERE report_type = 'GET_VENDOR_TRAFFIC_REPORT'
+            ORDER BY asin, report_date DESC
+        `);
+        const trafficMap = {};
+        trafficResult.rows.forEach(row => {
+            trafficMap[row.asin] = row.data;
+        });
+
+        // Get receiving data from PO line items
+        const receivingResult = await pool.query(`
+            SELECT asin,
+                SUM(received_quantity) as total_received,
+                SUM(CASE WHEN received_quantity IS NULL OR received_quantity < ordered_quantity THEN ordered_quantity - COALESCE(received_quantity, 0) ELSE 0 END) as inbound
+            FROM po_line_items
+            GROUP BY asin
+        `);
+        const receivingMap = {};
+        receivingResult.rows.forEach(row => {
+            receivingMap[row.asin] = { received: row.total_received, inbound: row.inbound };
+        });
+
+        // Get last PO date for each ASIN
+        const lastPOResult = await pool.query(`
+            SELECT DISTINCT ON (li.asin) li.asin, po.po_date
+            FROM po_line_items li
+            JOIN purchase_orders po ON li.po_number = po.po_number
+            ORDER BY li.asin, po.po_date DESC
+        `);
+        const lastPOMap = {};
+        lastPOResult.rows.forEach(row => {
+            lastPOMap[row.asin] = row.po_date;
+        });
+
+        // Combine and transform data
+        const combined = Object.entries(reportsByAsin).map(([asin, reports]) => {
+            const latest = reports[0];
+            const previous = reports[1];
+
+            const currentPrice = latest.price ? parseFloat(latest.price.replace(/[^0-9.]/g, '')) : null;
+            const previousPrice = previous?.price ? parseFloat(previous.price.replace(/[^0-9.]/g, '')) : null;
+            const priceChange = currentPrice && previousPrice ? currentPrice - previousPrice : null;
+
+            const salesData = salesMap[asin] || {};
+            const trafficData = trafficMap[asin] || {};
+            const receiving = receivingMap[asin] || {};
+
+            // Determine availability status
+            const availText = latest.availability?.toLowerCase() || '';
+            let availability_status = 'unavailable';
+            if (availText.includes('in stock')) availability_status = 'in_stock';
+            else if (availText.includes('back order') || availText.includes('backorder')) availability_status = 'back_order';
+
+            // Detect changes between latest and previous
+            const changedFields = [];
+            if (previous) {
+                if (latest.availability !== previous.availability) changedFields.push('availability');
+                if (currentPrice !== previousPrice) changedFields.push('price');
+                if (latest.seller !== previous.seller) changedFields.push('seller');
+            }
+
+            return {
+                asin,
+                title: latest.header,
+                available: availability_status === 'in_stock',
+                availability_status,
+                seller: latest.seller,
+                price: currentPrice,
+                previous_price: previousPrice,
+                price_change: priceChange,
+                ranking: latest.ranking ? parseInt(latest.ranking.replace(/[^0-9]/g, '')) : null,
+                buy_box: null,
+                check_date: latest.check_date ? new Date(latest.check_date).toISOString().split('T')[0] : null,
+                check_time: latest.check_date ? new Date(latest.check_date).toISOString().split('T')[1]?.slice(0, 8) : null,
+                comment: metaMap[asin]?.comment || null,
+                snooze_until: metaMap[asin]?.snooze_until || null,
+                snoozed: metaMap[asin]?.snooze_until ? new Date(metaMap[asin].snooze_until) > new Date() : false,
+                // New fields
+                shipped_units: salesData.shippedUnits || null,
+                shipped_revenue: salesData.shippedRevenue || salesData.shippedCOGS || null,
+                glance_views: trafficData.glanceViews || null,
+                received_quantity: receiving.received || null,
+                inbound_quantity: receiving.inbound || null,
+                last_po_date: lastPOMap[asin] ? new Date(lastPOMap[asin]).toISOString().split('T')[0] : null,
+                // Change tracking
+                has_changes: changedFields.length > 0,
+                changed_fields: changedFields
+            };
+        });
 
         res.json(combined);
     } catch (err) {
+        console.error('Error fetching latest ASINs:', err);
         res.status(500).json({ error: err.message });
     }
 });
@@ -802,6 +910,27 @@ app.get('/api/vendor-reports/asins', async (req, res) => {
     }
 });
 
+// GET /api/purchase-orders/vendors - Get unique vendor codes
+app.get('/api/purchase-orders/vendors', async (req, res) => {
+    try {
+        const result = await pool.query('SELECT DISTINCT selling_party FROM purchase_orders WHERE selling_party IS NOT NULL');
+        const vendors = result.rows
+            .map(r => {
+                try {
+                    const party = typeof r.selling_party === 'string' ? JSON.parse(r.selling_party) : r.selling_party;
+                    return party?.partyId;
+                } catch {
+                    return null;
+                }
+            })
+            .filter(Boolean)
+            .sort();
+        res.json([...new Set(vendors)]);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // GET /api/purchase-orders - Get purchase orders with filters
 app.get('/api/purchase-orders', async (req, res) => {
     try {
@@ -822,16 +951,33 @@ app.get('/api/purchase-orders', async (req, res) => {
             query += ` AND po_status = $${paramIndex++}`;
             params.push(state);
         }
+        // Note: vendorCode filter requires post-query filtering since it's stored in JSON
 
         query += ' ORDER BY po_date DESC';
         const result = await pool.query(query, params);
 
         // Transform to match React app expected format
-        const transformed = result.rows.map(row => ({
-            ...row,
-            order_date: row.po_date,
-            po_state: row.po_status
-        }));
+        let transformed = result.rows.map(row => {
+            let vendor_code = null;
+            try {
+                const party = typeof row.selling_party === 'string' ? JSON.parse(row.selling_party) : row.selling_party;
+                vendor_code = party?.partyId || null;
+            } catch {
+                // ignore
+            }
+            return {
+                ...row,
+                order_date: row.po_date,
+                po_state: row.po_status,
+                vendor_code
+            };
+        });
+
+        // Apply vendor code filter if provided
+        if (vendorCode) {
+            transformed = transformed.filter(po => po.vendor_code === vendorCode);
+        }
+
         res.json(transformed);
     } catch (err) {
         res.status(500).json({ error: err.message });

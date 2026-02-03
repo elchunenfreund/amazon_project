@@ -1,8 +1,15 @@
 import { useState, useMemo } from 'react'
-import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff } from 'lucide-react'
+import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff, Filter } from 'lucide-react'
 import { PageWrapper, PageHeader } from '@/components/layout'
-import { StatCard, StatCardGrid, ConfirmModal } from '@/components/shared'
+import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal } from '@/components/shared'
 import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useLatestAsins, useDeleteAsin, useToggleAsinSnooze, useStartScraper, useStopScraper, useScraperStatus, useSocket } from '@/hooks'
 import {
   DashboardTable,
@@ -30,14 +37,49 @@ export function Dashboard() {
   const [selectedAsin, setSelectedAsin] = useState<AsinReport | null>(null)
   const [asinToDelete, setAsinToDelete] = useState<string | null>(null)
 
+  // Filter states
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [sellerFilter, setSellerFilter] = useState<string>('all')
+
+  // Row selection state
+  const [selectedRows, setSelectedRows] = useState<AsinReport[]>([])
+
+  // Get unique sellers for the filter dropdown
+  const uniqueSellers = useMemo(() => {
+    if (!asins) return []
+    const sellers = new Set(asins.map(a => a.seller).filter(Boolean))
+    return Array.from(sellers).sort()
+  }, [asins])
+
+  // Filter the data based on selected filters
+  const filteredData = useMemo(() => {
+    if (!asins) return []
+
+    return asins.filter(asin => {
+      // Status filter
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'in_stock' && asin.available !== true) return false
+        if (statusFilter === 'unavailable' && asin.available !== false) return false
+        if (statusFilter === 'snoozed' && !asin.snoozed) return false
+        if (statusFilter === 'changed' && !asin.has_changes) return false
+      }
+
+      // Seller filter
+      if (sellerFilter !== 'all' && asin.seller !== sellerFilter) return false
+
+      return true
+    })
+  }, [asins, statusFilter, sellerFilter])
+
   const stats = useMemo(() => {
-    if (!asins) return { total: 0, available: 0, unavailable: 0, snoozed: 0 }
+    if (!asins) return { total: 0, available: 0, unavailable: 0, snoozed: 0, changed: 0 }
 
     return {
       total: asins.length,
       available: asins.filter((a) => a.available === true).length,
       unavailable: asins.filter((a) => a.available === false).length,
       snoozed: asins.filter((a) => a.snoozed).length,
+      changed: asins.filter((a) => a.has_changes).length,
     }
   }, [asins])
 
@@ -69,6 +111,49 @@ export function Dashboard() {
       startScraper.mutate()
     }
   }
+
+  const handleRunSelectedChecker = async () => {
+    if (selectedRows.length === 0) return
+
+    const selectedAsins = selectedRows.map(r => r.asin)
+
+    try {
+      const response = await fetch('/api/run-report-selected', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ asins: selectedAsins }),
+      })
+
+      if (response.ok) {
+        setSelectedRows([])
+      }
+    } catch (err) {
+      console.error('Failed to run checker on selected:', err)
+    }
+  }
+
+  const handleRowSelectionChange = (rows: AsinReport[]) => {
+    setSelectedRows(rows)
+  }
+
+  // CSV export columns
+  const csvColumns = [
+    { key: 'asin', header: 'ASIN' },
+    { key: 'title', header: 'Title' },
+    { key: 'available', header: 'Available', accessor: (r: unknown) => (r as AsinReport).available ? 'Yes' : 'No' },
+    { key: 'seller', header: 'Seller' },
+    { key: 'price', header: 'Price', accessor: (r: unknown) => (r as AsinReport).price?.toFixed(2) },
+    { key: 'price_change', header: 'Price Change', accessor: (r: unknown) => (r as AsinReport).price_change?.toFixed(2) },
+    { key: 'ranking', header: 'Rank' },
+    { key: 'shipped_units', header: 'Shipped Units' },
+    { key: 'shipped_revenue', header: 'Shipped Revenue' },
+    { key: 'glance_views', header: 'Glance Views' },
+    { key: 'received_quantity', header: 'Received Qty' },
+    { key: 'inbound_quantity', header: 'Inbound Qty' },
+    { key: 'last_po_date', header: 'Last PO Date' },
+    { key: 'comment', header: 'Comment' },
+    { key: 'check_date', header: 'Last Checked' },
+  ]
 
   return (
     <PageWrapper>
@@ -104,6 +189,11 @@ export function Dashboard() {
               <RefreshCw className="mr-2 h-4 w-4" />
               <span className="hidden sm:inline">Refresh</span>
             </Button>
+            <CsvExportModal
+              data={filteredData}
+              columns={csvColumns}
+              filename="dashboard-products"
+            />
             <Button
               onClick={handleRunChecker}
               variant={scraperStatus?.running ? 'destructive' : 'default'}
@@ -156,14 +246,78 @@ export function Dashboard() {
         />
       </StatCardGrid>
 
+      {/* Filters and Actions */}
+      <div className="mt-6 flex flex-wrap items-center gap-4">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-muted" />
+          <span className="text-sm text-muted">Filters:</span>
+        </div>
+
+        {/* Status Filter */}
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[150px]">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="in_stock">In Stock</SelectItem>
+            <SelectItem value="unavailable">Unavailable</SelectItem>
+            <SelectItem value="snoozed">Snoozed</SelectItem>
+            <SelectItem value="changed">Changed</SelectItem>
+          </SelectContent>
+        </Select>
+
+        {/* Seller Filter */}
+        <Select value={sellerFilter} onValueChange={setSellerFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Seller" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Sellers</SelectItem>
+            {uniqueSellers.map(seller => (
+              <SelectItem key={seller} value={seller as string}>
+                {seller}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Clear filters */}
+        {(statusFilter !== 'all' || sellerFilter !== 'all') && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setStatusFilter('all')
+              setSellerFilter('all')
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Run on Selected button */}
+        {selectedRows.length > 0 && (
+          <Button onClick={handleRunSelectedChecker} variant="outline">
+            <Play className="mr-2 h-4 w-4" />
+            Run on {selectedRows.length} selected
+          </Button>
+        )}
+      </div>
+
       {/* Products Table */}
-      <div className="mt-8">
+      <div className="mt-4">
         <DashboardTable
-          data={asins ?? []}
+          data={filteredData}
           isLoading={isLoading}
           onEdit={handleEdit}
           onDelete={handleDelete}
           onToggleSnooze={handleToggleSnooze}
+          enableRowSelection
+          onRowSelectionChange={handleRowSelectionChange}
         />
       </div>
 

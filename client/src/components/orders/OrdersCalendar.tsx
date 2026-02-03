@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday } from 'date-fns'
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, isSameDay } from 'date-fns'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -19,6 +19,7 @@ export function OrdersCalendar({
   isLoading = false,
 }: OrdersCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
 
   const days = eachDayOfInterval({
     start: startOfMonth(currentMonth),
@@ -95,23 +96,31 @@ export function OrdersCalendar({
         {days.map((day) => {
           const dayOrders = getOrdersForDate(day)
           const hasOrders = dayOrders.length > 0
+          const isSelected = selectedDate && isSameDay(day, selectedDate)
 
           return (
             <div
               key={day.toISOString()}
-              onClick={() => hasOrders && onDateClick?.(day)}
+              onClick={() => {
+                if (hasOrders) {
+                  setSelectedDate(day)
+                  onDateClick?.(day)
+                }
+              }}
               className={cn(
-                'min-h-24 rounded-lg border p-2 transition-colors',
+                'min-h-24 rounded-lg border-2 p-2 transition-colors',
                 !isSameMonth(day, currentMonth) && 'bg-slate-50/50 text-muted',
-                isToday(day) && 'border-accent bg-accent/5',
-                hasOrders && 'cursor-pointer hover:border-accent hover:bg-accent/5',
-                !hasOrders && 'border-transparent bg-slate-50/50'
+                isToday(day) && !isSelected && 'border-accent bg-accent/5',
+                isSelected && 'border-blue-500 bg-blue-50 ring-2 ring-blue-300',
+                hasOrders && !isSelected && 'cursor-pointer hover:border-accent hover:bg-accent/5',
+                !hasOrders && !isSelected && 'border-transparent bg-slate-50/50'
               )}
             >
               <div
                 className={cn(
                   'mb-1 text-sm font-medium',
-                  isToday(day) && 'text-accent'
+                  isToday(day) && 'text-accent',
+                  isSelected && 'text-blue-700'
                 )}
               >
                 {format(day, 'd')}

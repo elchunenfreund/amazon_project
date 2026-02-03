@@ -1,15 +1,27 @@
 import { useState, useMemo } from 'react'
-import { DollarSign, Package, Eye, TrendingUp } from 'lucide-react'
+import { DollarSign, Package, Eye, TrendingUp, ExternalLink } from 'lucide-react'
+import type { ColumnDef } from '@tanstack/react-table'
 import { PageWrapper, PageHeader } from '@/components/layout'
-import { StatCard, StatCardGrid } from '@/components/shared'
+import { StatCard, StatCardGrid, DataTable, CsvExportModal } from '@/components/shared'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useVendorReports, useVendorReportAsins, useSyncVendorReports } from '@/hooks'
-import type { VendorReportFilters } from '@/lib/api'
+import type { VendorReportFilters, VendorReport } from '@/lib/api'
 import {
   AnalyticsFilters,
   AnalyticsCharts,
   AnalyticsTable,
 } from '@/components/analytics'
+
+interface AsinSummary {
+  asin: string
+  totalCogs: number
+  totalUnits: number
+  totalViews: number
+  totalRevenue: number
+  avgConversion: number
+  inventory: number
+  reportCount: number
+}
 
 export function Analytics() {
   const [filters, setFilters] = useState<VendorReportFilters>({})
@@ -31,11 +43,134 @@ export function Analytics() {
     return { totalCogs, totalUnits, totalViews, avgConversion }
   }, [reports])
 
+  // CSV export columns for vendor reports
+  const reportsCsvColumns = [
+    { key: 'report_date', header: 'Date' },
+    { key: 'asin', header: 'ASIN' },
+    { key: 'report_type', header: 'Report Type' },
+    { key: 'shipped_cogs', header: 'Shipped COGS' },
+    { key: 'shipped_units', header: 'Shipped Units' },
+    { key: 'ordered_units', header: 'Ordered Units' },
+    { key: 'ordered_revenue', header: 'Ordered Revenue' },
+    { key: 'sellable_on_hand_inventory', header: 'Inventory' },
+    { key: 'glance_views', header: 'Glance Views' },
+    { key: 'conversion_rate', header: 'Conversion Rate', accessor: (r: unknown) => { const v = (r as VendorReport).conversion_rate; return v ? `${(v * 100).toFixed(2)}%` : '' } },
+  ]
+
+  // CSV export columns for ASIN summary
+  const asinCsvColumns = [
+    { key: 'asin', header: 'ASIN' },
+    { key: 'totalRevenue', header: 'Total Revenue' },
+    { key: 'totalCogs', header: 'Total COGS' },
+    { key: 'totalUnits', header: 'Units Shipped' },
+    { key: 'totalViews', header: 'Glance Views' },
+    { key: 'avgConversion', header: 'Avg Conversion', accessor: (r: unknown) => `${((r as AsinSummary).avgConversion * 100).toFixed(2)}%` },
+    { key: 'inventory', header: 'Current Inventory' },
+  ]
+
+  // Per-ASIN summary
+  const asinSummary = useMemo<AsinSummary[]>(() => {
+    if (!reports) return []
+
+    const summaryMap = new Map<string, AsinSummary>()
+
+    for (const report of reports) {
+      const existing = summaryMap.get(report.asin) || {
+        asin: report.asin,
+        totalCogs: 0,
+        totalUnits: 0,
+        totalViews: 0,
+        totalRevenue: 0,
+        avgConversion: 0,
+        inventory: 0,
+        reportCount: 0,
+      }
+
+      existing.totalCogs += report.shipped_cogs ?? 0
+      existing.totalUnits += report.shipped_units ?? 0
+      existing.totalViews += report.glance_views ?? 0
+      existing.totalRevenue += report.ordered_revenue ?? 0
+      existing.inventory = report.sellable_on_hand_inventory ?? existing.inventory
+      if (report.conversion_rate) {
+        existing.avgConversion = (existing.avgConversion * existing.reportCount + report.conversion_rate) / (existing.reportCount + 1)
+      }
+      existing.reportCount++
+
+      summaryMap.set(report.asin, existing)
+    }
+
+    return Array.from(summaryMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue)
+  }, [reports])
+
+  const asinColumns = useMemo<ColumnDef<AsinSummary>[]>(() => [
+    {
+      accessorKey: 'asin',
+      header: 'ASIN',
+      cell: ({ row }) => (
+        <div className="flex items-center gap-2">
+          <span className="font-mono font-medium">{row.original.asin}</span>
+          <a
+            href={`https://www.amazon.com/dp/${row.original.asin}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-muted hover:text-accent"
+          >
+            <ExternalLink className="h-4 w-4" />
+          </a>
+        </div>
+      ),
+    },
+    {
+      accessorKey: 'totalRevenue',
+      header: 'Total Revenue',
+      cell: ({ row }) => `$${row.original.totalRevenue.toLocaleString()}`,
+    },
+    {
+      accessorKey: 'totalCogs',
+      header: 'Total COGS',
+      cell: ({ row }) => `$${row.original.totalCogs.toLocaleString()}`,
+    },
+    {
+      accessorKey: 'totalUnits',
+      header: 'Units Shipped',
+      cell: ({ row }) => row.original.totalUnits.toLocaleString(),
+    },
+    {
+      accessorKey: 'totalViews',
+      header: 'Glance Views',
+      cell: ({ row }) => row.original.totalViews.toLocaleString(),
+    },
+    {
+      accessorKey: 'avgConversion',
+      header: 'Avg Conv. Rate',
+      cell: ({ row }) => `${(row.original.avgConversion * 100).toFixed(2)}%`,
+    },
+    {
+      accessorKey: 'inventory',
+      header: 'Current Inventory',
+      cell: ({ row }) => row.original.inventory.toLocaleString(),
+    },
+  ], [])
+
   return (
     <PageWrapper>
       <PageHeader
         title="Vendor Analytics"
         description="Sales, inventory, and traffic data from Amazon SP-API"
+        actions={
+          <div className="flex gap-2">
+            <CsvExportModal
+              data={asinSummary}
+              columns={asinCsvColumns}
+              filename="analytics-by-asin"
+            />
+            <CsvExportModal
+              data={reports ?? []}
+              columns={reportsCsvColumns}
+              filename="analytics-full"
+            />
+          </div>
+        }
       />
 
       {/* Filters */}
@@ -81,11 +216,24 @@ export function Analytics() {
         <Tabs defaultValue="charts">
           <TabsList>
             <TabsTrigger value="charts">Charts</TabsTrigger>
-            <TabsTrigger value="table">Data Table</TabsTrigger>
+            <TabsTrigger value="by-asin">By ASIN</TabsTrigger>
+            <TabsTrigger value="table">Full Data</TabsTrigger>
           </TabsList>
 
           <TabsContent value="charts" className="mt-6">
             <AnalyticsCharts data={reports ?? []} isLoading={isLoading} />
+          </TabsContent>
+
+          <TabsContent value="by-asin" className="mt-6">
+            <DataTable
+              columns={asinColumns}
+              data={asinSummary}
+              isLoading={isLoading}
+              searchPlaceholder="Search by ASIN..."
+              searchColumn="asin"
+              enableColumnVisibility
+              pageSize={20}
+            />
           </TabsContent>
 
           <TabsContent value="table" className="mt-6">

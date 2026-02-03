@@ -1,8 +1,11 @@
 const { Client } = require('pg');
 
+const connectionString = process.env.DATABASE_URL || 'postgresql://localhost:5432/amazon_tracker';
+const useSSL = connectionString.includes('localhost') ? false : { rejectUnauthorized: false };
+
 const client = new Client({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+    connectionString: connectionString,
+    ssl: useSSL
 });
 
 (async () => {
@@ -199,6 +202,36 @@ const client = new Client({
             );
         `);
         console.log("✅ Table 'oauth_tokens' is ready.");
+
+        // 7. Create Users table (for authentication)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                name VARCHAR(255),
+                role VARCHAR(50) DEFAULT 'user',
+                company_id INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log("✅ Table 'users' is ready.");
+
+        // 8. Add performance indexes
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_daily_reports_asin_date ON daily_reports(asin, check_date DESC);
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_po_line_items_asin_receiving ON po_line_items(asin, last_receiving_date DESC);
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_vendor_reports_asin_type_date ON vendor_reports(asin, report_type, report_date DESC);
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_products_updated_at ON products(updated_at DESC);
+        `);
+        console.log("✅ Performance indexes are ready.");
 
     } catch (e) {
         console.error("❌ Database Initialization Error:", e.message);

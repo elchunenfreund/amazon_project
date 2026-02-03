@@ -16,6 +16,7 @@ import {
   usePurchaseOrders,
   usePurchaseOrderCalendar,
   useSyncPurchaseOrders,
+  useVendorCodes,
 } from '@/hooks'
 import type { POFilters } from '@/lib/api'
 import type { DateRange } from 'react-day-picker'
@@ -26,6 +27,7 @@ const PO_STATES = ['NEW', 'ACKNOWLEDGED', 'SHIPPED', 'RECEIVING', 'CLOSED', 'CAN
 export function Orders() {
   const [dateRange, setDateRange] = useState<DateRange | undefined>()
   const [stateFilter, setStateFilter] = useState<string>('')
+  const [vendorFilter, setVendorFilter] = useState<string>('')
   const [selectedPO, setSelectedPO] = useState<string | null>(null)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
 
@@ -34,11 +36,13 @@ export function Orders() {
     currentDate.getFullYear(),
     currentDate.getMonth() + 1
   )
+  const { data: vendorCodes } = useVendorCodes()
 
   const filters: POFilters = {
     startDate: dateRange?.from?.toISOString().split('T')[0],
     endDate: dateRange?.to?.toISOString().split('T')[0],
     state: stateFilter === 'all' ? undefined : stateFilter || undefined,
+    vendorCode: vendorFilter === 'all' ? undefined : vendorFilter || undefined,
   }
 
   const { data: orders, isLoading } = usePurchaseOrders(filters)
@@ -156,6 +160,35 @@ export function Orders() {
             ))}
           </SelectContent>
         </Select>
+
+        <Select value={vendorFilter} onValueChange={setVendorFilter}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="All vendors" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All vendors</SelectItem>
+            {vendorCodes?.map((code) => (
+              <SelectItem key={code} value={code}>
+                {code}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Clear filters */}
+        {(stateFilter || vendorFilter || dateRange) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              setStateFilter('')
+              setVendorFilter('')
+              setDateRange(undefined)
+            }}
+          >
+            Clear filters
+          </Button>
+        )}
       </div>
 
       {/* Calendar and Table */}

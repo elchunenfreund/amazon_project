@@ -31,6 +31,13 @@ export function usePurchaseOrderCalendar(year: number, month: number) {
   })
 }
 
+export function useVendorCodes() {
+  return useQuery({
+    queryKey: ['purchase-orders', 'vendors'],
+    queryFn: () => purchaseOrdersApi.getVendors(),
+  })
+}
+
 export function useSyncPurchaseOrders() {
   const queryClient = useQueryClient()
 

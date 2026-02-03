@@ -13,26 +13,38 @@ import {
   CatalogDetails,
   NotFound,
 } from '@/pages'
+import Login from '@/pages/Login'
 
 function App() {
   return (
     <ErrorBoundary>
       <QueryProvider>
         <BrowserRouter>
-          <AppShell>
-            <AnimatePresence mode="wait">
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/products" element={<Products />} />
-                <Route path="/analytics" element={<Analytics />} />
-                <Route path="/orders" element={<Orders />} />
-                <Route path="/history/:asin" element={<History />} />
-                <Route path="/api-explorer" element={<ApiExplorer />} />
-                <Route path="/catalog/:asin" element={<CatalogDetails />} />
-                <Route path="*" element={<NotFound />} />
-              </Routes>
-            </AnimatePresence>
-          </AppShell>
+          <Routes>
+            {/* Login page without AppShell */}
+            <Route path="/login" element={<Login />} />
+
+            {/* Main app routes with AppShell */}
+            <Route
+              path="/*"
+              element={
+                <AppShell>
+                  <AnimatePresence mode="wait">
+                    <Routes>
+                      <Route path="/" element={<Dashboard />} />
+                      <Route path="/products" element={<Products />} />
+                      <Route path="/analytics" element={<Analytics />} />
+                      <Route path="/orders" element={<Orders />} />
+                      <Route path="/history/:asin" element={<History />} />
+                      <Route path="/api-explorer" element={<ApiExplorer />} />
+                      <Route path="/catalog/:asin" element={<CatalogDetails />} />
+                      <Route path="*" element={<NotFound />} />
+                    </Routes>
+                  </AnimatePresence>
+                </AppShell>
+              }
+            />
+          </Routes>
         </BrowserRouter>
       </QueryProvider>
     </ErrorBoundary>

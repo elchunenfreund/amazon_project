@@ -101,14 +101,28 @@ export interface AsinReport {
   asin: string
   title?: string
   available?: boolean
+  availability_status?: 'in_stock' | 'back_order' | 'unavailable'
   seller?: string
-  price?: number
-  ranking?: number
+  price?: number | null
+  previous_price?: number | null
+  price_change?: number | null
+  ranking?: number | null
   buy_box?: string
   check_date?: string
   check_time?: string
   comment?: string
   snoozed?: boolean
+  snooze_until?: string
+  // New fields for restored features
+  shipped_units?: number | null
+  shipped_revenue?: number | null
+  glance_views?: number | null
+  received_quantity?: number | null
+  inbound_quantity?: number | null
+  last_po_date?: string | null
+  // Change tracking
+  has_changes?: boolean
+  changed_fields?: string[]
 }
 
 export const asinsApi = {
@@ -144,6 +158,12 @@ export const asinsApi = {
 
   getHistory: (asin: string) =>
     request<DailyReport[]>(`/asins/${asin}/history`),
+
+  runReportSelected: (asins: string[]) =>
+    request<{ success: boolean; message: string }>('/run-report-selected', {
+      method: 'POST',
+      body: JSON.stringify({ asins }),
+    }),
 }
 
 // Vendor Reports API
@@ -250,6 +270,8 @@ export const purchaseOrdersApi = {
 
   getCalendar: (year: number, month: number) =>
     request<Record<string, PurchaseOrder[]>>(`/purchase-orders/calendar/${year}/${month}`),
+
+  getVendors: () => request<string[]>('/purchase-orders/vendors'),
 }
 
 // Catalog API
@@ -287,6 +309,35 @@ export const scraperApi = {
 
   status: () =>
     request<{ running: boolean; progress?: number; current_asin?: string }>('/scraper/status'),
+}
+
+// Auth API
+export interface User {
+  id: number
+  email: string
+  name?: string
+  role: string
+}
+
+export const authApi = {
+  login: (email: string, password: string) =>
+    request<{ success: boolean; user: User }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    }),
+
+  logout: () =>
+    request<{ success: boolean }>('/auth/logout', {
+      method: 'POST',
+    }),
+
+  me: () => request<{ user: User }>('/auth/me'),
+
+  register: (email: string, password: string, name?: string) =>
+    request<{ success: boolean; user: User }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ email, password, name }),
+    }),
 }
 
 export { ApiError }
