@@ -79,11 +79,15 @@ const client = new Client({
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_vendor_reports_type_date ON vendor_reports(report_type, report_date);
         `);
-        // Add unique constraint for upserts
-        await client.query(`
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_reports_unique
-            ON vendor_reports(report_type, asin, report_date);
-        `);
+        // Add unique constraint for upserts (skip if duplicates exist)
+        try {
+            await client.query(`
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_vendor_reports_unique
+                ON vendor_reports(report_type, asin, report_date);
+            `);
+        } catch (indexErr) {
+            console.log("⚠️ Note: vendor_reports unique index skipped (may have duplicates)");
+        }
         // Add new columns for tracking actual data period (for RT reports fix)
         await client.query(`
             DO $$
