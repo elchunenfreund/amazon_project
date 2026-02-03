@@ -160,6 +160,12 @@ export const asinsApi = {
       body: JSON.stringify({ comment }),
     }),
 
+  update: (asin: string, data: { comment?: string; sku?: string }) =>
+    request<{ success: boolean }>(`/asins/${asin}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
   toggleSnooze: (asin: string) =>
     request<{ success: boolean; snoozed: boolean }>(`/asins/${asin}/snooze`, {
       method: 'POST',

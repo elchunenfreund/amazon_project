@@ -52,6 +52,19 @@ export function useUpdateAsinComment() {
   })
 }
 
+export function useUpdateAsin() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: ({ asin, data }: { asin: string; data: { comment?: string; sku?: string } }) =>
+      asinsApi.update(asin, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asins'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+    },
+  })
+}
+
 export function useToggleAsinSnooze() {
   const queryClient = useQueryClient()
 

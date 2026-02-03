@@ -4,11 +4,12 @@ import { Modal } from '@/components/shared'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { useUpdateAsinComment } from '@/hooks'
+import { useUpdateAsin } from '@/hooks'
 import type { AsinReport } from '@/lib/api'
 
 interface EditAsinForm {
   comment: string
+  sku: string
 }
 
 interface EditAsinModalProps {
@@ -18,15 +19,18 @@ interface EditAsinModalProps {
 }
 
 export function EditAsinModal({ open, onOpenChange, asin }: EditAsinModalProps) {
-  const updateComment = useUpdateAsinComment()
+  const updateAsin = useUpdateAsin()
 
   const form = useForm<EditAsinForm>({
-    defaultValues: { comment: '' },
+    defaultValues: { comment: '', sku: '' },
   })
 
   useEffect(() => {
     if (asin) {
-      form.reset({ comment: asin.comment ?? '' })
+      form.reset({
+        comment: asin.comment ?? '',
+        sku: asin.sku ?? '',
+      })
     }
   }, [asin, form])
 
@@ -34,7 +38,10 @@ export function EditAsinModal({ open, onOpenChange, asin }: EditAsinModalProps) 
     if (!asin) return
 
     try {
-      await updateComment.mutateAsync({ asin: asin.asin, comment: data.comment })
+      await updateAsin.mutateAsync({
+        asin: asin.asin,
+        data: { comment: data.comment, sku: data.sku },
+      })
       onOpenChange(false)
     } catch {
       // Error handled by mutation
@@ -61,6 +68,15 @@ export function EditAsinModal({ open, onOpenChange, asin }: EditAsinModalProps) 
         </div>
 
         <div className="space-y-2">
+          <Label htmlFor="edit-sku">SKU</Label>
+          <Input
+            id="edit-sku"
+            placeholder="Enter SKU..."
+            {...form.register('sku')}
+          />
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="edit-comment">Comment</Label>
           <Input
             id="edit-comment"
@@ -77,8 +93,8 @@ export function EditAsinModal({ open, onOpenChange, asin }: EditAsinModalProps) 
           >
             Cancel
           </Button>
-          <Button type="submit" disabled={updateComment.isPending}>
-            {updateComment.isPending ? 'Saving...' : 'Save Changes'}
+          <Button type="submit" disabled={updateAsin.isPending}>
+            {updateAsin.isPending ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>
       </form>

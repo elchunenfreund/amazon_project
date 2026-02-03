@@ -677,7 +677,6 @@ app.get('/api/products', async (req, res) => {
                 p.sku,
                 p.comment,
                 p.snooze_until,
-                p.created_at,
                 dr.header,
                 (
                     SELECT po.po_date::date::text
@@ -694,7 +693,7 @@ app.get('/api/products', async (req, res) => {
                 ORDER BY check_date DESC
                 LIMIT 1
             ) dr ON true
-            ORDER BY p.created_at DESC
+            ORDER BY p.asin
         `);
 
         const products = result.rows.map(row => ({
@@ -705,7 +704,7 @@ app.get('/api/products', async (req, res) => {
             snoozed: row.snooze_until ? new Date(row.snooze_until) > new Date() : false,
             snooze_until: row.snooze_until || null,
             last_po_date: row.last_po_date || null,
-            created_at: row.created_at
+            created_at: null
         }));
 
         res.json(products);
