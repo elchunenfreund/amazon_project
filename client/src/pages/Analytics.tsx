@@ -110,7 +110,7 @@ export function Analytics() {
         <div className="flex items-center gap-2">
           <span className="font-mono font-medium">{row.original.asin}</span>
           <a
-            href={`https://www.amazon.com/dp/${row.original.asin}`}
+            href={`https://www.amazon.ca/dp/${row.original.asin}`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-muted hover:text-accent"

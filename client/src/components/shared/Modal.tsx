@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import {
   Dialog,
   DialogContent,
@@ -42,31 +41,16 @@ export function Modal({
 }: ModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <AnimatePresence>
-        {open && (
-          <DialogContent
-            className={cn(sizeClasses[size], className)}
-            asChild
-            forceMount
-          >
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              transition={{ duration: 0.2, ease: 'easeOut' }}
-            >
-              <DialogHeader>
-                <DialogTitle>{title}</DialogTitle>
-                {description && (
-                  <DialogDescription>{description}</DialogDescription>
-                )}
-              </DialogHeader>
-              <div className="py-4">{children}</div>
-              {footer && <DialogFooter>{footer}</DialogFooter>}
-            </motion.div>
-          </DialogContent>
-        )}
-      </AnimatePresence>
+      <DialogContent className={cn(sizeClasses[size], className)}>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          {description && (
+            <DialogDescription>{description}</DialogDescription>
+          )}
+        </DialogHeader>
+        <div className="py-4">{children}</div>
+        {footer && <DialogFooter>{footer}</DialogFooter>}
+      </DialogContent>
     </Dialog>
   )
 }

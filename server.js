@@ -668,11 +668,47 @@ app.use('/api/auth', createAuthRoutes(pool));
 // Note: Add requireAuth middleware to protect routes in production
 // Example: app.get('/api/products', requireAuth, async (req, res) => { ... })
 
-// GET /api/products - Get all products
+// GET /api/products - Get all products with titles and last PO date
 app.get('/api/products', async (req, res) => {
     try {
-        const result = await pool.query('SELECT * FROM products ORDER BY created_at DESC');
-        res.json(result.rows);
+        const result = await pool.query(`
+            SELECT
+                p.asin,
+                p.sku,
+                p.comment,
+                p.snooze_until,
+                p.created_at,
+                dr.header,
+                (
+                    SELECT po.po_date::date::text
+                    FROM po_line_items li
+                    JOIN purchase_orders po ON li.po_number = po.po_number
+                    WHERE li.asin = p.asin
+                    ORDER BY po.po_date DESC
+                    LIMIT 1
+                ) as last_po_date
+            FROM products p
+            LEFT JOIN LATERAL (
+                SELECT header FROM daily_reports
+                WHERE daily_reports.asin = p.asin
+                ORDER BY check_date DESC
+                LIMIT 1
+            ) dr ON true
+            ORDER BY p.created_at DESC
+        `);
+
+        const products = result.rows.map(row => ({
+            asin: row.asin,
+            sku: row.sku || null,
+            header: row.header || null,
+            comment: row.comment || null,
+            snoozed: row.snooze_until ? new Date(row.snooze_until) > new Date() : false,
+            snooze_until: row.snooze_until || null,
+            last_po_date: row.last_po_date || null,
+            created_at: row.created_at
+        }));
+
+        res.json(products);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -1258,6 +1294,63 @@ app.post('/api/products/bulk-delete', async (req, res) => {
 
 // ============ END REACT SPA API ENDPOINTS ============
 
+// PUT /api/products/:asin - Update a product
+app.put('/api/products/:asin', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const updateData = req.body;
+
+        // Check product exists
+        const existing = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
+        if (existing.rows.length === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+
+        // Build update query dynamically
+        const updates = [];
+        const values = [];
+        let paramIndex = 1;
+
+        // Only allow updating specific fields
+        const allowedFields = ['comment', 'sku', 'snooze_until'];
+
+        for (const [key, value] of Object.entries(updateData)) {
+            if (allowedFields.includes(key)) {
+                updates.push(`${key} = $${paramIndex}`);
+                values.push(value === '' ? null : value);
+                paramIndex++;
+            }
+        }
+
+        if (updates.length === 0) {
+            return res.json({ asin, ...existing.rows[0] });
+        }
+
+        values.push(asin);
+        const query = `UPDATE products SET ${updates.join(', ')} WHERE asin = $${paramIndex} RETURNING *`;
+        const result = await pool.query(query, values);
+
+        res.json(result.rows[0]);
+    } catch (err) {
+        console.error('Error updating product:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// DELETE /api/products/:asin - Delete a product by ASIN
+app.delete('/api/products/:asin', async (req, res) => {
+    try {
+        const { asin } = req.params;
+        const result = await pool.query('DELETE FROM products WHERE asin = $1', [asin]);
+        if (result.rowCount === 0) {
+            return res.status(404).json({ error: 'Product not found' });
+        }
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // Get product table columns (must come before /:asin route)
 app.get('/api/products/columns', async (req, res) => {
     try {
@@ -1315,19 +1408,6 @@ app.get('/api/products/:asin', async (req, res) => {
     }
 });
 
-// Delete product by ID (for duplicate cleanup)
-app.delete('/api/products/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const result = await pool.query('DELETE FROM products WHERE id = $1', [id]);
-        if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Product not found' });
-        }
-        res.json({ success: true });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
 
 // API Endpoints
 app.post('/api/asins', async (req, res) => {

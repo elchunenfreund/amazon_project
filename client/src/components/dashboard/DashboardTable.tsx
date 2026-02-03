@@ -48,7 +48,7 @@ export function DashboardTable({
               <div className="flex items-center gap-2">
                 <span className="font-mono font-medium">{asin}</span>
                 <a
-                  href={`https://www.amazon.com/dp/${asin}`}
+                  href={`https://www.amazon.ca/dp/${asin}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-muted hover:text-accent"

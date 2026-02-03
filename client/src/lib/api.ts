@@ -50,6 +50,7 @@ export interface Product {
   comment?: string
   snoozed?: boolean
   snooze_until?: string
+  last_po_date?: string
   created_at: string
   updated_at?: string
 }

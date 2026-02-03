@@ -59,7 +59,7 @@ export function History() {
             </Button>
             <Button variant="outline" asChild>
               <a
-                href={`https://www.amazon.com/dp/${asin}`}
+                href={`https://www.amazon.ca/dp/${asin}`}
                 target="_blank"
                 rel="noopener noreferrer"
               >
