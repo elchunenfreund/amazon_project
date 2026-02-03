@@ -266,6 +266,9 @@ export function DashboardTable({
       },
       {
         id: 'actions',
+        header: 'Actions',
+        enableHiding: false,
+        enableSorting: false,
         cell: ({ row }) => {
           const asin = row.original.asin
           return (
