@@ -4,3 +4,4 @@ debug_*.png
 debug_*.html
 amazon_session/
 local.env
+.playwright-mcp/
