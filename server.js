@@ -698,11 +698,11 @@ app.get('/api/asins/latest', async (req, res) => {
             reportsByAsin[row.asin].push(row);
         });
 
-        // Get product metadata
-        const metaResult = await pool.query('SELECT asin, comment, snooze_until FROM products');
+        // Get product metadata (including SKU)
+        const metaResult = await pool.query('SELECT asin, comment, snooze_until, sku FROM products');
         const metaMap = {};
         metaResult.rows.forEach(row => {
-            metaMap[row.asin] = { comment: row.comment, snooze_until: row.snooze_until };
+            metaMap[row.asin] = { comment: row.comment, snooze_until: row.snooze_until, sku: row.sku };
         });
 
         // Get latest sales data from vendor reports
@@ -812,6 +812,7 @@ app.get('/api/asins/latest', async (req, res) => {
 
             return {
                 asin,
+                sku: metaMap[asin]?.sku || null,
                 title: latest.header,
                 available: availability_status === 'in_stock',
                 availability_status,

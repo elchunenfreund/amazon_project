@@ -99,6 +99,7 @@ export const productsApi = {
 // ASINs API (for dashboard)
 export interface AsinReport {
   asin: string
+  sku?: string | null
   title?: string
   available?: boolean
   availability_status?: 'in_stock' | 'back_order' | 'unavailable'

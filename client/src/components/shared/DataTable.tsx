@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   type ColumnDef,
   type SortingState,
@@ -80,6 +80,39 @@ export function DataTable<TData, TValue>({
   const [internalRowSelection, setInternalRowSelection] = useState<RowSelectionState>({})
   const [globalFilter, setGlobalFilter] = useState('')
   const [currentPageSize, setCurrentPageSize] = useState(pageSize)
+
+  // Scroll shadow state
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const updateScrollShadows = useCallback(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    const { scrollLeft, scrollWidth, clientWidth } = container
+    setCanScrollLeft(scrollLeft > 0)
+    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 1)
+  }, [])
+
+  useEffect(() => {
+    const container = scrollContainerRef.current
+    if (!container) return
+
+    updateScrollShadows()
+    container.addEventListener('scroll', updateScrollShadows)
+    window.addEventListener('resize', updateScrollShadows)
+
+    // Also check after data loads
+    const observer = new MutationObserver(updateScrollShadows)
+    observer.observe(container, { childList: true, subtree: true })
+
+    return () => {
+      container.removeEventListener('scroll', updateScrollShadows)
+      window.removeEventListener('resize', updateScrollShadows)
+      observer.disconnect()
+    }
+  }, [updateScrollShadows, data])
 
   // Use controlled row selection if provided, otherwise use internal state
   const rowSelection = controlledRowSelection ?? internalRowSelection
@@ -210,8 +243,34 @@ export function DataTable<TData, TValue>({
       </div>
 
       {/* Table */}
-      <div className="rounded-md border border-border">
-        <Table>
+      <div className="relative">
+        {/* Left scroll shadow */}
+        <div
+          className={cn(
+            "absolute left-0 top-0 bottom-0 w-6 pointer-events-none z-20 transition-opacity duration-200",
+            canScrollLeft ? "opacity-100" : "opacity-0"
+          )}
+          style={{
+            background: 'linear-gradient(to right, rgba(0,0,0,0.08) 0%, transparent 100%)',
+            boxShadow: '4px 0 8px rgba(0,0,0,0.1)'
+          }}
+        />
+        {/* Right scroll shadow */}
+        <div
+          className={cn(
+            "absolute right-0 top-0 bottom-0 w-6 pointer-events-none z-20 transition-opacity duration-200",
+            canScrollRight ? "opacity-100" : "opacity-0"
+          )}
+          style={{
+            background: 'linear-gradient(to left, rgba(0,0,0,0.08) 0%, transparent 100%)',
+            boxShadow: '-4px 0 8px rgba(0,0,0,0.1)'
+          }}
+        />
+        <div
+          ref={scrollContainerRef}
+          className="overflow-x-auto rounded-md border border-border"
+        >
+        <Table style={{ minWidth: '1400px' }}>
           <TableHeader>
             {table.getHeaderGroups().map((headerGroup) => (
               <TableRow key={headerGroup.id}>
@@ -284,6 +343,7 @@ export function DataTable<TData, TValue>({
             </AnimatePresence>
           </TableBody>
         </Table>
+        </div>
       </div>
 
       {/* Pagination */}

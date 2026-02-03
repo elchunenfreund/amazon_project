@@ -139,6 +139,7 @@ export function Dashboard() {
   // CSV export columns
   const csvColumns = [
     { key: 'asin', header: 'ASIN' },
+    { key: 'sku', header: 'SKU' },
     { key: 'title', header: 'Title' },
     { key: 'available', header: 'Available', accessor: (r: unknown) => (r as AsinReport).available ? 'Yes' : 'No' },
     { key: 'seller', header: 'Seller' },

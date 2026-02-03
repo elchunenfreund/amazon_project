@@ -67,6 +67,18 @@ export function DashboardTable({
         },
       },
       {
+        accessorKey: 'sku',
+        header: 'SKU',
+        cell: ({ row }) => {
+          const sku = row.original.sku
+          return (
+            <span className="font-mono text-sm text-muted" title={sku ?? ''}>
+              {sku || '-'}
+            </span>
+          )
+        },
+      },
+      {
         accessorKey: 'title',
         header: 'Title',
         cell: ({ row }) => {
