@@ -372,10 +372,17 @@ export interface VendorReport {
   asin: string
   report_date: string
   report_type: string
+  data_start_date?: string
+  data_end_date?: string
+  distributor_view?: string
+  // Sales metrics (match Vendor Central)
   shipped_cogs?: number
   shipped_units?: number
+  shipped_revenue?: number
   ordered_units?: number
   ordered_revenue?: number
+  customer_returns?: number
+  // Inventory & traffic metrics
   sellable_on_hand_inventory?: number
   glance_views?: number
   conversion_rate?: number
@@ -387,6 +394,7 @@ export interface VendorReportFilters {
   endDate?: string
   asin?: string
   reportType?: string
+  distributorView?: string
 }
 
 export const vendorReportsApi = {
@@ -396,6 +404,7 @@ export const vendorReportsApi = {
     if (filters?.endDate) params.set('endDate', filters.endDate)
     if (filters?.asin) params.set('asin', filters.asin)
     if (filters?.reportType) params.set('reportType', filters.reportType)
+    if (filters?.distributorView) params.set('distributorView', filters.distributorView)
     const query = params.toString()
     return request<VendorReport[]>(`/vendor-reports${query ? `?${query}` : ''}`)
   },

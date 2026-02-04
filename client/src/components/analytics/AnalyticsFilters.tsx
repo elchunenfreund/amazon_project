@@ -17,6 +17,7 @@ interface AnalyticsFiltersProps {
     startDate?: string
     endDate?: string
     asin?: string
+    distributorView?: string
   }) => void
   onSync?: () => void
   isSyncing?: boolean
@@ -43,6 +44,7 @@ export function AnalyticsFilters({
     return undefined
   })
   const [selectedAsin, setSelectedAsin] = useState<string>('')
+  const [distributorView, setDistributorView] = useState<string>('MANUFACTURING')
 
   const handleDateChange = (range: DateRange | undefined) => {
     setDateRange(range)
@@ -50,6 +52,7 @@ export function AnalyticsFilters({
       startDate: range?.from?.toISOString().split('T')[0],
       endDate: range?.to?.toISOString().split('T')[0],
       asin: selectedAsin || undefined,
+      distributorView: distributorView,
     })
   }
 
@@ -59,6 +62,17 @@ export function AnalyticsFilters({
       startDate: dateRange?.from?.toISOString().split('T')[0],
       endDate: dateRange?.to?.toISOString().split('T')[0],
       asin: asin === 'all' ? undefined : asin,
+      distributorView: distributorView,
+    })
+  }
+
+  const handleViewChange = (view: string) => {
+    setDistributorView(view)
+    onFilterChange({
+      startDate: dateRange?.from?.toISOString().split('T')[0],
+      endDate: dateRange?.to?.toISOString().split('T')[0],
+      asin: selectedAsin === 'all' ? undefined : selectedAsin || undefined,
+      distributorView: view,
     })
   }
 
@@ -82,6 +96,17 @@ export function AnalyticsFilters({
                 {asin}
               </SelectItem>
             ))}
+          </SelectContent>
+        </Select>
+
+        <Select value={distributorView} onValueChange={handleViewChange}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Data View" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="MANUFACTURING">Manufacturing</SelectItem>
+            <SelectItem value="SOURCING">Sourcing</SelectItem>
+            <SelectItem value="ALL">All Data</SelectItem>
           </SelectContent>
         </Select>
       </div>
