@@ -54,6 +54,10 @@ app.use(express.static('public'));
 app.use(express.static(path.join(__dirname, 'client/dist')));
 app.use(express.json());
 
+// Trust proxy for Heroku (required for secure cookies and rate limiting)
+// This tells Express it's behind a reverse proxy
+app.set('trust proxy', 1);
+
 // Security headers
 app.use(helmet());
 
