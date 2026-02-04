@@ -108,6 +108,7 @@ export function ProductsTable({
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted hover:text-accent"
+                aria-label={`Open ${asin} on Amazon (opens in new tab)`}
               >
                 <ExternalLink className="h-4 w-4" />
               </a>

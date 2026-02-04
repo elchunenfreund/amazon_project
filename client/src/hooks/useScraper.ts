@@ -5,7 +5,8 @@ export function useScraperStatus() {
   return useQuery({
     queryKey: ['scraper', 'status'],
     queryFn: scraperApi.status,
-    refetchInterval: 5000, // Refresh every 5 seconds when scraper is running
+    // Only poll every 2 seconds when scraper is running, otherwise stop polling
+    refetchInterval: (query) => query.state.data?.running ? 2000 : false,
   })
 }
 

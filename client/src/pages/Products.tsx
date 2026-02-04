@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { PageWrapper, PageHeader } from '@/components/layout'
-import { ConfirmModal } from '@/components/shared'
+import { ConfirmModal, QueryError } from '@/components/shared'
 import { Button } from '@/components/ui/button'
 import { useProducts, useDeleteProduct, useBulkDeleteProducts, useUpdateProduct } from '@/hooks'
 import { ProductsTable } from '@/components/products'
@@ -13,7 +13,7 @@ import { useForm } from 'react-hook-form'
 import { useAddAsin } from '@/hooks'
 
 export function Products() {
-  const { data: products, isLoading } = useProducts()
+  const { data: products, isLoading, isError, error, refetch } = useProducts()
   const deleteProduct = useDeleteProduct()
   const bulkDelete = useBulkDeleteProducts()
   const updateProduct = useUpdateProduct()
@@ -79,6 +79,23 @@ export function Products() {
       data: { comment: data.comment, sku: data.sku },
     })
     setEditModalOpen(false)
+  }
+
+  if (isError) {
+    return (
+      <PageWrapper>
+        <PageHeader
+          title="Products"
+          description="Manage your tracked products and ASINs"
+        />
+        <QueryError
+          error={error}
+          onRetry={() => refetch()}
+          title="Failed to load products"
+          description="There was a problem loading your products. Please try again."
+        />
+      </PageWrapper>
+    )
   }
 
   return (

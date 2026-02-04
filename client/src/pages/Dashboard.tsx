@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import type { DateRange } from 'react-day-picker'
 import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff, Filter } from 'lucide-react'
 import { PageWrapper, PageHeader } from '@/components/layout'
-import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal, DateRangePicker } from '@/components/shared'
+import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal, DateRangePicker, QueryError } from '@/components/shared'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -29,7 +29,7 @@ export function Dashboard() {
     endDate: dateRange?.to?.toISOString().split('T')[0],
   }), [dateRange])
 
-  const { data: asins, isLoading, refetch } = useLatestAsins(filters)
+  const { data: asins, isLoading, isError, error, refetch } = useLatestAsins(filters)
   const { data: scraperStatus } = useScraperStatus()
   const deleteAsin = useDeleteAsin()
   const toggleSnooze = useToggleAsinSnooze()
@@ -164,6 +164,23 @@ export function Dashboard() {
     { key: 'check_date', header: 'Last Checked' },
   ]
 
+  if (isError) {
+    return (
+      <PageWrapper>
+        <PageHeader
+          title="Dashboard"
+          description="Overview of your Amazon product tracking"
+        />
+        <QueryError
+          error={error}
+          onRetry={() => refetch()}
+          title="Failed to load products"
+          description="There was a problem loading your product data. Please try again."
+        />
+      </PageWrapper>
+    )
+  }
+
   return (
     <PageWrapper>
       <PageHeader
@@ -186,15 +203,15 @@ export function Dashboard() {
               )}
             </div>
 
-            <Button variant="outline" onClick={() => setUploadModalOpen(true)}>
+            <Button variant="outline" onClick={() => setUploadModalOpen(true)} aria-label="Import ASINs">
               <Upload className="mr-2 h-4 w-4" />
               <span className="hidden sm:inline">Import</span>
             </Button>
-            <Button variant="outline" onClick={() => setAddModalOpen(true)}>
+            <Button variant="outline" onClick={() => setAddModalOpen(true)} aria-label="Add ASIN">
               <Plus className="mr-2 h-4 w-4" />
               <span className="hidden sm:inline">Add ASIN</span>
             </Button>
-            <Button variant="outline" onClick={() => refetch()}>
+            <Button variant="outline" onClick={() => refetch()} aria-label="Refresh data">
               <RefreshCw className="mr-2 h-4 w-4" />
               <span className="hidden sm:inline">Refresh</span>
             </Button>
@@ -207,6 +224,7 @@ export function Dashboard() {
               onClick={handleRunChecker}
               variant={scraperStatus?.running ? 'destructive' : 'default'}
               disabled={startScraper.isPending || stopScraper.isPending}
+              aria-label={scraperStatus?.running ? 'Stop scraper' : 'Run scraper'}
             >
               {scraperStatus?.running ? (
                 <>

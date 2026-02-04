@@ -1,5 +1,9 @@
 // Seed script to create admin user
 // Run with: node seed-admin.js
+//
+// Required environment variables:
+//   ADMIN_EMAIL - Admin user email/username
+//   ADMIN_PASSWORD - Admin user password
 
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
@@ -10,8 +14,16 @@ const pool = new Pool({
     ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
-const ADMIN_EMAIL = 'admin';
-const ADMIN_PASSWORD = 'mechtig';
+// Validate required environment variables
+if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
+    console.error('Error: ADMIN_EMAIL and ADMIN_PASSWORD environment variables are required.');
+    console.error('Set them in your .env file or pass them when running the script:');
+    console.error('  ADMIN_EMAIL=admin ADMIN_PASSWORD=yourpassword node seed-admin.js');
+    process.exit(1);
+}
+
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const SALT_ROUNDS = 10;
 
 async function seedAdmin() {
@@ -43,8 +55,8 @@ async function seedAdmin() {
         }
 
         console.log('\nCredentials:');
-        console.log('  Email: admin');
-        console.log('  Password: mechtig');
+        console.log('  Email:', ADMIN_EMAIL);
+        console.log('  Password: (set via ADMIN_PASSWORD env var)');
 
     } catch (err) {
         console.error('Error seeding admin:', err);

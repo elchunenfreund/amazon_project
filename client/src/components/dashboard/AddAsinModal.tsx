@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Modal } from '@/components/shared'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,7 @@ export function AddAsinModal({ open, onOpenChange }: AddAsinModalProps) {
   const bulkAddAsins = useBulkAddAsins()
 
   const form = useForm<SingleAsinForm>({
+    resolver: zodResolver(singleAsinSchema),
     defaultValues: { asin: '', comment: '' },
   })
 

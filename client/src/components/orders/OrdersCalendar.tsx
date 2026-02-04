@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, isToday, isSameDay } from 'date-fns'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -13,7 +13,7 @@ interface OrdersCalendarProps {
   isLoading?: boolean
 }
 
-export function OrdersCalendar({
+export const OrdersCalendar = memo(function OrdersCalendar({
   orders,
   onDateClick,
   isLoading = false,
@@ -64,10 +64,10 @@ export function OrdersCalendar({
           {format(currentMonth, 'MMMM yyyy')}
         </h2>
         <div className="flex gap-2">
-          <Button variant="outline" size="icon" onClick={handlePrevMonth}>
+          <Button variant="outline" size="icon" onClick={handlePrevMonth} aria-label="Previous month">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <Button variant="outline" size="icon" onClick={handleNextMonth}>
+          <Button variant="outline" size="icon" onClick={handleNextMonth} aria-label="Next month">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -154,4 +154,4 @@ export function OrdersCalendar({
       </div>
     </Card>
   )
-}
+})

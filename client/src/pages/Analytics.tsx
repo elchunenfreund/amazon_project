@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { DollarSign, Package, Eye, TrendingUp, ExternalLink } from 'lucide-react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { PageWrapper, PageHeader } from '@/components/layout'
-import { StatCard, StatCardGrid, DataTable, CsvExportModal } from '@/components/shared'
+import { StatCard, StatCardGrid, DataTable, CsvExportModal, QueryError } from '@/components/shared'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useVendorReports, useVendorReportAsins, useSyncVendorReports } from '@/hooks'
 import type { VendorReportFilters, VendorReport } from '@/lib/api'
@@ -25,7 +25,7 @@ interface AsinSummary {
 
 export function Analytics() {
   const [filters, setFilters] = useState<VendorReportFilters>({})
-  const { data: reports, isLoading } = useVendorReports(filters)
+  const { data: reports, isLoading, isError, error, refetch } = useVendorReports(filters)
   const { data: asins } = useVendorReportAsins()
   const syncReports = useSyncVendorReports()
 
@@ -114,6 +114,7 @@ export function Analytics() {
             target="_blank"
             rel="noopener noreferrer"
             className="text-muted hover:text-accent"
+            aria-label={`Open ${row.original.asin} on Amazon (opens in new tab)`}
           >
             <ExternalLink className="h-4 w-4" />
           </a>
@@ -151,6 +152,23 @@ export function Analytics() {
       cell: ({ row }) => row.original.inventory.toLocaleString(),
     },
   ], [])
+
+  if (isError) {
+    return (
+      <PageWrapper>
+        <PageHeader
+          title="Vendor Analytics"
+          description="Sales, inventory, and traffic data from Amazon SP-API"
+        />
+        <QueryError
+          error={error}
+          onRetry={() => refetch()}
+          title="Failed to load analytics"
+          description="There was a problem loading vendor analytics data. Please try again."
+        />
+      </PageWrapper>
+    )
+  }
 
   return (
     <PageWrapper>

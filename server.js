@@ -10,11 +10,25 @@ const session = require('express-session');
 const crypto = require('crypto');
 const createAuthRoutes = require('./routes/auth');
 const { requireAuth } = require('./middleware/auth');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const port = process.env.PORT || 3000;
+
+// Socket.IO authentication middleware
+// Requires sessionId in handshake auth for authenticated connections
+io.use((socket, next) => {
+    const sessionId = socket.handshake.auth?.sessionId;
+    if (!sessionId) {
+        return next(new Error('Authentication required'));
+    }
+    // Store sessionId on socket for later use
+    socket.sessionId = sessionId;
+    next();
+});
 
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/amazon_tracker',
@@ -28,6 +42,12 @@ app.use(express.static('public'));
 app.use(express.static(path.join(__dirname, 'client/dist')));
 app.use(express.json());
 
+// Security headers
+app.use(helmet());
+
+// Rate limiting for login endpoint
+app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }));
+
 // Session configuration for authentication
 app.use(session({
     secret: process.env.OAUTH_STATE_SECRET || crypto.randomBytes(32).toString('hex'),
@@ -36,29 +56,185 @@ app.use(session({
     cookie: {
         secure: process.env.NODE_ENV === 'production', // HTTPS only in production
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        sameSite: 'lax'
     }
 }));
 
+// API authentication middleware - protects all /api/* routes except /api/auth/*
+// Also excludes health check endpoints
+app.use('/api', (req, res, next) => {
+    // Skip authentication for auth routes
+    if (req.path.startsWith('/auth')) {
+        return next();
+    }
+
+    // Skip authentication for health check endpoint
+    if (req.path === '/health' || req.path === '/healthz') {
+        return next();
+    }
+
+    // Apply requireAuth for all other API routes
+    return requireAuth(req, res, next);
+});
+
+// Token encryption/decryption utilities for OAuth tokens
+// Uses AES-256-GCM for authenticated encryption
+const ENCRYPTION_ALGORITHM = 'aes-256-gcm';
+const IV_LENGTH = 12; // 96 bits for GCM
+const AUTH_TAG_LENGTH = 16; // 128 bits
+
+/**
+ * Encrypts a string using AES-256-GCM
+ * @param {string} plaintext - The text to encrypt
+ * @returns {string|null} - Base64 encoded encrypted data (iv:authTag:ciphertext) or null if encryption key not configured
+ */
+function encryptToken(plaintext) {
+    if (!plaintext) return null;
+
+    const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY;
+    if (!encryptionKey) {
+        console.warn('TOKEN_ENCRYPTION_KEY not set - tokens will be stored unencrypted');
+        return plaintext;
+    }
+
+    try {
+        const key = Buffer.from(encryptionKey, 'hex');
+        if (key.length !== 32) {
+            console.error('TOKEN_ENCRYPTION_KEY must be a 32-byte (64 character) hex string');
+            return plaintext;
+        }
+
+        const iv = crypto.randomBytes(IV_LENGTH);
+        const cipher = crypto.createCipheriv(ENCRYPTION_ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
+
+        let encrypted = cipher.update(plaintext, 'utf8', 'base64');
+        encrypted += cipher.final('base64');
+        const authTag = cipher.getAuthTag();
+
+        // Format: iv:authTag:ciphertext (all base64 encoded)
+        return `${iv.toString('base64')}:${authTag.toString('base64')}:${encrypted}`;
+    } catch (err) {
+        console.error('Token encryption error:', err.message);
+        return plaintext;
+    }
+}
+
+/**
+ * Decrypts a string encrypted with encryptToken
+ * @param {string} encryptedData - Base64 encoded encrypted data (iv:authTag:ciphertext)
+ * @returns {string|null} - Decrypted plaintext or null on error
+ */
+function decryptToken(encryptedData) {
+    if (!encryptedData) return null;
+
+    const encryptionKey = process.env.TOKEN_ENCRYPTION_KEY;
+    if (!encryptionKey) {
+        // No encryption key - assume data is unencrypted
+        return encryptedData;
+    }
+
+    // Check if data looks encrypted (has the iv:authTag:ciphertext format)
+    if (!encryptedData.includes(':')) {
+        // Data is not encrypted, return as-is (backwards compatibility)
+        return encryptedData;
+    }
+
+    try {
+        const key = Buffer.from(encryptionKey, 'hex');
+        if (key.length !== 32) {
+            console.error('TOKEN_ENCRYPTION_KEY must be a 32-byte (64 character) hex string');
+            return encryptedData;
+        }
+
+        const parts = encryptedData.split(':');
+        if (parts.length !== 3) {
+            // Not in expected format, return as-is
+            return encryptedData;
+        }
+
+        const [ivBase64, authTagBase64, ciphertext] = parts;
+        const iv = Buffer.from(ivBase64, 'base64');
+        const authTag = Buffer.from(authTagBase64, 'base64');
+
+        const decipher = crypto.createDecipheriv(ENCRYPTION_ALGORITHM, key, iv, { authTagLength: AUTH_TAG_LENGTH });
+        decipher.setAuthTag(authTag);
+
+        let decrypted = decipher.update(ciphertext, 'base64', 'utf8');
+        decrypted += decipher.final('utf8');
+
+        return decrypted;
+    } catch (err) {
+        console.error('Token decryption error:', err.message);
+        // Return original data on decryption failure (might be unencrypted legacy data)
+        return encryptedData;
+    }
+}
+
 // Configure multer for file uploads (memory storage)
+// Security: Strict file validation with size limits, file count limits, and MIME type filtering
 const upload = multer({
     storage: multer.memoryStorage(),
-    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+    limits: {
+        fileSize: 5 * 1024 * 1024, // 5MB limit (reduced from 10MB for security)
+        files: 1 // Only allow single file upload
+    },
     fileFilter: (req, file, cb) => {
+        // Strict MIME type whitelist - no fallback to application/octet-stream
         const allowedMimes = [
             'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
             'application/vnd.ms-excel', // .xls
             'text/csv', // .csv
-            'application/csv', // .csv alternative
-            'application/octet-stream' // fallback
+            'application/csv' // .csv alternative
         ];
-        if (allowedMimes.includes(file.mimetype) || file.originalname.match(/\.(xlsx|xls|csv|numbers)$/i)) {
+
+        // Validate both MIME type AND file extension for defense in depth
+        const allowedExtensions = /\.(xlsx|xls|csv)$/i;
+        const hasValidMime = allowedMimes.includes(file.mimetype);
+        const hasValidExtension = allowedExtensions.test(file.originalname);
+
+        if (hasValidMime && hasValidExtension) {
             cb(null, true);
+        } else if (!hasValidMime && hasValidExtension) {
+            // Extension looks okay but MIME type is suspicious
+            cb(new Error('Invalid file type. The file extension looks correct but the content type is not recognized.'));
         } else {
-            cb(new Error('Invalid file type. Only Excel files (.xlsx, .xls), CSV files (.csv), or Numbers files (.numbers) are allowed.'));
+            cb(new Error('Invalid file type. Only Excel files (.xlsx, .xls) and CSV files (.csv) are allowed.'));
         }
     }
 });
+
+// Column whitelist for SQL injection prevention
+// Only these columns can be dynamically updated via API endpoints
+const ALLOWED_PRODUCT_COLUMNS = [
+    'comment', 'sku', 'snooze_until', 'available', 'price', 'title', 'brand',
+    'upc', 'vendor_code', 'cost', 'category', 'subcategory', 'notes',
+    'updated_fields', 'updated_at'
+];
+
+/**
+ * Validates that all column names are in the allowed whitelist
+ * @param {string[]} keys - Array of column names to validate
+ * @returns {boolean} - True if all columns are allowed, false otherwise
+ */
+function validateColumns(keys) {
+    return keys.every(k => ALLOWED_PRODUCT_COLUMNS.includes(k));
+}
+
+/**
+ * Filters an object to only include allowed column keys
+ * @param {Object} data - Object with column names as keys
+ * @returns {Object} - Filtered object with only allowed columns
+ */
+function filterAllowedColumns(data) {
+    const filtered = {};
+    for (const [key, value] of Object.entries(data)) {
+        if (ALLOWED_PRODUCT_COLUMNS.includes(key)) {
+            filtered[key] = value;
+        }
+    }
+    return filtered;
+}
 
 // Database schema helper functions
 async function getTableColumns() {
@@ -174,6 +350,21 @@ function formatMontrealTime(date) {
 function formatMontrealDateTime(date) {
     if (!date) return '';
     return new Date(date).toLocaleString('en-US', { timeZone: 'America/Montreal' });
+}
+
+// Error handling utility - safely handles API errors without exposing internal details
+function handleApiError(res, err, userMessage = 'An error occurred') {
+    console.error('API Error:', err);
+    res.status(500).json({ error: userMessage });
+}
+
+// ASIN validation middleware
+function validateAsin(req, res, next) {
+    const asin = req.params.asin || req.body.asin;
+    if (asin && !/^[A-Z0-9]{10}$/i.test(asin)) {
+        return res.status(400).json({ error: 'Invalid ASIN format' });
+    }
+    next();
 }
 
 app.get('/', async (req, res) => {
@@ -536,12 +727,78 @@ app.post('/run-report', (req, res) => {
     // Spawn detached so we can track it better
     currentScraperProcess = spawn(process.execPath, ['check_asin.js']);
 
-    currentScraperProcess.stdout.on('data', (data) => io.emit('scraper-log', data.toString().trim()));
-    currentScraperProcess.stderr.on('data', (data) => io.emit('scraper-log', `⚠️ ${data}`));
+    // Track scraper progress state
+    let scraperState = { current: 0, total: 0, available: 0, unavailable: 0, errors: 0 };
+
+    currentScraperProcess.stdout.on('data', (data) => {
+        const output = data.toString().trim();
+
+        // Parse progress: "📦 [1/10] Checking B00ABC1234..."
+        const progressMatch = output.match(/\[(\d+)\/(\d+)\]\s*(?:Checking\s+)?([A-Z0-9]{10})/i);
+        if (progressMatch) {
+            scraperState.current = parseInt(progressMatch[1], 10);
+            scraperState.total = parseInt(progressMatch[2], 10);
+            const asin = progressMatch[3];
+            io.emit('scraper:progress', {
+                current: scraperState.current,
+                total: scraperState.total,
+                asin,
+                status: 'checking'
+            });
+            return;
+        }
+
+        // Parse available result: "✅" indicates available
+        if (output.includes('✅')) {
+            scraperState.available++;
+            const asinMatch = output.match(/([A-Z0-9]{10})/i);
+            if (asinMatch) {
+                io.emit('scraper:progress', {
+                    current: scraperState.current,
+                    total: scraperState.total,
+                    asin: asinMatch[1],
+                    status: 'complete',
+                    available: true
+                });
+            }
+            return;
+        }
+
+        // Parse unavailable result: "❌" indicates unavailable
+        if (output.includes('❌') && !output.includes('Fatal')) {
+            scraperState.unavailable++;
+            const asinMatch = output.match(/([A-Z0-9]{10})/i);
+            if (asinMatch) {
+                io.emit('scraper:progress', {
+                    current: scraperState.current,
+                    total: scraperState.total,
+                    asin: asinMatch[1],
+                    status: 'complete',
+                    available: false
+                });
+            }
+            return;
+        }
+    });
+
+    currentScraperProcess.stderr.on('data', (data) => {
+        const output = data.toString().trim();
+        scraperState.errors++;
+        const asinMatch = output.match(/([A-Z0-9]{10})/i);
+        io.emit('scraper:error', {
+            message: output,
+            asin: asinMatch ? asinMatch[1] : null
+        });
+    });
 
     currentScraperProcess.on('close', () => {
         currentScraperProcess = null;
-        io.emit('scraper-done', formatMontrealTime(new Date()));
+        io.emit('scraper:complete', {
+            total: scraperState.total,
+            available: scraperState.available,
+            unavailable: scraperState.unavailable,
+            errors: scraperState.errors
+        });
     });
 
     res.sendStatus(200);
@@ -560,12 +817,78 @@ app.post('/run-report-selected', (req, res) => {
         env: { ...process.env }
     });
 
-    currentScraperProcess.stdout.on('data', (data) => io.emit('scraper-log', data.toString().trim()));
-    currentScraperProcess.stderr.on('data', (data) => io.emit('scraper-log', `⚠️ ${data}`));
+    // Track scraper progress state for selected ASINs
+    let scraperState = { current: 0, total: asins.length, available: 0, unavailable: 0, errors: 0 };
+
+    currentScraperProcess.stdout.on('data', (data) => {
+        const output = data.toString().trim();
+
+        // Parse progress: "📦 [1/10] Checking B00ABC1234..."
+        const progressMatch = output.match(/\[(\d+)\/(\d+)\]\s*(?:Checking\s+)?([A-Z0-9]{10})/i);
+        if (progressMatch) {
+            scraperState.current = parseInt(progressMatch[1], 10);
+            scraperState.total = parseInt(progressMatch[2], 10);
+            const asin = progressMatch[3];
+            io.emit('scraper:progress', {
+                current: scraperState.current,
+                total: scraperState.total,
+                asin,
+                status: 'checking'
+            });
+            return;
+        }
+
+        // Parse available result: "✅" indicates available
+        if (output.includes('✅')) {
+            scraperState.available++;
+            const asinMatch = output.match(/([A-Z0-9]{10})/i);
+            if (asinMatch) {
+                io.emit('scraper:progress', {
+                    current: scraperState.current,
+                    total: scraperState.total,
+                    asin: asinMatch[1],
+                    status: 'complete',
+                    available: true
+                });
+            }
+            return;
+        }
+
+        // Parse unavailable result: "❌" indicates unavailable
+        if (output.includes('❌') && !output.includes('Fatal')) {
+            scraperState.unavailable++;
+            const asinMatch = output.match(/([A-Z0-9]{10})/i);
+            if (asinMatch) {
+                io.emit('scraper:progress', {
+                    current: scraperState.current,
+                    total: scraperState.total,
+                    asin: asinMatch[1],
+                    status: 'complete',
+                    available: false
+                });
+            }
+            return;
+        }
+    });
+
+    currentScraperProcess.stderr.on('data', (data) => {
+        const output = data.toString().trim();
+        scraperState.errors++;
+        const asinMatch = output.match(/([A-Z0-9]{10})/i);
+        io.emit('scraper:error', {
+            message: output,
+            asin: asinMatch ? asinMatch[1] : null
+        });
+    });
 
     currentScraperProcess.on('close', () => {
         currentScraperProcess = null;
-        io.emit('scraper-done', formatMontrealTime(new Date()));
+        io.emit('scraper:complete', {
+            total: scraperState.total,
+            available: scraperState.available,
+            unavailable: scraperState.unavailable,
+            errors: scraperState.errors
+        });
     });
 
     res.json({ success: true, count: asins.length });
@@ -589,13 +912,13 @@ app.post('/stop-report', (req, res) => {
         console.log("Force kill command executed.");
     });
 
-    io.emit('scraper-log', "🛑 FORCE STOPPED ALL SCRAPERS");
-    io.emit('scraper-done', formatMontrealTime(new Date()));
+    io.emit('scraper:error', { message: "🛑 FORCE STOPPED ALL SCRAPERS", asin: null });
+    io.emit('scraper:complete', { total: 0, available: 0, unavailable: 0, errors: 1 });
 
     res.sendStatus(200);
 });
 
-app.get('/history/:asin', async (req, res) => {
+app.get('/history/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const { startDate, endDate } = req.query;
@@ -709,7 +1032,7 @@ app.get('/api/products', async (req, res) => {
 
         res.json(products);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch products');
     }
 });
 
@@ -893,12 +1216,12 @@ app.get('/api/asins/latest', async (req, res) => {
         res.json(combined);
     } catch (err) {
         console.error('Error fetching latest ASINs:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch latest ASIN data');
     }
 });
 
 // GET /api/asins/:asin/history - Get history for a specific ASIN
-app.get('/api/asins/:asin/history', async (req, res) => {
+app.get('/api/asins/:asin/history', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
 
@@ -974,7 +1297,7 @@ app.get('/api/asins/:asin/history', async (req, res) => {
 
         res.json(transformed);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch ASIN history');
     }
 });
 
@@ -1038,7 +1361,7 @@ app.get('/api/vendor-reports', async (req, res) => {
 
         res.json(transformed);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch vendor reports');
     }
 });
 
@@ -1048,7 +1371,7 @@ app.get('/api/vendor-reports/asins', async (req, res) => {
         const result = await pool.query('SELECT DISTINCT asin FROM vendor_reports ORDER BY asin');
         res.json(result.rows.map(r => r.asin));
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch vendor report ASINs');
     }
 });
 
@@ -1069,7 +1392,7 @@ app.get('/api/purchase-orders/vendors', async (req, res) => {
             .sort();
         res.json([...new Set(vendors)]);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch vendor codes');
     }
 });
 
@@ -1122,7 +1445,7 @@ app.get('/api/purchase-orders', async (req, res) => {
 
         res.json(transformed);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch purchase orders');
     }
 });
 
@@ -1142,7 +1465,7 @@ app.get('/api/purchase-orders/:poNumber', async (req, res) => {
             line_items: itemsResult.rows
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch purchase order');
     }
 });
 
@@ -1153,7 +1476,7 @@ app.get('/api/purchase-orders/:poNumber/items', async (req, res) => {
         const result = await pool.query('SELECT * FROM po_line_items WHERE po_number = $1', [poNumber]);
         res.json(result.rows);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch PO line items');
     }
 });
 
@@ -1187,12 +1510,12 @@ app.get('/api/purchase-orders/calendar/:year/:month', async (req, res) => {
 
         res.json(grouped);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch PO calendar data');
     }
 });
 
 // GET /api/catalog/:asin - Get catalog item
-app.get('/api/catalog/:asin', async (req, res) => {
+app.get('/api/catalog/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const result = await pool.query('SELECT * FROM catalog_details WHERE asin = $1', [asin]);
@@ -1206,12 +1529,12 @@ app.get('/api/catalog/:asin', async (req, res) => {
             updated_at: row.last_updated
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch catalog item');
     }
 });
 
 // POST /api/catalog/:asin/refresh - Refresh catalog item from SP-API
-app.post('/api/catalog/:asin/refresh', async (req, res) => {
+app.post('/api/catalog/:asin/refresh', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         // For now, just return the existing data or 404
@@ -1222,7 +1545,7 @@ app.post('/api/catalog/:asin/refresh', async (req, res) => {
         }
         res.json(result.rows[0]);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to refresh catalog item');
     }
 });
 
@@ -1277,12 +1600,12 @@ app.post('/api/asins/bulk', async (req, res) => {
 
         res.json({ success: true, added });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to add ASINs');
     }
 });
 
 // PUT /api/asins/:asin/comment - Update ASIN comment
-app.put('/api/asins/:asin/comment', async (req, res) => {
+app.put('/api/asins/:asin/comment', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const { comment } = req.body;
@@ -1294,12 +1617,12 @@ app.put('/api/asins/:asin/comment', async (req, res) => {
 
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to update comment');
     }
 });
 
 // POST /api/asins/:asin/snooze - Toggle ASIN snooze
-app.post('/api/asins/:asin/snooze', async (req, res) => {
+app.post('/api/asins/:asin/snooze', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
 
@@ -1323,7 +1646,7 @@ app.post('/api/asins/:asin/snooze', async (req, res) => {
             res.json({ success: true, snoozed: true });
         }
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to toggle snooze');
     }
 });
 
@@ -1338,14 +1661,14 @@ app.post('/api/products/bulk-delete', async (req, res) => {
         await pool.query('DELETE FROM products WHERE asin = ANY($1)', [asins]);
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to delete products');
     }
 });
 
 // ============ END REACT SPA API ENDPOINTS ============
 
 // PUT /api/products/:asin - Update a product
-app.put('/api/products/:asin', async (req, res) => {
+app.put('/api/products/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const updateData = req.body;
@@ -1383,12 +1706,12 @@ app.put('/api/products/:asin', async (req, res) => {
         res.json(result.rows[0]);
     } catch (err) {
         console.error('Error updating product:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to update product');
     }
 });
 
 // DELETE /api/products/:asin - Delete a product by ASIN
-app.delete('/api/products/:asin', async (req, res) => {
+app.delete('/api/products/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const result = await pool.query('DELETE FROM products WHERE asin = $1', [asin]);
@@ -1397,7 +1720,7 @@ app.delete('/api/products/:asin', async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to delete product');
     }
 });
 
@@ -1407,7 +1730,7 @@ app.get('/api/products/columns', async (req, res) => {
         const columns = await getTableColumns();
         res.json(columns);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch columns');
     }
 });
 
@@ -1440,12 +1763,12 @@ app.get('/api/products/duplicates', async (req, res) => {
         res.json({ duplicates });
     } catch (err) {
         console.error('Find duplicates error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to find duplicates');
     }
 });
 
 // Get single product by ASIN (must come AFTER specific routes like /duplicates)
-app.get('/api/products/:asin', async (req, res) => {
+app.get('/api/products/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const result = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
@@ -1454,7 +1777,7 @@ app.get('/api/products/:asin', async (req, res) => {
         }
         res.json(result.rows[0]);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch product');
     }
 });
 
@@ -1496,11 +1819,11 @@ app.post('/api/asins', async (req, res) => {
         await pool.query('INSERT INTO products (asin) VALUES ($1)', [cleanAsin]);
         res.json({ success: true, asin: cleanAsin, added: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to add ASIN');
     }
 });
 
-app.delete('/api/asins/:asin', async (req, res) => {
+app.delete('/api/asins/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const result = await pool.query('DELETE FROM products WHERE asin = $1', [asin]);
@@ -1509,11 +1832,11 @@ app.delete('/api/asins/:asin', async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to delete ASIN');
     }
 });
 
-app.patch('/api/asins/:asin/comment', async (req, res) => {
+app.patch('/api/asins/:asin/comment', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const { comment } = req.body;
@@ -1526,11 +1849,11 @@ app.patch('/api/asins/:asin/comment', async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to update comment');
     }
 });
 
-app.patch('/api/asins/:asin/snooze', async (req, res) => {
+app.patch('/api/asins/:asin/snooze', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const { snooze_until } = req.body;
@@ -1543,15 +1866,26 @@ app.patch('/api/asins/:asin/snooze', async (req, res) => {
         }
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to update snooze');
     }
 });
 
 // PUT endpoint for updating product fields (from products page edit modal)
-app.put('/api/asins/:asin', async (req, res) => {
+app.put('/api/asins/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const updateData = req.body;
+
+        // Validate column names against whitelist to prevent SQL injection
+        const columnKeys = Object.keys(updateData).filter(k => k !== 'asin' && k !== 'id');
+        if (!validateColumns(columnKeys)) {
+            const invalidCols = columnKeys.filter(k => !ALLOWED_PRODUCT_COLUMNS.includes(k));
+            return res.status(400).json({
+                error: 'Invalid column names',
+                invalidColumns: invalidCols,
+                allowedColumns: ALLOWED_PRODUCT_COLUMNS
+            });
+        }
 
         // Get current product data to compare
         const currentResult = await pool.query('SELECT * FROM products WHERE asin = $1', [asin]);
@@ -1566,6 +1900,7 @@ app.put('/api/asins/:asin', async (req, res) => {
 
         for (const [key, value] of Object.entries(updateData)) {
             if (key === 'asin' || key === 'id') continue; // Skip ASIN and ID
+            if (!ALLOWED_PRODUCT_COLUMNS.includes(key)) continue; // Skip non-whitelisted columns
 
             // Normalize values for comparison
             let currentValue = currentData[key];
@@ -1611,7 +1946,7 @@ app.put('/api/asins/:asin', async (req, res) => {
 
         res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to update ASIN');
     }
 });
 
@@ -1862,7 +2197,7 @@ app.post('/api/upload-excel/preview', upload.single('file'), async (req, res) =>
         });
     } catch (err) {
         console.error('Excel preview error:', err);
-        res.status(500).json({ error: err.message || 'Failed to parse Excel file' });
+        handleApiError(res, err, 'Failed to parse Excel file');
     }
 });
 
@@ -1901,7 +2236,7 @@ app.post('/api/upload-excel/configure', async (req, res) => {
         });
     } catch (err) {
         console.error('Configure error:', err);
-        res.status(500).json({ error: err.message || 'Failed to configure columns' });
+        handleApiError(res, err, 'Failed to configure columns');
     }
 });
 
@@ -1986,7 +2321,7 @@ app.post('/api/upload-excel/check-duplicates', upload.single('file'), async (req
         res.json({ duplicates });
     } catch (err) {
         console.error('Check duplicates error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to check duplicates');
     }
 });
 
@@ -2110,7 +2445,8 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                 });
 
                 for (const [excelColName, dbColName] of Object.entries(columnMappings)) {
-                    if (dbColName && dbColName !== 'asin') {
+                    // Validate column name against whitelist to prevent SQL injection
+                    if (dbColName && dbColName !== 'asin' && ALLOWED_PRODUCT_COLUMNS.includes(dbColName)) {
                         const colIndex = headerMap[excelColName];
 
                         if (colIndex !== undefined && colIndex < row.length) {
@@ -2167,7 +2503,8 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                         let paramIndex = 1;
 
                         for (const [key, value] of Object.entries(data)) {
-                            if (key !== 'asin') {
+                            // Double-check column whitelist to prevent SQL injection
+                            if (key !== 'asin' && ALLOWED_PRODUCT_COLUMNS.includes(key)) {
                                 // Track changed fields
                                 const currentValue = currentData[key];
                                 let normalizedCurrent = currentValue !== null && currentValue !== undefined ? String(currentValue).trim() : null;
@@ -2203,12 +2540,18 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
                         skipped++;
                     }
                 } else {
-                    // Insert new
-                    const insertFields = Object.keys(data).map(k => `"${k}"`).join(', ');
-                    const insertValues = Object.keys(data).map((_, i) => `$${i + 1}`).join(', ');
+                    // Insert new - filter to only allowed columns plus 'asin'
+                    const safeData = { asin: data.asin };
+                    for (const [key, value] of Object.entries(data)) {
+                        if (key !== 'asin' && ALLOWED_PRODUCT_COLUMNS.includes(key)) {
+                            safeData[key] = value;
+                        }
+                    }
+                    const insertFields = Object.keys(safeData).map(k => `"${k}"`).join(', ');
+                    const insertValues = Object.keys(safeData).map((_, i) => `$${i + 1}`).join(', ');
                     await pool.query(
                         `INSERT INTO products (${insertFields}) VALUES (${insertValues})`,
-                        Object.values(data)
+                        Object.values(safeData)
                     );
                     added++;
                 }
@@ -2230,7 +2573,7 @@ app.post('/api/upload-excel/import', upload.single('file'), async (req, res) => 
         });
     } catch (err) {
         console.error('Import error:', err);
-        res.status(500).json({ error: err.message || 'Failed to import Excel data' });
+        handleApiError(res, err, 'Failed to import Excel data');
     }
 });
 
@@ -2372,6 +2715,10 @@ app.get('/auth/amazon/callback', async (req, res) => {
                 'SELECT id FROM oauth_tokens ORDER BY created_at DESC LIMIT 1'
             );
 
+            // Encrypt tokens before storing
+            const encryptedRefreshToken = encryptToken(tokenData.refresh_token);
+            const encryptedAccessToken = tokenData.access_token ? encryptToken(tokenData.access_token) : null;
+
             if (existing.rows.length > 0) {
                 // Update existing token
                 await pool.query(
@@ -2383,8 +2730,8 @@ app.get('/auth/amazon/callback', async (req, res) => {
                          updated_at = CURRENT_TIMESTAMP
                      WHERE id = $5`,
                     [
-                        tokenData.refresh_token,
-                        tokenData.access_token || null,
+                        encryptedRefreshToken,
+                        encryptedAccessToken,
                         tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
                         selling_partner_id || null,
                         existing.rows[0].id
@@ -2396,8 +2743,8 @@ app.get('/auth/amazon/callback', async (req, res) => {
                     `INSERT INTO oauth_tokens (refresh_token, access_token, expires_at, selling_partner_id)
                      VALUES ($1, $2, $3, $4)`,
                     [
-                        tokenData.refresh_token,
-                        tokenData.access_token || null,
+                        encryptedRefreshToken,
+                        encryptedAccessToken,
                         tokenData.expires_in ? new Date(Date.now() + tokenData.expires_in * 1000) : null,
                         selling_partner_id || null
                     ]
@@ -2522,14 +2869,18 @@ async function getValidAccessToken() {
         const token = tokenResult.rows[0];
         const now = new Date();
 
+        // Decrypt tokens from database
+        const decryptedAccessToken = decryptToken(token.access_token);
+        const decryptedRefreshToken = decryptToken(token.refresh_token);
+
         // Check if access token exists and is still valid (with 5 minute buffer)
-        if (token.access_token && token.expires_at && new Date(token.expires_at) > new Date(now.getTime() + 5 * 60 * 1000)) {
-            return token.access_token;
+        if (decryptedAccessToken && token.expires_at && new Date(token.expires_at) > new Date(now.getTime() + 5 * 60 * 1000)) {
+            return decryptedAccessToken;
         }
 
         // Access token expired or doesn't exist, refresh it
         console.log('Access token expired or missing, refreshing...');
-        return await refreshAccessToken(token.refresh_token);
+        return await refreshAccessToken(decryptedRefreshToken, token.refresh_token);
     } catch (err) {
         console.error('Error getting access token:', err);
         throw err;
@@ -2537,7 +2888,10 @@ async function getValidAccessToken() {
 }
 
 // Function to refresh access token using refresh token
-async function refreshAccessToken(refreshToken) {
+// Parameters:
+//   refreshToken - The decrypted refresh token to use for the API call
+//   encryptedRefreshToken - The encrypted refresh token stored in database (for WHERE clause)
+async function refreshAccessToken(refreshToken, encryptedRefreshToken = null) {
     try {
         if (!process.env.LWA_CLIENT_ID || !process.env.LWA_CLIENT_SECRET) {
             throw new Error('LWA credentials not configured');
@@ -2570,10 +2924,16 @@ async function refreshAccessToken(refreshToken) {
             throw new Error('No access token received from refresh');
         }
 
-        // Update database with new access token
+        // Update database with new encrypted access token
         const expiresAt = tokenData.expires_in
             ? new Date(Date.now() + tokenData.expires_in * 1000)
             : new Date(Date.now() + 3600 * 1000); // Default 1 hour
+
+        // Encrypt the new access token before storing
+        const encryptedAccessToken = encryptToken(tokenData.access_token);
+
+        // Use the encrypted refresh token for the WHERE clause if provided
+        const whereRefreshToken = encryptedRefreshToken || refreshToken;
 
         await pool.query(
             `UPDATE oauth_tokens
@@ -2581,7 +2941,7 @@ async function refreshAccessToken(refreshToken) {
                  expires_at = $2,
                  updated_at = CURRENT_TIMESTAMP
              WHERE refresh_token = $3`,
-            [tokenData.access_token, expiresAt, refreshToken]
+            [encryptedAccessToken, expiresAt, whereRefreshToken]
         );
 
         console.log('Access token refreshed successfully');
@@ -2602,18 +2962,21 @@ app.post('/api/sp-api/update-token', async (req, res) => {
             return res.status(400).json({ error: 'refresh_token is required' });
         }
 
+        // Encrypt the refresh token before storing
+        const encryptedRefreshToken = encryptToken(refresh_token);
+
         // Update existing token or insert new one
         const existing = await pool.query('SELECT id FROM oauth_tokens LIMIT 1');
 
         if (existing.rows.length > 0) {
             await pool.query(
                 `UPDATE oauth_tokens SET refresh_token = $1, access_token = NULL, expires_at = NULL, updated_at = CURRENT_TIMESTAMP`,
-                [refresh_token]
+                [encryptedRefreshToken]
             );
         } else {
             await pool.query(
                 `INSERT INTO oauth_tokens (refresh_token) VALUES ($1)`,
-                [refresh_token]
+                [encryptedRefreshToken]
             );
         }
 
@@ -2633,7 +2996,7 @@ app.post('/api/sp-api/update-token', async (req, res) => {
             });
         }
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to update token');
     }
 });
 
@@ -2708,6 +3071,10 @@ app.post('/api/sp-api/store-tokens', async (req, res) => {
             return res.status(400).json({ error: 'refresh_token is required' });
         }
 
+        // Encrypt tokens before storing
+        const encryptedRefreshToken = encryptToken(refresh_token);
+        const encryptedAccessToken = access_token ? encryptToken(access_token) : null;
+
         // Calculate expiration time
         const expiresAt = expires_in
             ? new Date(Date.now() + expires_in * 1000)
@@ -2730,14 +3097,14 @@ app.post('/api/sp-api/store-tokens', async (req, res) => {
                      selling_partner_id = $4,
                      updated_at = CURRENT_TIMESTAMP
                  WHERE id = $5`,
-                [refresh_token, access_token || null, expiresAt, selling_partner_id || null, existing.rows[0].id]
+                [encryptedRefreshToken, encryptedAccessToken, expiresAt, selling_partner_id || null, existing.rows[0].id]
             );
         } else {
             // Insert new token
             await pool.query(
                 `INSERT INTO oauth_tokens (refresh_token, access_token, expires_at, selling_partner_id)
                  VALUES ($1, $2, $3, $4)`,
-                [refresh_token, access_token || null, expiresAt, selling_partner_id || null]
+                [encryptedRefreshToken, encryptedAccessToken, expiresAt, selling_partner_id || null]
             );
         }
 
@@ -2749,7 +3116,7 @@ app.post('/api/sp-api/store-tokens', async (req, res) => {
         });
     } catch (err) {
         console.error('Error storing tokens:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to store tokens');
     }
 });
 
@@ -3788,7 +4155,7 @@ app.get('/purchase-orders', async (req, res) => {
 });
 
 // Catalog Details Page
-app.get('/catalog/:asin', async (req, res) => {
+app.get('/catalog/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
 
@@ -3958,7 +4325,7 @@ app.post('/api/vendor-reports/create', async (req, res) => {
         });
     } catch (err) {
         console.error('Create report error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to create report');
     }
 });
 
@@ -4006,7 +4373,7 @@ app.get('/api/vendor-reports/status/:reportId', async (req, res) => {
         });
     } catch (err) {
         console.error('Report status error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to check report status');
     }
 });
 
@@ -4121,36 +4488,48 @@ app.get('/api/vendor-reports/download/:reportDocumentId', async (req, res) => {
                 // Get unique report dates for batch delete
                 const uniqueDates = [...new Set(itemsToSave.map(i => i.reportDate))];
 
-                // Batch delete existing records for this report type and dates
-                await pool.query(
-                    `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = ANY($2)`,
-                    [reportType, uniqueDates]
-                );
+                // Use transaction for data integrity
+                const client = await pool.connect();
+                try {
+                    await client.query('BEGIN');
 
-                // Batch insert in chunks of 500 to avoid query size limits
-                const chunkSize = 500;
-                for (let i = 0; i < itemsToSave.length; i += chunkSize) {
-                    const chunk = itemsToSave.slice(i, i + chunkSize);
+                    // Batch delete existing records for this report type and dates
+                    await client.query(
+                        `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = ANY($2)`,
+                        [reportType, uniqueDates]
+                    );
 
-                    // Build multi-row INSERT
-                    const values = [];
-                    const params = [];
-                    let paramIndex = 1;
+                    // Batch insert in chunks of 500 to avoid query size limits
+                    const chunkSize = 500;
+                    for (let i = 0; i < itemsToSave.length; i += chunkSize) {
+                        const chunk = itemsToSave.slice(i, i + chunkSize);
 
-                    for (const item of chunk) {
-                        values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, CURRENT_TIMESTAMP)`);
-                        params.push(reportType, item.asin, item.reportDate, item.data, item.dataStartDate, item.dataEndDate);
-                        paramIndex += 6;
+                        // Build multi-row INSERT
+                        const values = [];
+                        const params = [];
+                        let paramIndex = 1;
+
+                        for (const item of chunk) {
+                            values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, CURRENT_TIMESTAMP)`);
+                            params.push(reportType, item.asin, item.reportDate, item.data, item.dataStartDate, item.dataEndDate);
+                            paramIndex += 6;
+                        }
+
+                        await client.query(
+                            `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
+                             VALUES ${values.join(', ')}`,
+                            params
+                        );
                     }
 
-                    await pool.query(
-                        `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
-                         VALUES ${values.join(', ')}`,
-                        params
-                    );
+                    await client.query('COMMIT');
+                    console.log(`[${reportType}] Saved ${itemsToSave.length} items in batches`);
+                } catch (txErr) {
+                    await client.query('ROLLBACK');
+                    throw txErr;
+                } finally {
+                    client.release();
                 }
-
-                console.log(`[${reportType}] Saved ${itemsToSave.length} items in batches`);
             }
         }
 
@@ -4161,7 +4540,7 @@ app.get('/api/vendor-reports/download/:reportDocumentId', async (req, res) => {
         });
     } catch (err) {
         console.error('Download report error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to download report');
     }
 });
 
@@ -4213,7 +4592,7 @@ app.get('/api/vendor-reports/fetch', async (req, res) => {
         });
     } catch (err) {
         console.error('Fetch reports error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch reports');
     }
 });
 
@@ -4358,7 +4737,7 @@ app.get('/api/vendor-reports/test-api', async (req, res) => {
         });
     } catch (err) {
         console.error('Test API error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'API test failed');
     }
 });
 
@@ -4545,7 +4924,7 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
         });
     } catch (err) {
         console.error('Chart data error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch chart data');
     }
 });
 
@@ -4740,7 +5119,7 @@ app.get('/api/charts/multi-series', async (req, res) => {
         });
     } catch (err) {
         console.error('Multi-series chart error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch multi-series chart data');
     }
 });
 
@@ -4825,7 +5204,7 @@ app.get('/api/purchase-orders/debug-closed-pos', async (req, res) => {
             rawFirstOrder: orders[0] || null
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to debug closed POs');
     }
 });
 
@@ -4911,7 +5290,7 @@ app.get('/api/purchase-orders/debug-receiving', async (req, res) => {
             dbPOStates: dbStates.rows
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to debug receiving data');
     }
 });
 
@@ -4956,7 +5335,7 @@ app.get('/api/purchase-orders/debug-shipments', async (req, res) => {
             totalCount: (data.payload?.shipmentConfirmations || []).length
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to debug shipments');
     }
 });
 
@@ -4994,7 +5373,7 @@ app.get('/api/purchase-orders/debug', async (req, res) => {
             recentPOs: recent.rows
         });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to debug PO database');
     }
 });
 
@@ -5025,12 +5404,12 @@ app.get('/api/purchase-orders/raw-sample', async (req, res) => {
 
         res.json({ success: true, samples });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch raw PO samples');
     }
 });
 
 // API: Get POs for a specific ASIN
-app.get('/api/purchase-orders/by-asin/:asin', async (req, res) => {
+app.get('/api/purchase-orders/by-asin/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
 
@@ -5052,7 +5431,7 @@ app.get('/api/purchase-orders/by-asin/:asin', async (req, res) => {
         });
     } catch (err) {
         console.error('POs by ASIN error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch POs for ASIN');
     }
 });
 
@@ -5102,12 +5481,16 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
 
         } while (nextToken && pageCount < maxPages);
 
-        // Save all POs to database
+        // Save all POs to database using a transaction for data integrity
         let savedCount = 0;
+        const client = await pool.connect();
 
-        for (const order of allOrders) {
-            try {
-                // Data is nested in orderDetails
+        try {
+            await client.query('BEGIN');
+
+            for (const order of allOrders) {
+                try {
+                    // Data is nested in orderDetails
                 const details = order.orderDetails || {};
                 const items = details.items || [];
 
@@ -5130,7 +5513,7 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
                     }
                 }
 
-                await pool.query(
+                await client.query(
                     `INSERT INTO purchase_orders (
                         po_number, po_date, po_status,
                         ship_window_start, ship_window_end,
@@ -5173,7 +5556,7 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
                 for (const item of items) {
                     const asin = item.amazonProductIdentifier;
                     if (asin) {
-                        await pool.query(
+                        await client.query(
                             `INSERT INTO po_line_items (
                                 po_number, asin, vendor_sku, ordered_quantity,
                                 acknowledged_quantity, net_cost_amount, net_cost_currency
@@ -5203,6 +5586,14 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
             }
         }
 
+            await client.query('COMMIT');
+        } catch (txErr) {
+            await client.query('ROLLBACK');
+            throw txErr;
+        } finally {
+            client.release();
+        }
+
         res.json({
             success: true,
             totalFetched: allOrders.length,
@@ -5212,7 +5603,7 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
         });
     } catch (err) {
         console.error('Sync POs error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to sync purchase orders');
     }
 });
 
@@ -5345,12 +5736,12 @@ app.post('/api/purchase-orders/sync-status', async (req, res) => {
         });
     } catch (err) {
         console.error('[PO Status Sync] Error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to sync PO status');
     }
 });
 
 // API: Fetch catalog details for an ASIN
-app.post('/api/catalog/fetch/:asin', async (req, res) => {
+app.post('/api/catalog/fetch/:asin', validateAsin, async (req, res) => {
     try {
         const { asin } = req.params;
         const accessToken = await getValidAccessToken();
@@ -5423,7 +5814,7 @@ app.post('/api/catalog/fetch/:asin', async (req, res) => {
         });
     } catch (err) {
         console.error('Fetch catalog error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch catalog');
     }
 });
 
@@ -5530,7 +5921,7 @@ app.get('/api/vendor-analytics/data', async (req, res) => {
         });
     } catch (err) {
         console.error('Vendor analytics data error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch vendor analytics data');
     }
 });
 
@@ -5657,14 +6048,21 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
 
                 // Delete existing records for this report type and date range first
                 const reportDate = startDate.toISOString().split('T')[0];
-                await pool.query(
-                    `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = $2`,
-                    [reportType, reportDate]
-                );
 
-                // Batch insert in chunks of 100 for better performance
-                const chunkSize = 100;
+                // Use transaction for data integrity
+                const client = await pool.connect();
                 let savedCount = 0;
+
+                try {
+                    await client.query('BEGIN');
+
+                    await client.query(
+                        `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = $2`,
+                        [reportType, reportDate]
+                    );
+
+                    // Batch insert in chunks of 100 for better performance
+                    const chunkSize = 100;
 
                 for (let i = 0; i < items.length; i += chunkSize) {
                     const chunk = items.slice(i, Math.min(i + chunkSize, items.length));
@@ -5683,15 +6081,23 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                     }
 
                     if (values.length > 0) {
-                        await pool.query(
-                            `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
-                             VALUES ${values.join(', ')}`,
-                            params
-                        );
+                            await client.query(
+                                `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
+                                 VALUES ${values.join(', ')}`,
+                                params
+                            );
+                        }
                     }
+
+                    await client.query('COMMIT');
+                    console.log(`[Backfill ${reportType}] Saved ${savedCount} items`);
+                } catch (txErr) {
+                    await client.query('ROLLBACK');
+                    throw txErr;
+                } finally {
+                    client.release();
                 }
 
-                console.log(`[Backfill ${reportType}] Saved ${savedCount} items`);
                 return { success: true, itemCount: savedCount };
             } catch (err) {
                 return { success: false, error: err.message };
@@ -5728,7 +6134,7 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
 
     } catch (err) {
         console.error('Backfill error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to backfill daily reports');
     }
 });
 
@@ -5793,7 +6199,7 @@ app.get('/api/vendor-reports/test-api', async (req, res) => {
 
     } catch (err) {
         console.error('Reports API test error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Reports API test failed');
     }
 });
 
@@ -5831,7 +6237,7 @@ app.get('/api/vendor-analytics/sample-data/:reportType', async (req, res) => {
 
     } catch (err) {
         console.error('Sample data error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to fetch sample data');
     }
 });
 
@@ -5964,7 +6370,7 @@ app.get('/api/vendor-analytics/data-gaps', async (req, res) => {
 
     } catch (err) {
         console.error('Data gaps check error:', err);
-        res.status(500).json({ error: err.message });
+        handleApiError(res, err, 'Failed to check data gaps');
     }
 });
 
@@ -5975,6 +6381,22 @@ app.get('/{*path}', (req, res, next) => {
         return next();
     }
     res.sendFile(path.join(__dirname, 'client/dist/index.html'));
+});
+
+// Global error handler - must be last middleware
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+});
+
+// Handle uncaught exceptions and rejections
+process.on('uncaughtException', (err) => {
+    console.error('Uncaught exception:', err);
+    process.exit(1);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled rejection at:', promise, 'reason:', reason);
 });
 
 server.listen(port, () => console.log(`Active on ${port}`));

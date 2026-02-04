@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo } from 'react'
 import {
   LineChart,
   Line,
@@ -37,7 +37,7 @@ const ASIN_COLORS = [
   '#65a30d', // lime
 ]
 
-export function AnalyticsCharts({ data, isLoading = false }: AnalyticsChartsProps) {
+export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading = false }: AnalyticsChartsProps) {
   const [chartMode, setChartMode] = useState<ChartMode>('individual')
   const [selectedAsins, setSelectedAsins] = useState<string[]>([])
   const [selectedMetrics, setSelectedMetrics] = useState({
@@ -760,4 +760,4 @@ export function AnalyticsCharts({ data, isLoading = false }: AnalyticsChartsProp
       )}
     </div>
   )
-}
+})

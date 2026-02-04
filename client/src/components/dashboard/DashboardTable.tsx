@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, memo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ExternalLink, MoreHorizontal, History, Edit, Trash2, Moon, TrendingUp, TrendingDown } from 'lucide-react'
 import {
@@ -407,7 +407,7 @@ interface DashboardTableProps {
   onRowSelectionChange?: (rows: AsinReport[]) => void
 }
 
-export function DashboardTable({
+export const DashboardTable = memo(function DashboardTable({
   data,
   isLoading = false,
   onEdit,
@@ -441,6 +441,7 @@ export function DashboardTable({
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-muted hover:text-accent"
+                  aria-label={`Open ${asin} on Amazon (opens in new tab)`}
                 >
                   <ExternalLink className="h-4 w-4" />
                 </a>
@@ -756,4 +757,4 @@ export function DashboardTable({
       />
     </>
   )
-}
+})

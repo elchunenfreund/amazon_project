@@ -49,7 +49,7 @@ async function setLocation(page, postalCode) {
                 console.log("🚨 AMAZON CAPTCHA DETECTED!");
                 if (!USE_HEADLESS) {
                     console.log("👉 Solve manual captcha now...");
-                    await page.waitForSelector('#nav-global-location-popover-link', { timeout: 0 });
+                    await page.waitForSelector('#nav-global-location-popover-link', { timeout: 5 * 60 * 1000 });
                 } else {
                     return false;
                 }
@@ -588,8 +588,16 @@ async function scrapeAsin(page, asin) {
     } catch (e) {
         console.error("❌ Fatal Script Error:", e);
     } finally {
-        if (browserInstance) await browserInstance.close();
-        await client.end();
+        try {
+            if (browserInstance) await browserInstance.close();
+        } catch (browserErr) {
+            console.error("⚠️ Error closing browser:", browserErr.message);
+        }
+        try {
+            await client.end();
+        } catch (clientErr) {
+            console.error("⚠️ Error closing database connection:", clientErr.message);
+        }
         console.log("🏁 Done.");
         process.exit(0);
     }

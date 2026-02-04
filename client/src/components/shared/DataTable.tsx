@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, memo } from 'react'
 import {
   type ColumnDef,
   type SortingState,
@@ -60,7 +60,7 @@ interface DataTableProps<TData, TValue> {
 
 const DEFAULT_PAGE_SIZES = [20, 50, 100, 500, 1000]
 
-export function DataTable<TData, TValue>({
+function DataTableInner<TData, TValue>({
   columns,
   data,
   isLoading = false,
@@ -224,6 +224,7 @@ export function DataTable<TData, TValue>({
             size="sm"
             onClick={() => setCompactMode(!compactMode)}
             title={compactMode ? "Expand view" : "Compact view"}
+            aria-label={compactMode ? "Expand view" : "Compact view"}
           >
             {compactMode ? <Maximize2 className="h-4 w-4" /> : <Minimize2 className="h-4 w-4" />}
           </Button>
@@ -402,6 +403,7 @@ export function DataTable<TData, TValue>({
                 size="sm"
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
+                aria-label="Previous page"
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -410,6 +412,7 @@ export function DataTable<TData, TValue>({
                 size="sm"
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
+                aria-label="Next page"
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -420,6 +423,9 @@ export function DataTable<TData, TValue>({
     </div>
   )
 }
+
+// Memoized wrapper for DataTable - preserves generic types
+export const DataTable = memo(DataTableInner) as typeof DataTableInner
 
 function DataTableSkeleton({ columns, rows }: { columns: number; rows: number }) {
   return (

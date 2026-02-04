@@ -5,6 +5,24 @@ const router = express.Router();
 const SALT_ROUNDS = 10;
 
 /**
+ * Validates password strength
+ * @param {string} password - The password to validate
+ * @returns {string|null} - Error message if invalid, null if valid
+ */
+function validatePassword(password) {
+    if (!password || password.length < 8) {
+        return 'Password must be at least 8 characters';
+    }
+    if (!/[A-Z]/.test(password)) {
+        return 'Password must contain at least one uppercase letter';
+    }
+    if (!/[0-9]/.test(password)) {
+        return 'Password must contain at least one number';
+    }
+    return null;
+}
+
+/**
  * Initialize auth routes with database pool
  * @param {Pool} pool - PostgreSQL connection pool
  */
@@ -16,6 +34,12 @@ function createAuthRoutes(pool) {
 
             if (!email || !password) {
                 return res.status(400).json({ error: 'Email and password are required' });
+            }
+
+            // Validate password strength
+            const passwordError = validatePassword(password);
+            if (passwordError) {
+                return res.status(400).json({ error: passwordError });
             }
 
             // Check if user already exists
@@ -41,19 +65,27 @@ function createAuthRoutes(pool) {
 
             const user = result.rows[0];
 
-            // Auto-login after registration
-            req.session.userId = user.id;
-            req.session.userEmail = user.email;
-            req.session.userRole = user.role;
-
-            res.json({
-                success: true,
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    role: user.role
+            // Regenerate session to prevent session fixation attacks
+            req.session.regenerate((err) => {
+                if (err) {
+                    console.error('Session regeneration error:', err);
+                    return res.status(500).json({ error: 'Session error' });
                 }
+
+                // Auto-login after registration
+                req.session.userId = user.id;
+                req.session.userEmail = user.email;
+                req.session.userRole = user.role;
+
+                res.json({
+                    success: true,
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        name: user.name,
+                        role: user.role
+                    }
+                });
             });
         } catch (err) {
             console.error('Registration error:', err);
@@ -89,19 +121,27 @@ function createAuthRoutes(pool) {
                 return res.status(401).json({ error: 'Invalid credentials' });
             }
 
-            // Create session
-            req.session.userId = user.id;
-            req.session.userEmail = user.email;
-            req.session.userRole = user.role;
-
-            res.json({
-                success: true,
-                user: {
-                    id: user.id,
-                    email: user.email,
-                    name: user.name,
-                    role: user.role
+            // Regenerate session to prevent session fixation attacks
+            req.session.regenerate((err) => {
+                if (err) {
+                    console.error('Session regeneration error:', err);
+                    return res.status(500).json({ error: 'Session error' });
                 }
+
+                // Create session
+                req.session.userId = user.id;
+                req.session.userEmail = user.email;
+                req.session.userRole = user.role;
+
+                res.json({
+                    success: true,
+                    user: {
+                        id: user.id,
+                        email: user.email,
+                        name: user.name,
+                        role: user.role
+                    }
+                });
             });
         } catch (err) {
             console.error('Login error:', err);
@@ -151,3 +191,4 @@ function createAuthRoutes(pool) {
 }
 
 module.exports = createAuthRoutes;
+module.exports.validatePassword = validatePassword;

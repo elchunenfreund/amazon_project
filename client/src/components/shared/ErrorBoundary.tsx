@@ -66,25 +66,27 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 interface QueryErrorProps {
   error: Error | null
   onRetry?: () => void
+  title?: string
+  description?: string
 }
 
-export function QueryError({ error, onRetry }: QueryErrorProps) {
+export function QueryError({ error, onRetry, title = 'Failed to load data', description }: QueryErrorProps) {
   if (!error) return null
+
+  const errorMessage = description || error.message
 
   return (
     <Card className="border-danger/50 bg-danger/5">
-      <CardContent className="flex items-center justify-between py-4">
-        <div className="flex items-center gap-3">
-          <AlertTriangle className="h-5 w-5 text-danger" />
-          <div>
-            <p className="font-medium text-danger">Failed to load data</p>
-            <p className="text-sm text-muted">{error.message}</p>
-          </div>
-        </div>
+      <CardContent className="flex flex-col items-center justify-center py-12 text-center">
+        <AlertTriangle className="h-12 w-12 text-danger mb-4" />
+        <h3 className="text-lg font-semibold text-danger mb-2">{title}</h3>
+        <p className="text-sm text-muted mb-6 max-w-md">
+          {errorMessage}
+        </p>
         {onRetry && (
-          <Button variant="outline" size="sm" onClick={onRetry}>
+          <Button variant="outline" onClick={onRetry}>
             <RefreshCw className="mr-2 h-4 w-4" />
-            Retry
+            Try Again
           </Button>
         )}
       </CardContent>
