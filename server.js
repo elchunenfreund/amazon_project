@@ -1560,6 +1560,9 @@ app.get('/api/vendor-reports', async (req, res) => {
                 asin: row.asin,
                 report_date: row.report_date,
                 report_type: row.report_type,
+                // Include data period boundaries for proper deduplication
+                data_start_date: row.data_start_date,
+                data_end_date: row.data_end_date,
                 shipped_cogs: extractNumber(data.shippedCogs) ?? extractNumber(data.shipped_cogs),
                 shipped_units: extractNumber(data.shippedUnits) ?? extractNumber(data.shipped_units),
                 ordered_units: orderedUnits,
@@ -1572,7 +1575,7 @@ app.get('/api/vendor-reports', async (req, res) => {
         });
 
         // Aggregate data across report types to calculate conversion rate
-        // Group by ASIN only - sum real-time sales, use latest weekly data for other metrics
+        // Group by ASIN and week boundaries - this properly deduplicates data from multiple sync runs
         const aggregatedByAsin = new Map();
 
         // Track real-time sales separately (to sum them)
@@ -1591,13 +1594,17 @@ app.get('/api/vendor-reports', async (req, res) => {
                 if (record.ordered_units !== null) rt.ordered_units += record.ordered_units;
                 if (record.ordered_revenue !== null) rt.ordered_revenue += record.ordered_revenue;
             } else {
-                // For non-real-time reports, keep latest data by date
-                const key = `${asin}_${record.report_date}`;
-                if (!aggregatedByAsin.has(key)) {
-                    aggregatedByAsin.set(key, { ...record });
+                // For non-real-time reports, deduplicate by ASIN + week boundaries (data_start_date + data_end_date)
+                // This prevents counting the same week multiple times if synced on different days
+                const weekKey = record.data_start_date && record.data_end_date
+                    ? `${asin}_${record.data_start_date}_${record.data_end_date}`
+                    : `${asin}_${record.report_date}`;  // Fallback for old records without boundaries
+
+                if (!aggregatedByAsin.has(weekKey)) {
+                    aggregatedByAsin.set(weekKey, { ...record });
                 } else {
-                    const existing = aggregatedByAsin.get(key);
-                    // Merge non-null values from different report types
+                    const existing = aggregatedByAsin.get(weekKey);
+                    // Merge non-null values from different report types (SALES, TRAFFIC, etc.)
                     if (record.shipped_cogs !== null) existing.shipped_cogs = record.shipped_cogs;
                     if (record.shipped_units !== null) existing.shipped_units = record.shipped_units;
                     if (record.ordered_units !== null) existing.ordered_units = record.ordered_units;
