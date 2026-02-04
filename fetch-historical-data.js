@@ -7,11 +7,9 @@
  */
 
 const { Pool } = require('pg');
+const { getDatabaseConfig } = require('./lib/db-config');
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
+const pool = new Pool(getDatabaseConfig());
 
 // Report types that support historical data (weekly aggregation)
 const HISTORICAL_REPORT_TYPES = [

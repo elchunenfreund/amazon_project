@@ -26,6 +26,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAsinHistory } from '@/hooks'
 import { getAmazonProductUrl } from '@/lib/api'
+import { formatTooltipValue } from '@/lib/type-guards'
 
 export function History() {
   const { asin } = useParams<{ asin: string }>()
@@ -124,7 +125,7 @@ export function History() {
                       tickFormatter={(value) => `$${value}`}
                     />
                     <Tooltip
-                      formatter={(value) => [`$${(value as number)?.toFixed(2) ?? '-'}`, 'Price']}
+                      formatter={(value) => [formatTooltipValue(value, (n) => `$${n.toFixed(2)}`), 'Price']}
                     />
                     <Line
                       type="monotone"
@@ -159,7 +160,7 @@ export function History() {
                       tickFormatter={(value) => `#${value?.toLocaleString() ?? ''}`}
                     />
                     <Tooltip
-                      formatter={(value) => [`#${(value as number)?.toLocaleString() ?? '-'}`, 'Rank']}
+                      formatter={(value) => [formatTooltipValue(value, (n) => `#${n.toLocaleString()}`), 'Rank']}
                     />
                     <Line
                       type="monotone"

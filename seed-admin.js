@@ -8,11 +8,9 @@
 const { Pool } = require('pg');
 const bcrypt = require('bcrypt');
 require('dotenv').config();
+const { getDatabaseConfig } = require('./lib/db-config');
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/amazon_tracker',
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-});
+const pool = new Pool(getDatabaseConfig());
 
 // Validate required environment variables
 if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {

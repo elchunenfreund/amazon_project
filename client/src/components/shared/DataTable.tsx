@@ -205,7 +205,7 @@ function DataTableInner<TData, TValue>({
         {searchColumn ? (
           <Input
             placeholder={searchPlaceholder}
-            value={(table.getColumn(searchColumn)?.getFilterValue() as string) ?? ''}
+            value={String(table.getColumn(searchColumn)?.getFilterValue() ?? '')}
             onChange={(event) =>
               table.getColumn(searchColumn)?.setFilterValue(event.target.value)
             }

@@ -22,11 +22,9 @@
  */
 
 const { Pool } = require('pg');
+const { getDatabaseConfig } = require('./lib/db-config');
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
-});
+const pool = new Pool(getDatabaseConfig());
 
 const MARKETPLACE_ID = 'A2EUQ1WTGCTBG2'; // Canada
 

@@ -3,6 +3,7 @@ import { Upload, FileSpreadsheet, X, AlertCircle } from 'lucide-react'
 import { Modal } from '@/components/shared'
 import { Button } from '@/components/ui/button'
 import { useBulkAddAsins } from '@/hooks'
+import { isFileReaderString } from '@/lib/type-guards'
 
 interface ExcelUploadModalProps {
   open: boolean
@@ -26,11 +27,12 @@ export function ExcelUploadModal({ open, onOpenChange }: ExcelUploadModalProps) 
     // Read CSV/Excel file
     const reader = new FileReader()
     reader.onload = (event) => {
-      const text = event.target?.result as string
-      if (!text) {
+      const result = event.target?.result
+      if (!isFileReaderString(result)) {
         setError('Failed to read file')
         return
       }
+      const text = result
 
       // Parse CSV - look for ASIN column or first column
       const lines = text.split(/\r?\n/).filter((line) => line.trim())

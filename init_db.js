@@ -1,12 +1,7 @@
 const { Client } = require('pg');
+const { getDatabaseConfig } = require('./lib/db-config');
 
-const connectionString = process.env.DATABASE_URL || 'postgresql://localhost:5432/amazon_tracker';
-const useSSL = connectionString.includes('localhost') ? false : { rejectUnauthorized: false };
-
-const client = new Client({
-    connectionString: connectionString,
-    ssl: useSSL
-});
+const client = new Client(getDatabaseConfig());
 
 (async () => {
     try {

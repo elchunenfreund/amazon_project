@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
+import { isObject } from '@/lib/type-guards'
 
 interface Column {
   key: string
@@ -71,9 +72,16 @@ export function CsvExportModal({
         let value: string | number | null | undefined
         if (col.accessor) {
           value = col.accessor(row)
-        } else {
-          const rowObj = row as Record<string, unknown>
-          value = rowObj[col.key] as string | number | null | undefined
+        } else if (isObject(row)) {
+          const rawValue = row[col.key]
+          // Only accept string or number values from the row object
+          if (typeof rawValue === 'string' || typeof rawValue === 'number') {
+            value = rawValue
+          } else if (rawValue === null || rawValue === undefined) {
+            value = rawValue
+          } else {
+            value = String(rawValue)
+          }
         }
         if (value == null) return ''
         return String(value)

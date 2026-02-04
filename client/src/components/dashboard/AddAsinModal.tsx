@@ -9,6 +9,12 @@ import { Label } from '@/components/ui/label'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useAddAsin, useBulkAddAsins } from '@/hooks'
 
+type TabValue = 'single' | 'bulk'
+
+function isTabValue(value: string): value is TabValue {
+  return value === 'single' || value === 'bulk'
+}
+
 const singleAsinSchema = z.object({
   asin: z.string().min(10, 'ASIN must be at least 10 characters').max(10, 'ASIN must be 10 characters'),
   comment: z.string().optional(),
@@ -70,7 +76,7 @@ export function AddAsinModal({ open, onOpenChange }: AddAsinModalProps) {
       description="Add a new ASIN to track"
       size="md"
     >
-      <Tabs value={tab} onValueChange={(v) => setTab(v as 'single' | 'bulk')}>
+      <Tabs value={tab} onValueChange={(v) => { if (isTabValue(v)) setTab(v) }}>
         <TabsList className="grid w-full grid-cols-2">
           <TabsTrigger value="single">Single ASIN</TabsTrigger>
           <TabsTrigger value="bulk">Bulk Import</TabsTrigger>

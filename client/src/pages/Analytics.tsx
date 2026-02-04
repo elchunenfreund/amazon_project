@@ -6,7 +6,8 @@ import { StatCard, StatCardGrid, DataTable, CsvExportModal, QueryError } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useVendorReports, useVendorReportAsins, useSyncVendorReports } from '@/hooks'
 import { getAmazonProductUrl } from '@/lib/api'
-import type { VendorReportFilters, VendorReport } from '@/lib/api'
+import type { VendorReportFilters } from '@/lib/api'
+import { isVendorReport, isAsinSummary } from '@/lib/type-guards'
 import {
   AnalyticsFilters,
   AnalyticsCharts,
@@ -55,7 +56,7 @@ export function Analytics() {
     { key: 'ordered_revenue', header: 'Ordered Revenue' },
     { key: 'sellable_on_hand_inventory', header: 'Inventory' },
     { key: 'glance_views', header: 'Glance Views' },
-    { key: 'conversion_rate', header: 'Conversion Rate', accessor: (r: unknown) => { const v = (r as VendorReport).conversion_rate; return v ? `${(v * 100).toFixed(2)}%` : '' } },
+    { key: 'conversion_rate', header: 'Conversion Rate', accessor: (r: unknown) => { if (!isVendorReport(r)) return ''; const v = r.conversion_rate; return v ? `${(v * 100).toFixed(2)}%` : '' } },
   ]
 
   // CSV export columns for ASIN summary
@@ -65,7 +66,7 @@ export function Analytics() {
     { key: 'totalCogs', header: 'Total COGS' },
     { key: 'totalUnits', header: 'Units Shipped' },
     { key: 'totalViews', header: 'Glance Views' },
-    { key: 'avgConversion', header: 'Avg Conversion', accessor: (r: unknown) => `${((r as AsinSummary).avgConversion * 100).toFixed(2)}%` },
+    { key: 'avgConversion', header: 'Avg Conversion', accessor: (r: unknown) => { if (!isAsinSummary(r)) return ''; return `${(r.avgConversion * 100).toFixed(2)}%` } },
     { key: 'inventory', header: 'Current Inventory' },
   ]
 

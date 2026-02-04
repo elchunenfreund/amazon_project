@@ -7,3 +7,4 @@ local.env
 .playwright-mcp/
 amazon_cookies.json
 .claude/settings.local.json
+client/test-results/

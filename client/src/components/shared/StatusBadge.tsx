@@ -1,19 +1,26 @@
 import { Badge, type BadgeProps } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
 
-type StatusType =
-  | 'available'
-  | 'unavailable'
-  | 'pending'
-  | 'accepted'
-  | 'rejected'
-  | 'shipped'
-  | 'delivered'
-  | 'cancelled'
-  | 'success'
-  | 'warning'
-  | 'error'
-  | 'info'
+const STATUS_TYPES = [
+  'available',
+  'unavailable',
+  'pending',
+  'accepted',
+  'rejected',
+  'shipped',
+  'delivered',
+  'cancelled',
+  'success',
+  'warning',
+  'error',
+  'info',
+] as const
+
+type StatusType = (typeof STATUS_TYPES)[number]
+
+function isStatusType(value: string): value is StatusType {
+  return (STATUS_TYPES as readonly string[]).includes(value)
+}
 
 interface StatusBadgeProps extends Omit<BadgeProps, 'variant'> {
   status: StatusType | string
@@ -36,7 +43,7 @@ const statusConfig: Record<StatusType, { variant: BadgeProps['variant']; label?:
 }
 
 export function StatusBadge({ status, showDot = true, className, children, ...props }: StatusBadgeProps) {
-  const config = statusConfig[status as StatusType] ?? { variant: 'secondary' as const }
+  const config = isStatusType(status) ? statusConfig[status] : { variant: 'secondary' as const }
   const label = children ?? config.label ?? status
 
   return (
@@ -59,7 +66,12 @@ export function StatusBadge({ status, showDot = true, className, children, ...pr
 }
 
 // PO State Badge with specific states
-type POState = 'NEW' | 'ACKNOWLEDGED' | 'SHIPPED' | 'RECEIVING' | 'CLOSED' | 'CANCELLED'
+const PO_STATES = ['NEW', 'ACKNOWLEDGED', 'SHIPPED', 'RECEIVING', 'CLOSED', 'CANCELLED'] as const
+type POState = (typeof PO_STATES)[number]
+
+function isPOState(value: string): value is POState {
+  return (PO_STATES as readonly string[]).includes(value)
+}
 
 interface POStateBadgeProps extends Omit<BadgeProps, 'variant'> {
   state: POState | string
@@ -75,7 +87,7 @@ const poStateConfig: Record<POState, { variant: BadgeProps['variant']; label: st
 }
 
 export function POStateBadge({ state, className, ...props }: POStateBadgeProps) {
-  const config = poStateConfig[state as POState] ?? { variant: 'secondary' as const, label: state }
+  const config = isPOState(state) ? poStateConfig[state] : { variant: 'secondary' as const, label: state }
 
   return (
     <Badge variant={config.variant} className={cn('capitalize', className)} {...props}>

@@ -17,6 +17,7 @@ import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { VendorReport } from '@/lib/api'
+import { formatTooltipValue } from '@/lib/type-guards'
 
 interface AnalyticsChartsProps {
   data: VendorReport[]
@@ -140,14 +141,15 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
     if (!data.length || selectedAsins.length === 0) return []
 
     // Group by date, with per-ASIN values
-    const dateMap: Record<string, Record<string, number | null>> = {}
+    // Use a more permissive type since 'date' is a string while other fields are numbers
+    const dateMap: Record<string, Record<string, string | number | null>> = {}
 
     for (const report of data) {
       if (!selectedAsins.includes(report.asin)) continue
 
       const date = report.report_date
       if (!dateMap[date]) {
-        dateMap[date] = { date: date as unknown as number }
+        dateMap[date] = { date }
       }
 
       // Store values per ASIN
@@ -650,8 +652,8 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
                     tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
                   />
                   <Tooltip
-                    formatter={(value) => [`$${(value as number).toLocaleString()}`, 'COGS']}
-                    labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                    formatter={(value) => [formatTooltipValue(value, (n) => `$${n.toLocaleString()}`), 'COGS']}
+                    labelFormatter={(label) => new Date(String(label)).toLocaleDateString()}
                   />
                   <Line
                     type="monotone"
@@ -681,8 +683,8 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
                   />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip
-                    formatter={(value, name) => [(value as number).toLocaleString(), name]}
-                    labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                    formatter={(value, name) => [formatTooltipValue(value, (n) => n.toLocaleString()), name]}
+                    labelFormatter={(label) => new Date(String(label)).toLocaleDateString()}
                   />
                   <Legend />
                   <Bar dataKey="shippedUnits" name="Shipped" fill="#2563eb" />
@@ -708,8 +710,8 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
                   />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip
-                    formatter={(value) => [(value as number).toLocaleString(), 'Views']}
-                    labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                    formatter={(value) => [formatTooltipValue(value, (n) => n.toLocaleString()), 'Views']}
+                    labelFormatter={(label) => new Date(String(label)).toLocaleDateString()}
                   />
                   <Line
                     type="monotone"
@@ -742,8 +744,8 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
                     tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
                   />
                   <Tooltip
-                    formatter={(value) => [`$${(value as number).toLocaleString()}`, 'Revenue']}
-                    labelFormatter={(label) => new Date(label).toLocaleDateString()}
+                    formatter={(value) => [formatTooltipValue(value, (n) => `$${n.toLocaleString()}`), 'Revenue']}
+                    labelFormatter={(label) => new Date(String(label)).toLocaleDateString()}
                   />
                   <Line
                     type="monotone"

@@ -1,5 +1,6 @@
 // Quick verification script for OAuth setup
 const { Pool } = require('pg');
+const { getDatabaseConfig } = require('./lib/db-config');
 
 async function verifySetup() {
     console.log('🔍 Verifying OAuth Setup...\n');
@@ -47,10 +48,7 @@ async function verifySetup() {
     // Test database connection and table
     console.log('\n💾 Database Verification:');
     try {
-        const pool = new Pool({
-            connectionString: process.env.DATABASE_URL,
-            ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-        });
+        const pool = new Pool(getDatabaseConfig());
 
         // Check if oauth_tokens table exists
         const tableCheck = await pool.query(`

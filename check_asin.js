@@ -1,13 +1,11 @@
 const { chromium } = require('playwright-core'); // Standard light version
 const { Client } = require('pg');
 const fs = require('fs');
+const { getDatabaseConfig } = require('./lib/db-config');
 
 // --- REMOVED: chromium.use(stealth); <--- This was the cause of the error
 
-const client = new Client({
-    connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/amazon_tracker',
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-});
+const client = new Client(getDatabaseConfig());
 
 // --- SETTINGS ---
 const USE_HEADLESS = true;

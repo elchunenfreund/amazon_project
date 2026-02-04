@@ -4,11 +4,9 @@
  */
 
 const { Pool } = require('pg');
+const { getDatabaseConfig } = require('./lib/db-config');
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
+const pool = new Pool(getDatabaseConfig());
 
 const REPORT_TYPES = [
     'GET_VENDOR_SALES_REPORT',

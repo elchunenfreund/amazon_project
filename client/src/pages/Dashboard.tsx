@@ -20,6 +20,7 @@ import {
   ScraperProgress,
 } from '@/components/dashboard'
 import type { AsinReport, AsinFilters } from '@/lib/api'
+import { isAsinReport } from '@/lib/type-guards'
 
 export function Dashboard() {
   // Date filter state
@@ -149,10 +150,10 @@ export function Dashboard() {
     { key: 'asin', header: 'ASIN' },
     { key: 'sku', header: 'SKU' },
     { key: 'title', header: 'Title' },
-    { key: 'available', header: 'Available', accessor: (r: unknown) => (r as AsinReport).available ? 'Yes' : 'No' },
+    { key: 'available', header: 'Available', accessor: (r: unknown) => { if (!isAsinReport(r)) return ''; return r.available ? 'Yes' : 'No' } },
     { key: 'seller', header: 'Seller' },
-    { key: 'price', header: 'Price', accessor: (r: unknown) => (r as AsinReport).price?.toFixed(2) },
-    { key: 'price_change', header: 'Price Change', accessor: (r: unknown) => (r as AsinReport).price_change?.toFixed(2) },
+    { key: 'price', header: 'Price', accessor: (r: unknown) => { if (!isAsinReport(r)) return ''; return r.price?.toFixed(2) } },
+    { key: 'price_change', header: 'Price Change', accessor: (r: unknown) => { if (!isAsinReport(r)) return ''; return r.price_change?.toFixed(2) } },
     { key: 'ranking', header: 'Rank' },
     { key: 'shipped_units', header: 'Shipped Units' },
     { key: 'shipped_revenue', header: 'Shipped Revenue' },
@@ -309,7 +310,7 @@ export function Dashboard() {
           <SelectContent>
             <SelectItem value="all">All Sellers</SelectItem>
             {uniqueSellers.map(seller => (
-              <SelectItem key={seller} value={seller as string}>
+              <SelectItem key={seller} value={String(seller)}>
                 {seller}
               </SelectItem>
             ))}

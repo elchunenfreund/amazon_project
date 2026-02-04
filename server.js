@@ -13,6 +13,7 @@ const createAuthRoutes = require('./routes/auth');
 const { requireAuth } = require('./middleware/auth');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { getDatabaseConfig } = require('./lib/db-config');
 
 const app = express();
 const server = http.createServer(app);
@@ -44,10 +45,7 @@ io.use((socket, next) => {
     next();
 });
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://localhost:5432/amazon_tracker',
-    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
-});
+const pool = new Pool(getDatabaseConfig());
 
 let currentScraperProcess = null;
 

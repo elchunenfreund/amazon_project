@@ -1,10 +1,8 @@
 const { Pool } = require('pg');
+const { getDatabaseConfig } = require('./lib/db-config');
 
 (async () => {
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-  });
+  const pool = new Pool(getDatabaseConfig());
 
   try {
     // Get refresh token

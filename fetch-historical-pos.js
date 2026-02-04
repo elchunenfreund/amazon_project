@@ -6,11 +6,9 @@
  */
 
 const { Pool } = require('pg');
+const { getDatabaseConfig } = require('./lib/db-config');
 
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
+const pool = new Pool(getDatabaseConfig());
 
 const DELAY_BETWEEN_REQUESTS = 5000; // 5 seconds between requests
 const MAX_PAGES = 100; // Safety limit

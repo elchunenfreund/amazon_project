@@ -121,9 +121,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
   const contentType = response.headers.get('content-type')
   if (contentType?.includes('application/json')) {
-    return response.json()
+    return response.json() as Promise<T>
   }
-  return response.text() as unknown as T
+  // For non-JSON responses, return the text.
+  // The caller should ensure T is compatible with string when expecting text responses.
+  const text = await response.text()
+  return text as T
 }
 
 async function request<T>(
@@ -133,15 +136,30 @@ async function request<T>(
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`
 
   // Build headers with CSRF token for state-changing methods
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
-    ...options.headers,
+  }
+
+  // Merge any provided headers
+  if (options.headers) {
+    const providedHeaders = options.headers
+    if (providedHeaders instanceof Headers) {
+      providedHeaders.forEach((value, key) => {
+        headers[key] = value
+      })
+    } else if (Array.isArray(providedHeaders)) {
+      providedHeaders.forEach(([key, value]) => {
+        headers[key] = value
+      })
+    } else {
+      Object.assign(headers, providedHeaders)
+    }
   }
 
   // Include CSRF token for non-GET requests
   const method = options.method?.toUpperCase() || 'GET'
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
-    ;(headers as Record<string, string>)['X-CSRF-Token'] = csrfToken
+    headers['X-CSRF-Token'] = csrfToken
   }
 
   const response = await fetch(url, {
@@ -155,13 +173,28 @@ async function request<T>(
     const text = await response.text()
     if (text.includes('CSRF')) {
       await refreshCsrfToken()
-      // Retry with new token
-      const retryHeaders: HeadersInit = {
+      // Retry with new token - build headers the same way
+      const retryHeaders: Record<string, string> = {
         'Content-Type': 'application/json',
-        ...options.headers,
       }
+
+      if (options.headers) {
+        const providedHeaders = options.headers
+        if (providedHeaders instanceof Headers) {
+          providedHeaders.forEach((value, key) => {
+            retryHeaders[key] = value
+          })
+        } else if (Array.isArray(providedHeaders)) {
+          providedHeaders.forEach(([key, value]) => {
+            retryHeaders[key] = value
+          })
+        } else {
+          Object.assign(retryHeaders, providedHeaders)
+        }
+      }
+
       if (csrfToken) {
-        ;(retryHeaders as Record<string, string>)['X-CSRF-Token'] = csrfToken
+        retryHeaders['X-CSRF-Token'] = csrfToken
       }
       const retryResponse = await fetch(url, {
         ...options,

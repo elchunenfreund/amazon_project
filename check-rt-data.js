@@ -3,10 +3,9 @@
  * Run: heroku run node check-rt-data.js
  */
 const { Pool } = require('pg');
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
+const { getDatabaseConfig } = require('./lib/db-config');
+
+const pool = new Pool(getDatabaseConfig());
 
 async function main() {
     console.log('='.repeat(60));
