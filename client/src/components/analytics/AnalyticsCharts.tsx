@@ -39,7 +39,7 @@ const ASIN_COLORS = [
 ]
 
 export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading = false }: AnalyticsChartsProps) {
-  const [chartMode, setChartMode] = useState<ChartMode>('individual')
+  const [chartMode, setChartMode] = useState<ChartMode>('combined')
   const [selectedAsins, setSelectedAsins] = useState<string[]>([])
   const [selectedMetrics, setSelectedMetrics] = useState({
     shippedCogs: true,

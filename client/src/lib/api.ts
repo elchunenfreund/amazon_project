@@ -113,8 +113,13 @@ class ApiError extends Error {
   }
 }
 
-async function handleResponse<T>(response: Response): Promise<T> {
+async function handleResponse<T>(response: Response, url: string): Promise<T> {
   if (!response.ok) {
+    // Handle 401 Unauthorized - redirect to login (except for auth-related URLs)
+    if (response.status === 401 && !url.includes('/auth/')) {
+      window.location.href = '/login'
+      throw new ApiError(response.status, response.statusText, 'Session expired')
+    }
     const text = await response.text()
     throw new ApiError(response.status, response.statusText, text || response.statusText)
   }
@@ -201,12 +206,12 @@ async function request<T>(
         headers: retryHeaders,
         credentials: 'include',
       })
-      return handleResponse<T>(retryResponse)
+      return handleResponse<T>(retryResponse, url)
     }
     throw new ApiError(response.status, response.statusText, text || response.statusText)
   }
 
-  return handleResponse<T>(response)
+  return handleResponse<T>(response, url)
 }
 
 // Products API
