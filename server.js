@@ -487,7 +487,17 @@ function validateAsin(req, res, next) {
     next();
 }
 
-app.get('/', async (req, res) => {
+app.get('/', (req, res) => {
+    // Check authentication - redirect to login if not authenticated
+    if (!req.session || !req.session.userId) {
+        return res.redirect('/login');
+    }
+    // Serve the React app for authenticated users
+    res.sendFile(path.join(__dirname, 'client/dist/index.html'));
+});
+
+// Legacy EJS dashboard route (kept for backwards compatibility, redirects to React app)
+app.get('/legacy-dashboard', async (req, res) => {
     try {
         // === EXTRACT QUERY PARAMETERS FOR SORTING AND FILTERING ===
         const sortBy = req.query.sortBy || 'default'; // default, asin, price, availability, seller, sales, traffic, received, lastPO
@@ -1352,37 +1362,59 @@ app.get('/api/asins/:asin/history', validateAsin, async (req, res) => {
         );
 
         // Get vendor reports (sales/traffic data) for the same ASIN
-        // Data is stored in a JSON column with startDate/endDate for the period
+        // Extract values from JSONB data column, handling different formats
         const vendorResult = await pool.query(
             `SELECT
-                data->>'startDate' as start_date,
-                data->>'endDate' as end_date,
-                (data->'shippedCogs'->>'amount')::numeric as shipped_cogs,
-                (data->>'shippedUnits')::int as shipped_units,
-                (data->>'orderedUnits')::int as ordered_units,
-                (data->'orderedRevenue'->>'amount')::numeric as ordered_revenue,
-                (data->>'glanceViews')::int as glance_views
+                report_date,
+                data_start_date,
+                data_end_date,
+                COALESCE(data->>'startDate', data_start_date::text) as start_date,
+                COALESCE(data->>'endDate', data_end_date::text) as end_date,
+                data
             FROM vendor_reports
             WHERE asin = $1
             ORDER BY report_date DESC`,
             [asin]
         );
 
+        // Helper to extract numeric value from JSONB (same logic as vendor-reports endpoint)
+        const extractNumber = (val) => {
+            if (val === null || val === undefined) return null;
+            if (typeof val === 'number') return val;
+            if (typeof val === 'string') return parseFloat(val) || null;
+            if (typeof val === 'object' && val.amount !== undefined) {
+                return typeof val.amount === 'number' ? val.amount : parseFloat(val.amount) || null;
+            }
+            return null;
+        };
+
         // Create a map of vendor data by date range
-        const vendorRanges = vendorResult.rows.map(row => ({
-            start: row.start_date,
-            end: row.end_date,
-            shipped_cogs: row.shipped_cogs ? parseFloat(row.shipped_cogs) : null,
-            shipped_units: row.shipped_units ? parseInt(row.shipped_units) : null,
-            ordered_units: row.ordered_units ? parseInt(row.ordered_units) : null,
-            ordered_revenue: row.ordered_revenue ? parseFloat(row.ordered_revenue) : null,
-            glance_views: row.glance_views ? parseInt(row.glance_views) : null
-        }));
+        const vendorRanges = vendorResult.rows.map(row => {
+            const data = row.data || {};
+            return {
+                start: row.start_date,
+                end: row.end_date,
+                report_date: row.report_date,
+                shipped_cogs: extractNumber(data.shippedCogs) ?? extractNumber(data.shipped_cogs),
+                shipped_units: extractNumber(data.shippedUnits) ?? extractNumber(data.shipped_units),
+                ordered_units: extractNumber(data.orderedUnits) ?? extractNumber(data.ordered_units),
+                ordered_revenue: extractNumber(data.orderedRevenue) ?? extractNumber(data.ordered_revenue),
+                glance_views: extractNumber(data.glanceViews) ?? extractNumber(data.glance_views)
+            };
+        });
 
         // Function to find vendor data for a given date
         const findVendorDataForDate = (dateStr) => {
+            // First try to match by date range
             for (const range of vendorRanges) {
                 if (range.start && range.end && dateStr >= range.start && dateStr <= range.end) {
+                    return range;
+                }
+            }
+            // Fallback: try to match by report_date
+            for (const range of vendorRanges) {
+                const reportDateStr = range.report_date ? new Date(range.report_date).toISOString().split('T')[0] : null;
+                if (reportDateStr === dateStr) {
                     return range;
                 }
             }
@@ -1463,6 +1495,25 @@ app.get('/api/vendor-reports', async (req, res) => {
         // Transform to match React app expected format - extract from JSONB data column
         const transformed = result.rows.map(row => {
             const data = row.data || {};
+
+            // Extract values
+            const orderedUnits = extractNumber(data.orderedUnits) ?? extractNumber(data.ordered_units);
+            const glanceViews = extractNumber(data.glanceViews) ?? extractNumber(data.glance_views);
+
+            // Calculate conversion rate if not provided (orderedUnits / glanceViews)
+            let conversionRate = extractNumber(data.conversionRate) ?? extractNumber(data.conversion_rate);
+            if (conversionRate === null && orderedUnits !== null && glanceViews !== null && glanceViews > 0) {
+                conversionRate = orderedUnits / glanceViews;
+            }
+
+            // Extract inventory - try multiple field names
+            const inventory = extractNumber(data.sellableOnHandInventory)
+                ?? extractNumber(data.sellable_on_hand_inventory)
+                ?? extractNumber(data.highlyAvailableInventory)
+                ?? extractNumber(data.highly_available_inventory)
+                ?? extractNumber(data.netReceivedInventory)
+                ?? extractNumber(data.openPurchaseOrderUnits);
+
             return {
                 id: row.id,
                 asin: row.asin,
@@ -1470,11 +1521,11 @@ app.get('/api/vendor-reports', async (req, res) => {
                 report_type: row.report_type,
                 shipped_cogs: extractNumber(data.shippedCogs) ?? extractNumber(data.shipped_cogs),
                 shipped_units: extractNumber(data.shippedUnits) ?? extractNumber(data.shipped_units),
-                ordered_units: extractNumber(data.orderedUnits) ?? extractNumber(data.ordered_units),
+                ordered_units: orderedUnits,
                 ordered_revenue: extractNumber(data.orderedRevenue) ?? extractNumber(data.ordered_revenue),
-                sellable_on_hand_inventory: extractNumber(data.sellableOnHandInventory) ?? extractNumber(data.sellable_on_hand_inventory),
-                glance_views: extractNumber(data.glanceViews) ?? extractNumber(data.glance_views),
-                conversion_rate: extractNumber(data.conversionRate) ?? extractNumber(data.conversion_rate),
+                sellable_on_hand_inventory: inventory,
+                glance_views: glanceViews,
+                conversion_rate: conversionRate,
                 created_at: row.created_at
             };
         });
