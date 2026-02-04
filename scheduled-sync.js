@@ -310,7 +310,7 @@ async function waitForReport(accessToken, reportId, maxWaitMs = 120000) {
     throw new Error(`Report timed out after ${maxWaitMs}ms`);
 }
 
-async function downloadAndSaveReport(accessToken, reportDocumentId, reportType) {
+async function downloadAndSaveReport(accessToken, reportDocumentId, reportType, distributorView = null) {
     // Get document URL
     const docResponse = await fetchWithRetry(`https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/documents/${reportDocumentId}`, {
         headers: {
@@ -374,11 +374,11 @@ async function downloadAndSaveReport(accessToken, reportDocumentId, reportType) 
         }
     }
 
-    // Batch delete existing records for these dates
+    // Batch delete existing records for these dates (only for same distributor_view)
     if (uniqueDates.size > 0) {
         await pool.query(
-            `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = ANY($2)`,
-            [reportType, Array.from(uniqueDates)]
+            `DELETE FROM vendor_reports WHERE report_type = $1 AND report_date = ANY($2) AND COALESCE(distributor_view, '') = COALESCE($3, '')`,
+            [reportType, Array.from(uniqueDates), distributorView]
         );
     }
 
@@ -407,20 +407,21 @@ async function downloadAndSaveReport(accessToken, reportDocumentId, reportType) 
         let paramIndex = 1;
 
         for (const { item, reportDate } of chunk) {
-            values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, CURRENT_TIMESTAMP)`);
-            params.push(reportType, item.asin, reportDate, JSON.stringify(item), item.startDate || null, item.endDate || null);
-            paramIndex += 6;
+            values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, $${paramIndex + 6}, CURRENT_TIMESTAMP)`);
+            params.push(reportType, item.asin, reportDate, JSON.stringify(item), item.startDate || null, item.endDate || null, distributorView);
+            paramIndex += 7;
             savedCount++;
         }
 
         if (values.length > 0) {
             await pool.query(
-                `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
+                `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, distributor_view, report_request_date)
                  VALUES ${values.join(', ')}
-                 ON CONFLICT (report_type, asin, report_date) DO UPDATE SET
+                 ON CONFLICT (report_type, asin, COALESCE(data_start_date, report_date), COALESCE(distributor_view, '')) DO UPDATE SET
                     data = EXCLUDED.data,
                     data_start_date = EXCLUDED.data_start_date,
                     data_end_date = EXCLUDED.data_end_date,
+                    distributor_view = EXCLUDED.distributor_view,
                     report_request_date = EXCLUDED.report_request_date`,
                 params
             );
@@ -463,7 +464,7 @@ async function syncVendorReport(reportType, daysBack = 14, distributorView = nul
         const reportDocumentId = await waitForReport(accessToken, reportId);
         console.log(`[${reportConfig.name}${viewLabel}] Report ready: ${reportDocumentId}`);
 
-        const savedCount = await downloadAndSaveReport(accessToken, reportDocumentId, reportType);
+        const savedCount = await downloadAndSaveReport(accessToken, reportDocumentId, reportType, distributorView);
         console.log(`[${reportConfig.name}${viewLabel}] Saved ${savedCount} items`);
 
         return { success: true, savedCount, distributorView };
