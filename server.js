@@ -1661,6 +1661,117 @@ app.get('/api/vendor-reports/asins', async (req, res) => {
     }
 });
 
+// GET /api/vendor-reports/debug - Debug endpoint to diagnose data issues
+app.get('/api/vendor-reports/debug', async (req, res) => {
+    try {
+        const { startDate, endDate, asin } = req.query;
+
+        // Get summary of what's in the database
+        const summaryQuery = `
+            SELECT
+                report_type,
+                COUNT(*) as record_count,
+                COUNT(DISTINCT asin) as unique_asins,
+                MIN(report_date) as earliest_date,
+                MAX(report_date) as latest_date,
+                MIN(data_start_date) as min_data_start,
+                MAX(data_end_date) as max_data_end
+            FROM vendor_reports
+            GROUP BY report_type
+            ORDER BY report_type
+        `;
+        const summaryResult = await pool.query(summaryQuery);
+
+        // Get raw JSONB data for a specific ASIN if requested
+        let asinData = null;
+        if (asin) {
+            let asinQuery = `
+                SELECT
+                    report_type,
+                    report_date,
+                    data_start_date,
+                    data_end_date,
+                    data->'shippedCogs' as shipped_cogs_raw,
+                    data->'orderedUnits' as ordered_units_raw,
+                    data->'orderedRevenue' as ordered_revenue_raw,
+                    data->'glanceViews' as glance_views_raw
+                FROM vendor_reports
+                WHERE asin = $1
+            `;
+            const params = [asin];
+            let paramIndex = 2;
+
+            if (startDate) {
+                asinQuery += ` AND (COALESCE(data_end_date, report_date) >= $${paramIndex++})`;
+                params.push(startDate);
+            }
+            if (endDate) {
+                asinQuery += ` AND (COALESCE(data_start_date, report_date) <= $${paramIndex++})`;
+                params.push(endDate);
+            }
+
+            asinQuery += ' ORDER BY report_date DESC';
+
+            const asinResult = await pool.query(asinQuery, params);
+            asinData = asinResult.rows;
+        }
+
+        // Get total COGS calculation breakdown
+        let cogsQuery = `
+            SELECT
+                asin,
+                report_type,
+                report_date,
+                CASE
+                    WHEN jsonb_typeof(data->'shippedCogs') = 'object' THEN (data->'shippedCogs'->>'amount')::numeric
+                    WHEN jsonb_typeof(data->'shippedCogs') = 'number' THEN (data->>'shippedCogs')::numeric
+                    ELSE NULL
+                END as shipped_cogs
+            FROM vendor_reports
+            WHERE report_type = 'GET_VENDOR_SALES_REPORT'
+        `;
+        const cogsParams = [];
+        let cogsParamIndex = 1;
+
+        if (startDate) {
+            cogsQuery += ` AND (COALESCE(data_end_date, report_date) >= $${cogsParamIndex++})`;
+            cogsParams.push(startDate);
+        }
+        if (endDate) {
+            cogsQuery += ` AND (COALESCE(data_start_date, report_date) <= $${cogsParamIndex++})`;
+            cogsParams.push(endDate);
+        }
+
+        const cogsResult = await pool.query(cogsQuery, cogsParams);
+
+        // Calculate totals per ASIN
+        const cogsByAsin = {};
+        let totalCogs = 0;
+        for (const row of cogsResult.rows) {
+            const cogs = parseFloat(row.shipped_cogs) || 0;
+            if (!cogsByAsin[row.asin]) {
+                cogsByAsin[row.asin] = { total: 0, records: 0, dates: [] };
+            }
+            cogsByAsin[row.asin].total += cogs;
+            cogsByAsin[row.asin].records++;
+            cogsByAsin[row.asin].dates.push(row.report_date);
+            totalCogs += cogs;
+        }
+
+        res.json({
+            summary: summaryResult.rows,
+            totalCogsCalculated: totalCogs,
+            cogsByAsin: Object.entries(cogsByAsin)
+                .sort((a, b) => b[1].total - a[1].total)
+                .slice(0, 10) // Top 10 ASINs by COGS
+                .map(([asin, data]) => ({ asin, ...data })),
+            asinData: asinData
+        });
+    } catch (err) {
+        handleApiError(res, err, 'Failed to fetch vendor report ASINs');
+    }
+});
+
 // GET /api/purchase-orders/vendors - Get unique vendor codes
 app.get('/api/purchase-orders/vendors', async (req, res) => {
     try {
