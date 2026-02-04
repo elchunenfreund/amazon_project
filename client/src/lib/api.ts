@@ -421,6 +421,13 @@ export const vendorReportsApi = {
     const query = params.toString()
     return request<string[]>(`/vendor-reports/asins${query ? `?${query}` : ''}`)
   },
+
+  getWeeks: (distributorView?: string) => {
+    const params = new URLSearchParams()
+    if (distributorView) params.set('distributorView', distributorView)
+    const query = params.toString()
+    return request<{ start: string; end: string }[]>(`/vendor-reports/weeks${query ? `?${query}` : ''}`)
+  },
 }
 
 // Purchase Orders API

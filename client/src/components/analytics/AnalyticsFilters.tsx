@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import type { DateRange } from 'react-day-picker'
 import { DateRangePicker } from '@/components/shared'
+import { useAvailableWeeks } from '@/hooks/useVendorReports'
 import {
   Select,
   SelectContent,
@@ -46,6 +47,29 @@ export function AnalyticsFilters({
   const [selectedAsin, setSelectedAsin] = useState<string>('')
   const [distributorView, setDistributorView] = useState<string>('MANUFACTURING')
 
+  // Fetch available weeks based on distributor view
+  const { data: availableWeeks } = useAvailableWeeks(
+    distributorView === 'ALL' ? undefined : distributorView
+  )
+
+  // Auto-select most recent week when weeks are loaded and no date is selected
+  useEffect(() => {
+    if (availableWeeks && availableWeeks.length > 0 && !dateRange) {
+      const mostRecent = availableWeeks[0]
+      const newRange = {
+        from: new Date(mostRecent.start),
+        to: new Date(mostRecent.end),
+      }
+      setDateRange(newRange)
+      onFilterChange({
+        startDate: mostRecent.start,
+        endDate: mostRecent.end,
+        asin: selectedAsin || undefined,
+        distributorView: distributorView,
+      })
+    }
+  }, [availableWeeks])
+
   const handleDateChange = (range: DateRange | undefined) => {
     setDateRange(range)
     onFilterChange({
@@ -83,6 +107,7 @@ export function AnalyticsFilters({
           value={dateRange}
           onChange={handleDateChange}
           placeholder="Select date range"
+          availableWeeks={availableWeeks}
         />
 
         <Select value={selectedAsin} onValueChange={handleAsinChange}>

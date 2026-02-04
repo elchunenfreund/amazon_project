@@ -1681,6 +1681,44 @@ app.get('/api/vendor-reports/asins', async (req, res) => {
     }
 });
 
+// GET /api/vendor-reports/weeks - Get available week boundaries for date picker
+app.get('/api/vendor-reports/weeks', async (req, res) => {
+    try {
+        const { distributorView } = req.query;
+
+        // Get distinct week boundaries from Sales reports (most relevant for analytics)
+        let query = `
+            SELECT DISTINCT
+                data_start_date as start_date,
+                data_end_date as end_date
+            FROM vendor_reports
+            WHERE report_type = 'GET_VENDOR_SALES_REPORT'
+              AND data_start_date IS NOT NULL
+              AND data_end_date IS NOT NULL
+        `;
+
+        const params = [];
+        if (distributorView && distributorView !== 'ALL') {
+            query += ` AND distributor_view = $1`;
+            params.push(distributorView);
+        } else {
+            query += ` AND distributor_view = 'MANUFACTURING'`;
+        }
+
+        query += ` ORDER BY data_start_date DESC`;
+
+        const result = await pool.query(query, params);
+
+        // Return as array of {start, end} objects
+        res.json(result.rows.map(r => ({
+            start: r.start_date,
+            end: r.end_date
+        })));
+    } catch (err) {
+        handleApiError(res, err, 'Failed to fetch available weeks');
+    }
+});
+
 // GET /api/vendor-reports/debug - Debug endpoint to diagnose data issues
 app.get('/api/vendor-reports/debug', async (req, res) => {
     try {

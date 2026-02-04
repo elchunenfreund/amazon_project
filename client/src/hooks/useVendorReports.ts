@@ -33,3 +33,10 @@ export function useVendorReportsByAsin(asin: string) {
     enabled: !!asin,
   })
 }
+
+export function useAvailableWeeks(distributorView?: string) {
+  return useQuery({
+    queryKey: ['vendor-reports', 'weeks', distributorView],
+    queryFn: () => vendorReportsApi.getWeeks(distributorView),
+  })
+}
