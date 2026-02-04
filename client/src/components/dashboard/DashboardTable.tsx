@@ -24,6 +24,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { getAmazonProductUrl } from '@/lib/api'
 import type { AsinReport, DailyReport } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useAsinHistory } from '@/hooks'
@@ -437,7 +438,7 @@ export const DashboardTable = memo(function DashboardTable({
               <div className="flex items-center gap-2">
                 <span className="font-mono font-medium">{asin}</span>
                 <a
-                  href={`https://www.amazon.ca/dp/${asin}`}
+                  href={getAmazonProductUrl(asin)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-muted hover:text-accent"

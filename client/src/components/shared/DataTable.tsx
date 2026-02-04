@@ -60,6 +60,9 @@ interface DataTableProps<TData, TValue> {
 
 const DEFAULT_PAGE_SIZES = [20, 50, 100, 500, 1000]
 
+// Threshold for disabling animations to improve performance with large datasets
+const ANIMATION_ROW_THRESHOLD = 100
+
 function DataTableInner<TData, TValue>({
   columns,
   data,
@@ -282,9 +285,14 @@ function DataTableInner<TData, TValue>({
             boxShadow: '-4px 0 8px rgba(0,0,0,0.1)'
           }}
         />
+        {/* Determine if we should animate based on row count for performance */}
+        {(() => {
+          const shouldAnimate = table.getRowModel().rows.length <= ANIMATION_ROW_THRESHOLD
+          return (
         <div
           ref={scrollContainerRef}
           className="overflow-x-auto rounded-md border border-border w-full"
+          style={!shouldAnimate ? { contentVisibility: 'auto' } : undefined}
         >
         <Table className={cn(compactMode && "text-xs")}>
           <TableHeader>
@@ -325,41 +333,78 @@ function DataTableInner<TData, TValue>({
             ))}
           </TableHeader>
           <TableBody>
-            <AnimatePresence>
-              {table.getRowModel().rows?.length ? (
-                table.getRowModel().rows.map((row) => (
-                  <motion.tr
-                    key={row.id}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className={cn(
-                      "border-b border-border transition-colors hover:bg-slate-100/50 data-[state=selected]:bg-slate-100",
-                      getRowClassName?.(row)
-                    )}
-                    data-state={row.getIsSelected() && 'selected'}
-                  >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell key={cell.id} className={cn(compactMode && "py-1 px-2")}>
-                        {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                      </TableCell>
-                    ))}
-                  </motion.tr>
-                ))
-              ) : (
-                <TableRow>
-                  <TableCell
-                    colSpan={tableColumns.length}
-                    className="h-24 text-center text-muted"
-                  >
-                    No results.
-                  </TableCell>
-                </TableRow>
-              )}
-            </AnimatePresence>
+            {shouldAnimate ? (
+              // Animated rows for smaller datasets
+              <AnimatePresence>
+                {table.getRowModel().rows?.length ? (
+                  table.getRowModel().rows.map((row) => (
+                    <motion.tr
+                      key={row.id}
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className={cn(
+                        "border-b border-border transition-colors hover:bg-slate-100/50 data-[state=selected]:bg-slate-100",
+                        getRowClassName?.(row)
+                      )}
+                      data-state={row.getIsSelected() && 'selected'}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className={cn(compactMode && "py-1 px-2")}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </motion.tr>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={tableColumns.length}
+                      className="h-24 text-center text-muted"
+                    >
+                      No results.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </AnimatePresence>
+            ) : (
+              // Non-animated rows for large datasets (performance optimization)
+              <>
+                {table.getRowModel().rows?.length ? (
+                  table.getRowModel().rows.map((row) => (
+                    <TableRow
+                      key={row.id}
+                      className={cn(
+                        "hover:bg-slate-100/50 data-[state=selected]:bg-slate-100",
+                        getRowClassName?.(row)
+                      )}
+                      data-state={row.getIsSelected() && 'selected'}
+                      style={{ willChange: 'transform' }}
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell key={cell.id} className={cn(compactMode && "py-1 px-2")}>
+                          {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell
+                      colSpan={tableColumns.length}
+                      className="h-24 text-center text-muted"
+                    >
+                      No results.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </>
+            )}
           </TableBody>
         </Table>
         </div>
+          )
+        })()}
       </div>
 
       {/* Pagination */}

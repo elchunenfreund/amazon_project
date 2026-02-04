@@ -5,6 +5,7 @@ import { PageWrapper, PageHeader } from '@/components/layout'
 import { StatCard, StatCardGrid, DataTable, CsvExportModal, QueryError } from '@/components/shared'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useVendorReports, useVendorReportAsins, useSyncVendorReports } from '@/hooks'
+import { getAmazonProductUrl } from '@/lib/api'
 import type { VendorReportFilters, VendorReport } from '@/lib/api'
 import {
   AnalyticsFilters,
@@ -110,7 +111,7 @@ export function Analytics() {
         <div className="flex items-center gap-2">
           <span className="font-mono font-medium">{row.original.asin}</span>
           <a
-            href={`https://www.amazon.ca/dp/${row.original.asin}`}
+            href={getAmazonProductUrl(row.original.asin)}
             target="_blank"
             rel="noopener noreferrer"
             className="text-muted hover:text-accent"

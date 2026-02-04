@@ -13,6 +13,8 @@ const client = new Client({
 const USE_HEADLESS = true;
 const COOKIE_FILE = 'amazon_cookies.json';
 const POSTAL_CODE = "H2V3T9";
+// Amazon domain configuration - allows switching between amazon.ca, amazon.com, etc.
+const AMAZON_DOMAIN = process.env.AMAZON_DOMAIN || 'amazon.ca';
 // ----------------
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -42,7 +44,7 @@ async function setLocation(page, postalCode) {
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
         try {
             console.log(`📍 Connecting (Attempt ${attempt})...`);
-            await page.goto('https://www.amazon.ca', { waitUntil: 'domcontentloaded' });
+            await page.goto(`https://www.${AMAZON_DOMAIN}`, { waitUntil: 'domcontentloaded' });
             await page.waitForTimeout(3000);
 
             if (await page.locator('form[action="/errors/validateCaptcha"]').count() > 0) {
@@ -92,7 +94,7 @@ async function scrapeAsin(page, asin) {
         await sleep(delay);
 
         const response = await Promise.race([
-            page.goto(`https://www.amazon.ca/dp/${asin.trim()}?th=1&psc=1`, { waitUntil: 'domcontentloaded', timeout: 45000 }),
+            page.goto(`https://www.${AMAZON_DOMAIN}/dp/${asin.trim()}?th=1&psc=1`, { waitUntil: 'domcontentloaded', timeout: 45000 }),
             new Promise((_, reject) => setTimeout(() => reject(new Error("Navigation timeout")), 45000))
         ]);
 

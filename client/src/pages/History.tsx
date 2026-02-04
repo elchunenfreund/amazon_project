@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/table'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAsinHistory } from '@/hooks'
+import { getAmazonProductUrl } from '@/lib/api'
 
 export function History() {
   const { asin } = useParams<{ asin: string }>()
@@ -59,7 +60,7 @@ export function History() {
             </Button>
             <Button variant="outline" asChild>
               <a
-                href={`https://www.amazon.ca/dp/${asin}`}
+                href={getAmazonProductUrl(asin ?? '')}
                 target="_blank"
                 rel="noopener noreferrer"
               >

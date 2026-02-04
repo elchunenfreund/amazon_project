@@ -7,6 +7,7 @@ const { Pool } = require('pg');
 const multer = require('multer');
 const ExcelJS = require('exceljs');
 const session = require('express-session');
+const pgSession = require('connect-pg-simple')(session);
 const crypto = require('crypto');
 const createAuthRoutes = require('./routes/auth');
 const { requireAuth } = require('./middleware/auth');
@@ -17,6 +18,19 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 const port = process.env.PORT || 3000;
+
+// Amazon domain configuration - allows switching between amazon.ca, amazon.com, etc.
+const AMAZON_DOMAIN = process.env.AMAZON_DOMAIN || 'amazon.ca';
+
+// Production-aware logging utility
+// In production, suppress verbose info/debug logs while preserving errors and warnings
+const isProduction = process.env.NODE_ENV === 'production';
+const log = {
+    info: (...args) => !isProduction && console.log(...args),
+    error: console.error, // Always log errors
+    warn: console.warn,   // Always log warnings
+    debug: (...args) => !isProduction && console.log('[DEBUG]', ...args)
+};
 
 // Socket.IO authentication middleware
 // Requires sessionId in handshake auth for authenticated connections
@@ -45,11 +59,33 @@ app.use(express.json());
 // Security headers
 app.use(helmet());
 
+// Request timeout middleware - 30 seconds default
+app.use((req, res, next) => {
+    // Set timeout for all requests
+    req.setTimeout(30000, () => {
+        if (!res.headersSent) {
+            res.status(408).json({ error: 'Request timeout' });
+        }
+    });
+
+    // Longer timeout for specific slow endpoints
+    if (req.path.includes('/sync') || req.path.includes('/scraper')) {
+        req.setTimeout(300000); // 5 minutes for sync operations
+    }
+
+    next();
+});
+
 // Rate limiting for login endpoint
 app.use('/api/auth/login', rateLimit({ windowMs: 15 * 60 * 1000, max: 5 }));
 
-// Session configuration for authentication
+// Session configuration for authentication with PostgreSQL store
 app.use(session({
+    store: new pgSession({
+        pool: pool,
+        tableName: 'user_sessions',
+        createTableIfMissing: true
+    }),
     secret: process.env.OAUTH_STATE_SECRET || crypto.randomBytes(32).toString('hex'),
     resave: false,
     saveUninitialized: false,
@@ -74,8 +110,90 @@ app.use('/api', (req, res, next) => {
         return next();
     }
 
+    // Skip authentication for CSRF token endpoint (needs session but not auth)
+    if (req.path === '/csrf-token') {
+        return next();
+    }
+
+    // Skip authentication for config endpoint (public config needed before login)
+    if (req.path === '/config') {
+        return next();
+    }
+
     // Apply requireAuth for all other API routes
     return requireAuth(req, res, next);
+});
+
+// CSRF Protection - Synchronizer Token Pattern
+// Generates secure tokens stored in session and validates them on state-changing requests
+
+/**
+ * Generates a new CSRF token and stores it in the session
+ * @param {Object} session - Express session object
+ * @returns {string} - The generated CSRF token
+ */
+function generateCsrfToken(session) {
+    const token = crypto.randomBytes(32).toString('hex');
+    session.csrfToken = token;
+    return token;
+}
+
+/**
+ * Validates a CSRF token against the session token
+ * @param {Object} session - Express session object
+ * @param {string} token - Token from request header
+ * @returns {boolean} - True if token is valid
+ */
+function validateCsrfToken(session, token) {
+    if (!session.csrfToken || !token) {
+        return false;
+    }
+    // Use timing-safe comparison to prevent timing attacks
+    try {
+        return crypto.timingSafeEqual(
+            Buffer.from(session.csrfToken),
+            Buffer.from(token)
+        );
+    } catch {
+        return false;
+    }
+}
+
+// CSRF token endpoint - returns a new token for the client
+app.get('/api/csrf-token', (req, res) => {
+    const token = generateCsrfToken(req.session);
+    res.json({ csrfToken: token });
+});
+
+// App configuration endpoint - returns public config for the frontend
+// This endpoint is not protected by auth to allow pre-login config fetching
+app.get('/api/config', (req, res) => {
+    res.json({
+        amazonDomain: AMAZON_DOMAIN
+    });
+});
+
+// CSRF protection middleware for state-changing requests
+app.use('/api', (req, res, next) => {
+    // Skip CSRF for safe methods (GET, HEAD, OPTIONS)
+    if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+        return next();
+    }
+
+    // Skip CSRF for auth routes (login needs to work without token initially)
+    if (req.path.startsWith('/auth')) {
+        return next();
+    }
+
+    // Get token from header
+    const token = req.headers['x-csrf-token'];
+
+    // Validate token
+    if (!validateCsrfToken(req.session, token)) {
+        return res.status(403).json({ error: 'Invalid CSRF token' });
+    }
+
+    next();
 });
 
 // Token encryption/decryption utilities for OAuth tokens
@@ -337,7 +455,7 @@ async function addColumnToTable(columnName, dataType) {
     // Add column using parameterized query (column name must be sanitized, not parameterized)
     await pool.query(`ALTER TABLE products ADD COLUMN "${sanitized}" ${pgType}`);
 
-    console.log(`Added column ${sanitized} (${pgType}) to products table`);
+    log.info(`Added column ${sanitized} (${pgType}) to products table`);
     return sanitized;
 }
 
@@ -909,7 +1027,7 @@ app.post('/stop-report', (req, res) => {
         : `pkill -f check_asin.js`;
 
     exec(cmd, (err, stdout, stderr) => {
-        console.log("Force kill command executed.");
+        log.info("Force kill command executed.");
     });
 
     io.emit('scraper:error', { message: "🛑 FORCE STOPPED ALL SCRAPERS", asin: null });
@@ -1582,23 +1700,34 @@ app.post('/api/asins/bulk', async (req, res) => {
             return res.status(400).json({ error: 'ASINs array is required' });
         }
 
-        let added = 0;
-        for (const asin of asins) {
-            const trimmed = asin.trim().toUpperCase();
-            if (trimmed) {
-                try {
-                    await pool.query(
-                        'INSERT INTO products (asin) VALUES ($1) ON CONFLICT (asin) DO NOTHING',
-                        [trimmed]
-                    );
-                    added++;
-                } catch (e) {
-                    // Ignore duplicates
-                }
-            }
+        // Clean and deduplicate ASINs
+        const cleanAsins = [...new Set(
+            asins
+                .map(asin => asin.trim().toUpperCase())
+                .filter(asin => asin.length > 0)
+        )];
+
+        if (cleanAsins.length === 0) {
+            return res.json({ success: true, added: 0 });
         }
 
-        res.json({ success: true, added });
+        // Bulk insert using multi-value INSERT with batching (max 1000 per batch)
+        const BATCH_SIZE = 1000;
+        let totalAdded = 0;
+
+        for (let i = 0; i < cleanAsins.length; i += BATCH_SIZE) {
+            const batch = cleanAsins.slice(i, i + BATCH_SIZE);
+
+            // Build multi-value INSERT: INSERT INTO products (asin) VALUES ($1), ($2), ...
+            const values = batch.map((_, idx) => `($${idx + 1})`).join(', ');
+            const result = await pool.query(
+                `INSERT INTO products (asin) VALUES ${values} ON CONFLICT (asin) DO NOTHING`,
+                batch
+            );
+            totalAdded += result.rowCount;
+        }
+
+        res.json({ success: true, added: totalAdded });
     } catch (err) {
         handleApiError(res, err, 'Failed to add ASINs');
     }
@@ -1737,28 +1866,36 @@ app.get('/api/products/columns', async (req, res) => {
 // Find duplicate ASINs (must come before /:asin route)
 app.get('/api/products/duplicates', async (req, res) => {
     try {
+        // Single query to get all duplicate ASINs with their full product data
+        // Uses a CTE to identify duplicates, then joins to get full records
         const result = await pool.query(`
-            SELECT asin, COUNT(*) as count, array_agg(id ORDER BY id) as ids
-            FROM products
-            GROUP BY asin
-            HAVING COUNT(*) > 1
-            ORDER BY asin
+            WITH duplicate_asins AS (
+                SELECT asin
+                FROM products
+                GROUP BY asin
+                HAVING COUNT(*) > 1
+            )
+            SELECT p.*
+            FROM products p
+            INNER JOIN duplicate_asins d ON p.asin = d.asin
+            ORDER BY p.asin, p.id
         `);
 
-        const duplicates = [];
+        // Group results by ASIN in application code
+        const duplicateMap = new Map();
         for (const row of result.rows) {
-            // Get all entries for this ASIN
-            const entriesResult = await pool.query(
-                'SELECT * FROM products WHERE asin = $1 ORDER BY id',
-                [row.asin]
-            );
-
-            duplicates.push({
-                asin: row.asin,
-                count: row.count,
-                entries: entriesResult.rows
-            });
+            if (!duplicateMap.has(row.asin)) {
+                duplicateMap.set(row.asin, []);
+            }
+            duplicateMap.get(row.asin).push(row);
         }
+
+        // Transform to expected response format
+        const duplicates = Array.from(duplicateMap.entries()).map(([asin, entries]) => ({
+            asin,
+            count: entries.length,
+            entries
+        }));
 
         res.json({ duplicates });
     } catch (err) {
@@ -2879,7 +3016,7 @@ async function getValidAccessToken() {
         }
 
         // Access token expired or doesn't exist, refresh it
-        console.log('Access token expired or missing, refreshing...');
+        log.debug('Access token expired or missing, refreshing...');
         return await refreshAccessToken(decryptedRefreshToken, token.refresh_token);
     } catch (err) {
         console.error('Error getting access token:', err);
@@ -2944,7 +3081,7 @@ async function refreshAccessToken(refreshToken, encryptedRefreshToken = null) {
             [encryptedAccessToken, expiresAt, whereRefreshToken]
         );
 
-        console.log('Access token refreshed successfully');
+        log.debug('Access token refreshed successfully');
         return tokenData.access_token;
     } catch (err) {
         console.error('Error refreshing access token:', err);
@@ -3148,7 +3285,7 @@ app.get('/api/sp-api/test', async (req, res) => {
         // If it fails with 403 and we have AWS credentials, try with signing
         if (!spApiResponse.ok && spApiResponse.status === 403 &&
             process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
-            console.log('Request failed without signing, trying with AWS signing...');
+            log.debug('Request failed without signing, trying with AWS signing...');
             try {
                 const signedHeaders = await signSpApiRequest(spApiUrl, 'GET', accessToken);
                 spApiResponse = await fetch(spApiUrl, {
@@ -4465,7 +4602,7 @@ app.get('/api/vendor-reports/download/:reportDocumentId', async (req, res) => {
                 asinData = reportData.reportData;
             }
 
-            console.log(`[${reportType}] Found ${asinData.length} items to save`);
+            log.info(`[${reportType}] Found ${asinData.length} items to save`);
 
             // Prepare batch data
             const itemsToSave = [];
@@ -4523,7 +4660,7 @@ app.get('/api/vendor-reports/download/:reportDocumentId', async (req, res) => {
                     }
 
                     await client.query('COMMIT');
-                    console.log(`[${reportType}] Saved ${itemsToSave.length} items in batches`);
+                    log.info(`[${reportType}] Saved ${itemsToSave.length} items in batches`);
                 } catch (txErr) {
                     await client.query('ROLLBACK');
                     throw txErr;
@@ -4754,7 +4891,8 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
         if (multiMetric === 'true') {
             const asin = asins.split(',')[0]; // Only use first ASIN
 
-            // Query both weekly and real-time reports, then merge
+            // Configuration for metrics - maps metric name to report types and fields
+            // RT reports are listed first for priority
             const metricConfigs = {
                 orderedUnits: [
                     { reportType: 'GET_VENDOR_REAL_TIME_SALES_REPORT', field: 'orderedUnits' },
@@ -4773,33 +4911,53 @@ app.get('/api/vendor-analytics/chart-data', async (req, res) => {
                 ]
             };
 
-            // Collect all dates that have data (not empty dates)
+            // Collect all unique report types needed
+            const allReportTypes = [...new Set(
+                Object.values(metricConfigs).flatMap(configs => configs.map(c => c.reportType))
+            )];
+
+            // Single query to fetch all report data at once
+            const result = await pool.query(
+                `SELECT report_type, report_date, data
+                 FROM vendor_reports
+                 WHERE report_type = ANY($1)
+                   AND asin = $2
+                   AND report_date >= $3
+                   AND report_date <= $4
+                 ORDER BY report_date ASC`,
+                [allReportTypes, asin, startDate, endDate]
+            );
+
+            // Build a map of report_type -> date -> row for quick lookups
+            const reportDataMap = new Map();
+            for (const row of result.rows) {
+                const date = new Date(row.report_date).toISOString().split('T')[0];
+                if (!reportDataMap.has(row.report_type)) {
+                    reportDataMap.set(row.report_type, new Map());
+                }
+                // Only store first occurrence per date (for RT priority)
+                if (!reportDataMap.get(row.report_type).has(date)) {
+                    reportDataMap.get(row.report_type).set(date, row.data);
+                }
+            }
+
+            // Collect all dates that have data and extract metric values
             const allDatesSet = new Set();
             const metricDataMaps = {};
 
-            // Query each metric type (potentially from multiple report types) and collect dates with data
             for (const [metricName, configs] of Object.entries(metricConfigs)) {
                 const dateValueMap = {};
 
+                // Process configs in order (RT first for priority)
                 for (const config of configs) {
-                    const result = await pool.query(
-                        `SELECT report_date, data
-                         FROM vendor_reports
-                         WHERE report_type = $1
-                           AND asin = $2
-                           AND report_date >= $3
-                           AND report_date <= $4
-                         ORDER BY report_date ASC`,
-                        [config.reportType, asin, startDate, endDate]
-                    );
+                    const reportDateMap = reportDataMap.get(config.reportType);
+                    if (!reportDateMap) continue;
 
-                    for (const row of result.rows) {
-                        const date = new Date(row.report_date).toISOString().split('T')[0];
-
+                    for (const [date, rowData] of reportDateMap) {
                         // Skip if we already have data for this date (prefer RT over weekly)
                         if (dateValueMap[date] !== undefined) continue;
 
-                        const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+                        const data = typeof rowData === 'string' ? JSON.parse(rowData) : rowData;
 
                         let value = data[config.field];
                         // Handle both formats: direct number OR {amount: "..."} object
@@ -5477,41 +5635,95 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
             nextToken = data.payload?.pagination?.nextToken;
             pageCount++;
 
-            console.log(`[PO Sync] Page ${pageCount}: fetched ${orders.length} orders, total so far: ${allOrders.length}`);
+            log.info(`[PO Sync] Page ${pageCount}: fetched ${orders.length} orders, total so far: ${allOrders.length}`);
 
         } while (nextToken && pageCount < maxPages);
 
-        // Save all POs to database using a transaction for data integrity
+        // Save all POs to database using a transaction with bulk inserts for performance
         let savedCount = 0;
         const client = await pool.connect();
 
         try {
             await client.query('BEGIN');
 
+            // Prepare bulk data for purchase_orders and po_line_items
+            const poData = [];
+            const lineItemData = [];
+
             for (const order of allOrders) {
                 try {
                     // Data is nested in orderDetails
-                const details = order.orderDetails || {};
-                const items = details.items || [];
+                    const details = order.orderDetails || {};
+                    const items = details.items || [];
 
-                // Parse window string format: "2026-01-26T08:00:00Z--2026-01-30T10:00:00Z"
-                let shipStart = null, shipEnd = null;
-                if (details.shipWindow && typeof details.shipWindow === 'string') {
-                    const parts = details.shipWindow.split('--');
-                    if (parts.length === 2) {
-                        shipStart = parts[0];
-                        shipEnd = parts[1];
+                    // Parse window string format: "2026-01-26T08:00:00Z--2026-01-30T10:00:00Z"
+                    let shipStart = null, shipEnd = null;
+                    if (details.shipWindow && typeof details.shipWindow === 'string') {
+                        const parts = details.shipWindow.split('--');
+                        if (parts.length === 2) {
+                            shipStart = parts[0];
+                            shipEnd = parts[1];
+                        }
                     }
-                }
 
-                let deliveryStart = null, deliveryEnd = null;
-                if (details.deliveryWindow && typeof details.deliveryWindow === 'string') {
-                    const parts = details.deliveryWindow.split('--');
-                    if (parts.length === 2) {
-                        deliveryStart = parts[0];
-                        deliveryEnd = parts[1];
+                    let deliveryStart = null, deliveryEnd = null;
+                    if (details.deliveryWindow && typeof details.deliveryWindow === 'string') {
+                        const parts = details.deliveryWindow.split('--');
+                        if (parts.length === 2) {
+                            deliveryStart = parts[0];
+                            deliveryEnd = parts[1];
+                        }
                     }
+
+                    // Collect PO data for bulk insert
+                    poData.push([
+                        order.purchaseOrderNumber,
+                        details.purchaseOrderDate || null,
+                        order.purchaseOrderState,
+                        shipStart,
+                        shipEnd,
+                        deliveryStart,
+                        deliveryEnd,
+                        JSON.stringify(details.buyingParty),
+                        JSON.stringify(details.sellingParty),
+                        JSON.stringify(details.shipToParty),
+                        JSON.stringify(details.billToParty),
+                        JSON.stringify(items),
+                        JSON.stringify(order)
+                    ]);
+
+                    // Collect line items for bulk insert
+                    for (const item of items) {
+                        const asin = item.amazonProductIdentifier;
+                        if (asin) {
+                            lineItemData.push([
+                                order.purchaseOrderNumber,
+                                asin,
+                                item.vendorProductIdentifier || null,
+                                item.orderedQuantity?.amount ? parseInt(item.orderedQuantity.amount) : null,
+                                item.acknowledgedQuantity?.amount ? parseInt(item.acknowledgedQuantity.amount) : null,
+                                item.netCost?.amount ? parseFloat(item.netCost.amount) : null,
+                                item.netCost?.currencyCode || null
+                            ]);
+                        }
+                    }
+
+                    savedCount++;
+                } catch (parseErr) {
+                    console.error('Error parsing PO:', order.purchaseOrderNumber, parseErr.message);
                 }
+            }
+
+            // Bulk insert purchase_orders in batches of 100 (13 columns each)
+            const PO_BATCH_SIZE = 100;
+            const PO_COLS = 13;
+            for (let i = 0; i < poData.length; i += PO_BATCH_SIZE) {
+                const batch = poData.slice(i, i + PO_BATCH_SIZE);
+                const values = batch.map((_, idx) => {
+                    const base = idx * PO_COLS;
+                    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}, CURRENT_TIMESTAMP)`;
+                }).join(', ');
+                const params = batch.flat();
 
                 await client.query(
                     `INSERT INTO purchase_orders (
@@ -5520,7 +5732,7 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
                         delivery_window_start, delivery_window_end,
                         buying_party, selling_party, ship_to_party, bill_to_party,
                         items, raw_data, updated_at
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+                    ) VALUES ${values}
                     ON CONFLICT (po_number) DO UPDATE SET
                         po_status = EXCLUDED.po_status,
                         po_date = COALESCE(EXCLUDED.po_date, purchase_orders.po_date),
@@ -5535,56 +5747,35 @@ app.post('/api/purchase-orders/sync', async (req, res) => {
                         items = EXCLUDED.items,
                         raw_data = EXCLUDED.raw_data,
                         updated_at = CURRENT_TIMESTAMP`,
-                    [
-                        order.purchaseOrderNumber,
-                        details.purchaseOrderDate || null,
-                        order.purchaseOrderState,
-                        shipStart,
-                        shipEnd,
-                        deliveryStart,
-                        deliveryEnd,
-                        JSON.stringify(details.buyingParty),
-                        JSON.stringify(details.sellingParty),
-                        JSON.stringify(details.shipToParty),
-                        JSON.stringify(details.billToParty),
-                        JSON.stringify(items),
-                        JSON.stringify(order)
-                    ]
+                    params
                 );
-
-                // Also populate po_line_items for faster ASIN queries
-                for (const item of items) {
-                    const asin = item.amazonProductIdentifier;
-                    if (asin) {
-                        await client.query(
-                            `INSERT INTO po_line_items (
-                                po_number, asin, vendor_sku, ordered_quantity,
-                                acknowledged_quantity, net_cost_amount, net_cost_currency
-                            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                            ON CONFLICT (po_number, asin) DO UPDATE SET
-                                vendor_sku = EXCLUDED.vendor_sku,
-                                ordered_quantity = EXCLUDED.ordered_quantity,
-                                acknowledged_quantity = EXCLUDED.acknowledged_quantity,
-                                net_cost_amount = EXCLUDED.net_cost_amount,
-                                net_cost_currency = EXCLUDED.net_cost_currency`,
-                            [
-                                order.purchaseOrderNumber,
-                                asin,
-                                item.vendorProductIdentifier || null,
-                                item.orderedQuantity?.amount ? parseInt(item.orderedQuantity.amount) : null,
-                                item.acknowledgedQuantity?.amount ? parseInt(item.acknowledgedQuantity.amount) : null,
-                                item.netCost?.amount ? parseFloat(item.netCost.amount) : null,
-                                item.netCost?.currencyCode || null
-                            ]
-                        );
-                    }
-                }
-
-                savedCount++;
-            } catch (dbErr) {
-                console.error('Error saving PO:', order.purchaseOrderNumber, dbErr.message);
             }
-        }
+
+            // Bulk insert po_line_items in batches of 500 (7 columns each)
+            const LINE_ITEM_BATCH_SIZE = 500;
+            const LINE_ITEM_COLS = 7;
+            for (let i = 0; i < lineItemData.length; i += LINE_ITEM_BATCH_SIZE) {
+                const batch = lineItemData.slice(i, i + LINE_ITEM_BATCH_SIZE);
+                const values = batch.map((_, idx) => {
+                    const base = idx * LINE_ITEM_COLS;
+                    return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7})`;
+                }).join(', ');
+                const params = batch.flat();
+
+                await client.query(
+                    `INSERT INTO po_line_items (
+                        po_number, asin, vendor_sku, ordered_quantity,
+                        acknowledged_quantity, net_cost_amount, net_cost_currency
+                    ) VALUES ${values}
+                    ON CONFLICT (po_number, asin) DO UPDATE SET
+                        vendor_sku = EXCLUDED.vendor_sku,
+                        ordered_quantity = EXCLUDED.ordered_quantity,
+                        acknowledged_quantity = EXCLUDED.acknowledged_quantity,
+                        net_cost_amount = EXCLUDED.net_cost_amount,
+                        net_cost_currency = EXCLUDED.net_cost_currency`,
+                    params
+                );
+            }
 
             await client.query('COMMIT');
         } catch (txErr) {
@@ -5637,7 +5828,7 @@ app.post('/api/purchase-orders/sync-status', async (req, res) => {
                 url += `&nextToken=${encodeURIComponent(nextToken)}`;
             }
 
-            console.log(`[PO Status Sync] Fetching page ${pageCount + 1}...`);
+            log.info(`[PO Status Sync] Fetching page ${pageCount + 1}...`);
 
             const response = await fetch(url, {
                 headers: {
@@ -5664,7 +5855,7 @@ app.post('/api/purchase-orders/sync-status', async (req, res) => {
             nextToken = data.payload?.pagination?.nextToken;
             pageCount++;
 
-            console.log(`[PO Status Sync] Page ${pageCount}: fetched ${statuses.length} statuses, total: ${allStatuses.length}`);
+            log.info(`[PO Status Sync] Page ${pageCount}: fetched ${statuses.length} statuses, total: ${allStatuses.length}`);
 
         } while (nextToken && pageCount < maxPages);
 
@@ -5945,7 +6136,7 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
         async function fetchReportChunk(reportType, startDate, endDate) {
             try {
                 const daySpan = Math.round((endDate - startDate) / (1000 * 60 * 60 * 24));
-                console.log(`[Backfill ${reportType}] Date range: ${startDate.toISOString()} to ${endDate.toISOString()} (${daySpan} days)`);
+                log.info(`[Backfill ${reportType}] Date range: ${startDate.toISOString()} to ${endDate.toISOString()} (${daySpan} days)`);
 
                 // Create report request
                 const reportSpec = {
@@ -6044,7 +6235,7 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                 const dataKey = reportConfig.dataKey;
                 const items = reportContent[dataKey] || [];
 
-                console.log(`[Backfill ${reportType}] Found ${items.length} items to save`);
+                log.info(`[Backfill ${reportType}] Found ${items.length} items to save`);
 
                 // Delete existing records for this report type and date range first
                 const reportDate = startDate.toISOString().split('T')[0];
@@ -6090,7 +6281,7 @@ app.post('/api/vendor-reports/backfill-daily', async (req, res) => {
                     }
 
                     await client.query('COMMIT');
-                    console.log(`[Backfill ${reportType}] Saved ${savedCount} items`);
+                    log.info(`[Backfill ${reportType}] Saved ${savedCount} items`);
                 } catch (txErr) {
                     await client.query('ROLLBACK');
                     throw txErr;
@@ -6155,7 +6346,7 @@ app.get('/api/vendor-reports/test-api', async (req, res) => {
             dataEndTime: endDate.toISOString()
         };
 
-        console.log('Testing Reports API with:', JSON.stringify(reportSpec, null, 2));
+        log.debug('Testing Reports API with:', JSON.stringify(reportSpec, null, 2));
 
         const response = await fetch('https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports', {
             method: 'POST',
@@ -6169,7 +6360,7 @@ app.get('/api/vendor-reports/test-api', async (req, res) => {
         const contentType = response.headers.get('content-type') || '';
         const responseText = await response.text();
 
-        console.log('Reports API Test Response:', {
+        log.debug('Reports API Test Response:', {
             status: response.status,
             contentType: contentType,
             body: responseText.substring(0, 500)

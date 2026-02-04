@@ -1,5 +1,106 @@
 const API_BASE = '/api'
 
+// CSRF token management
+let csrfToken: string | null = null
+let csrfTokenPromise: Promise<void> | null = null
+
+/**
+ * Fetches a CSRF token from the server and stores it for subsequent requests.
+ * This should be called once on app initialization.
+ */
+export async function initCsrf(): Promise<void> {
+  // Prevent multiple simultaneous fetches
+  if (csrfTokenPromise) {
+    return csrfTokenPromise
+  }
+
+  csrfTokenPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/csrf-token`, {
+        credentials: 'include',
+      })
+      if (response.ok) {
+        const data = await response.json()
+        csrfToken = data.csrfToken
+      } else {
+        console.warn('Failed to fetch CSRF token:', response.status)
+      }
+    } catch (error) {
+      console.warn('Error fetching CSRF token:', error)
+    } finally {
+      csrfTokenPromise = null
+    }
+  })()
+
+  return csrfTokenPromise
+}
+
+/**
+ * Refreshes the CSRF token. Call this after login or if a request fails with 403.
+ */
+export async function refreshCsrfToken(): Promise<void> {
+  csrfToken = null
+  csrfTokenPromise = null
+  return initCsrf()
+}
+
+/**
+ * Gets the current CSRF token. Initializes if not already done.
+ */
+export function getCsrfToken(): string | null {
+  return csrfToken
+}
+
+// App configuration cache
+interface AppConfig {
+  amazonDomain: string
+}
+
+let appConfig: AppConfig | null = null
+let configPromise: Promise<AppConfig> | null = null
+
+/**
+ * Fetches app configuration from the server.
+ * Caches the result for subsequent calls.
+ */
+export async function getAppConfig(): Promise<AppConfig> {
+  if (appConfig) {
+    return appConfig
+  }
+
+  if (configPromise) {
+    return configPromise
+  }
+
+  configPromise = (async () => {
+    try {
+      const response = await fetch(`${API_BASE}/config`, {
+        credentials: 'include',
+      })
+      if (response.ok) {
+        appConfig = await response.json()
+        return appConfig!
+      }
+    } catch {
+      // Fall through to default
+    }
+    // Default config if fetch fails
+    appConfig = { amazonDomain: 'amazon.ca' }
+    return appConfig
+  })()
+
+  return configPromise
+}
+
+/**
+ * Gets the Amazon product URL for a given ASIN.
+ * Uses cached config or defaults to amazon.ca if config not loaded.
+ */
+export function getAmazonProductUrl(asin: string): string {
+  const domain = appConfig?.amazonDomain || 'amazon.ca'
+  return `https://www.${domain}/dp/${asin}`
+}
+
 class ApiError extends Error {
   status: number
   statusText: string
@@ -31,13 +132,46 @@ async function request<T>(
 ): Promise<T> {
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`
 
+  // Build headers with CSRF token for state-changing methods
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  }
+
+  // Include CSRF token for non-GET requests
+  const method = options.method?.toUpperCase() || 'GET'
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method) && csrfToken) {
+    ;(headers as Record<string, string>)['X-CSRF-Token'] = csrfToken
+  }
+
   const response = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    },
+    headers,
+    credentials: 'include', // Ensure cookies are sent for session
   })
+
+  // If we get a 403 CSRF error, refresh token and retry once
+  if (response.status === 403 && !['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const text = await response.text()
+    if (text.includes('CSRF')) {
+      await refreshCsrfToken()
+      // Retry with new token
+      const retryHeaders: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...options.headers,
+      }
+      if (csrfToken) {
+        ;(retryHeaders as Record<string, string>)['X-CSRF-Token'] = csrfToken
+      }
+      const retryResponse = await fetch(url, {
+        ...options,
+        headers: retryHeaders,
+        credentials: 'include',
+      })
+      return handleResponse<T>(retryResponse)
+    }
+    throw new ApiError(response.status, response.statusText, text || response.statusText)
+  }
 
   return handleResponse<T>(response)
 }
@@ -346,24 +480,40 @@ export interface User {
 }
 
 export const authApi = {
-  login: (email: string, password: string) =>
-    request<{ success: boolean; user: User }>('/auth/login', {
+  login: async (email: string, password: string) => {
+    const result = await request<{ success: boolean; user: User }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
-    }),
+    })
+    // Refresh CSRF token after successful login (new session established)
+    if (result.success) {
+      await refreshCsrfToken()
+    }
+    return result
+  },
 
-  logout: () =>
-    request<{ success: boolean }>('/auth/logout', {
+  logout: async () => {
+    const result = await request<{ success: boolean }>('/auth/logout', {
       method: 'POST',
-    }),
+    })
+    // Refresh CSRF token after logout (session invalidated)
+    await refreshCsrfToken()
+    return result
+  },
 
   me: () => request<{ user: User }>('/auth/me'),
 
-  register: (email: string, password: string, name?: string) =>
-    request<{ success: boolean; user: User }>('/auth/register', {
+  register: async (email: string, password: string, name?: string) => {
+    const result = await request<{ success: boolean; user: User }>('/auth/register', {
       method: 'POST',
       body: JSON.stringify({ email, password, name }),
-    }),
+    })
+    // Refresh CSRF token after successful registration (new session established)
+    if (result.success) {
+      await refreshCsrfToken()
+    }
+    return result
+  },
 }
 
 export { ApiError }

@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { getAmazonProductUrl } from '@/lib/api'
 import type { Product, DailyReport } from '@/lib/api'
 import { useAsinHistory } from '@/hooks'
 
@@ -104,7 +105,7 @@ export function ProductsTable({
             <div className="flex items-center gap-2">
               <span className="font-mono font-medium">{asin}</span>
               <a
-                href={`https://www.amazon.ca/dp/${asin}`}
+                href={getAmazonProductUrl(asin)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-muted hover:text-accent"

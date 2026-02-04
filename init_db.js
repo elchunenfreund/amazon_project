@@ -222,9 +222,27 @@ const client = new Client({
         `);
         console.log("✅ Table 'users' is ready.");
 
-        // 8. Add performance indexes
+        // 8. Create Session table for connect-pg-simple
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS "user_sessions" (
+                "sid" varchar NOT NULL COLLATE "default",
+                "sess" json NOT NULL,
+                "expire" timestamp(6) NOT NULL,
+                CONSTRAINT "session_pkey" PRIMARY KEY ("sid")
+            );
+        `);
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS "IDX_session_expire" ON "user_sessions" ("expire");
+        `);
+        console.log("✅ Table 'user_sessions' is ready.");
+
+        // 9. Add performance indexes
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_daily_reports_asin_date ON daily_reports(asin, check_date DESC);
+        `);
+        // Index for daily_reports queries by date only
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_daily_reports_date ON daily_reports(check_date DESC);
         `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_po_line_items_asin_receiving ON po_line_items(asin, last_receiving_date DESC);
@@ -232,8 +250,20 @@ const client = new Client({
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_vendor_reports_asin_type_date ON vendor_reports(asin, report_type, report_date DESC);
         `);
+        // Index for vendor_reports queries by ASIN only
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_vendor_reports_asin ON vendor_reports(asin);
+        `);
+        // Index for vendor_reports queries by date only
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_vendor_reports_date ON vendor_reports(report_date DESC);
+        `);
         await client.query(`
             CREATE INDEX IF NOT EXISTS idx_products_updated_at ON products(updated_at DESC);
+        `);
+        // Index for products filtering by snooze status
+        await client.query(`
+            CREATE INDEX IF NOT EXISTS idx_products_snooze ON products(snooze_until);
         `);
         console.log("✅ Performance indexes are ready.");
 

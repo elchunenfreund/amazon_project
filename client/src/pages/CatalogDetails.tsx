@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
 import { useCatalogItem, useRefreshCatalogItem, useVendorReportsByAsin } from '@/hooks'
+import { getAmazonProductUrl } from '@/lib/api'
 
 export function CatalogDetails() {
   const { asin } = useParams<{ asin: string }>()
@@ -86,7 +87,7 @@ export function CatalogDetails() {
             </Button>
             <Button variant="outline" asChild>
               <a
-                href={`https://www.amazon.ca/dp/${asin}`}
+                href={getAmazonProductUrl(asin ?? '')}
                 target="_blank"
                 rel="noopener noreferrer"
               >
