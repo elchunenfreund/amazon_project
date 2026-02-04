@@ -1482,7 +1482,7 @@ app.get('/api/asins/:asin/history', validateAsin, async (req, res) => {
 // GET /api/vendor-reports - Get vendor reports with filters
 app.get('/api/vendor-reports', async (req, res) => {
     try {
-        const { startDate, endDate, asin, reportType } = req.query;
+        const { startDate, endDate, asin, reportType, distributorView } = req.query;
         let query = 'SELECT * FROM vendor_reports WHERE 1=1';
         const params = [];
         let paramIndex = 1;
@@ -1506,6 +1506,15 @@ app.get('/api/vendor-reports', async (req, res) => {
         if (reportType) {
             query += ` AND report_type = $${paramIndex++}`;
             params.push(reportType);
+        }
+        // Filter by distributor view (MANUFACTURING, SOURCING, or all if not specified)
+        // Default to MANUFACTURING to match Vendor Central's default behavior
+        if (distributorView && distributorView !== 'ALL') {
+            query += ` AND distributor_view = $${paramIndex++}`;
+            params.push(distributorView);
+        } else if (!distributorView) {
+            // Default: only MANUFACTURING view for Sales and Inventory reports (to avoid double-counting)
+            query += ` AND (distributor_view = 'MANUFACTURING' OR distributor_view IS NULL OR report_type NOT IN ('GET_VENDOR_SALES_REPORT', 'GET_VENDOR_INVENTORY_REPORT'))`;
         }
 
         query += ' ORDER BY report_date DESC';
@@ -1563,10 +1572,14 @@ app.get('/api/vendor-reports', async (req, res) => {
                 // Include data period boundaries for proper deduplication
                 data_start_date: row.data_start_date,
                 data_end_date: row.data_end_date,
+                distributor_view: row.distributor_view,
+                // Sales metrics - match Vendor Central format
                 shipped_cogs: extractNumber(data.shippedCogs) ?? extractNumber(data.shipped_cogs),
                 shipped_units: extractNumber(data.shippedUnits) ?? extractNumber(data.shipped_units),
+                shipped_revenue: extractNumber(data.shippedRevenue) ?? extractNumber(data.shipped_revenue),
                 ordered_units: orderedUnits,
                 ordered_revenue: extractNumber(data.orderedRevenue) ?? extractNumber(data.ordered_revenue),
+                customer_returns: extractNumber(data.customerReturns) ?? extractNumber(data.customer_returns),
                 sellable_on_hand_inventory: inventory,
                 glance_views: glanceViews,
                 conversion_rate: conversionRate,
