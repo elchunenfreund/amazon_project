@@ -8,3 +8,46 @@ local.env
 amazon_cookies.json
 .claude/settings.local.json
 client/test-results/
+
+# AI/IDE agent folders
+.adal/
+.agent/
+.agents/
+.augment/
+.cline/
+.codebuddy/
+.codex/
+.commandcode/
+.continue/
+.crush/
+.factory/
+.gemini/
+.github/
+.goose/
+.iflow/
+.junie/
+.kilocode/
+.kiro/
+.kode/
+.mcpjam/
+.mux/
+.neovate/
+.opencode/
+.openhands/
+.pi/
+.pochi/
+.qoder/
+.qwen/
+.roo/
+.trae/
+.vibe/
+.windsurf/
+.zencoder/
+
+# Skills folders
+skills/
+.claude/skills/
+.cursor/skills/
+
+# Screenshots
+*.png
