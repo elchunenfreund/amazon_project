@@ -25,3 +25,11 @@ export function useSyncVendorReports() {
     },
   })
 }
+
+export function useVendorReportsByAsin(asin: string) {
+  return useQuery({
+    queryKey: ['vendor-reports', 'asin', asin],
+    queryFn: () => vendorReportsApi.getAll({ asin }),
+    enabled: !!asin,
+  })
+}
