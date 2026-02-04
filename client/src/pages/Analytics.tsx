@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
-import { DollarSign, Package, Eye, TrendingUp, ExternalLink } from 'lucide-react'
+import { DollarSign, Package, Eye, TrendingUp, ExternalLink, Calendar } from 'lucide-react'
+import { format } from 'date-fns'
 import type { ColumnDef } from '@tanstack/react-table'
 import { PageWrapper, PageHeader } from '@/components/layout'
 import { StatCard, StatCardGrid, DataTable, CsvExportModal, QueryError } from '@/components/shared'
@@ -26,9 +27,15 @@ interface AsinSummary {
 }
 
 export function Analytics() {
+  // Start with no date filter to show all data - user can filter as needed
   const [filters, setFilters] = useState<VendorReportFilters>({})
+
+  // For display purposes only
+  const hasDateFilter = filters.startDate || filters.endDate
+
   const { data: reports, isLoading, isError, error, refetch } = useVendorReports(filters)
-  const { data: asins } = useVendorReportAsins()
+  // Pass date filters to asins query so dropdown only shows ASINs with data in the selected range
+  const { data: asins } = useVendorReportAsins({ startDate: filters.startDate, endDate: filters.endDate })
   const syncReports = useSyncVendorReports()
 
   const stats = useMemo(() => {
@@ -192,6 +199,25 @@ export function Analytics() {
           </div>
         }
       />
+
+      {/* Date Range Banner - Sticky with lower z-index than calendar popover */}
+      <div className="sticky top-0 z-10 -mx-6 mb-4 bg-background px-6 pt-2 pb-2">
+        <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-4 py-2 dark:bg-blue-950">
+          <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+          <span className="text-sm text-blue-700 dark:text-blue-300">
+            {hasDateFilter ? (
+              <>
+                Showing data from{' '}
+                <strong>{filters.startDate ? format(new Date(filters.startDate), 'MMM d, yyyy') : 'beginning'}</strong>
+                {' '}to{' '}
+                <strong>{filters.endDate ? format(new Date(filters.endDate), 'MMM d, yyyy') : 'now'}</strong>
+              </>
+            ) : (
+              <strong>Showing all available data</strong>
+            )}
+          </span>
+        </div>
+      </div>
 
       {/* Filters */}
       <div className="mb-8">

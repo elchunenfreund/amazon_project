@@ -291,7 +291,7 @@ function DataTableInner<TData, TValue>({
           return (
         <div
           ref={scrollContainerRef}
-          className="overflow-x-auto rounded-md border border-border w-full"
+          className="overflow-auto rounded-md border border-border w-full max-h-[70vh]"
           style={!shouldAnimate ? { contentVisibility: 'auto' } : undefined}
         >
         <Table className={cn(compactMode && "text-xs")}>

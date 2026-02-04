@@ -1169,7 +1169,7 @@ app.get('/api/products', async (req, res) => {
 // GET /api/asins/latest - Get latest check data for all ASINs (for Dashboard)
 app.get('/api/asins/latest', async (req, res) => {
     try {
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, baselineDate } = req.query;
 
         // Build date filter clause
         let dateFilter = '';
@@ -1183,16 +1183,42 @@ app.get('/api/asins/latest', async (req, res) => {
             dateFilter += ` AND check_date <= $${params.length}`;
         }
 
-        // Get latest TWO daily reports for each ASIN (for price change comparison)
-        const reportsResult = await pool.query(`
-            WITH ranked_reports AS (
-                SELECT *,
-                    ROW_NUMBER() OVER (PARTITION BY asin ORDER BY check_date DESC) as rn
-                FROM daily_reports
-                WHERE 1=1 ${dateFilter}
-            )
-            SELECT * FROM ranked_reports WHERE rn <= 2
+        // Get latest daily report for each ASIN
+        const latestReportsResult = await pool.query(`
+            SELECT DISTINCT ON (asin) *
+            FROM daily_reports
+            WHERE 1=1 ${dateFilter}
+            ORDER BY asin, check_date DESC
         `, params);
+
+        // Get baseline reports for comparison
+        // If baselineDate is provided, use reports from that date (or closest before)
+        // Otherwise, get the previous report for each ASIN
+        let baselineReportsResult;
+        if (baselineDate) {
+            baselineReportsResult = await pool.query(`
+                SELECT DISTINCT ON (asin) *
+                FROM daily_reports
+                WHERE check_date <= $1
+                ORDER BY asin, check_date DESC
+            `, [baselineDate]);
+        } else {
+            // Default: get the 2nd most recent report per ASIN
+            baselineReportsResult = await pool.query(`
+                WITH ranked_reports AS (
+                    SELECT *,
+                        ROW_NUMBER() OVER (PARTITION BY asin ORDER BY check_date DESC) as rn
+                    FROM daily_reports
+                    WHERE 1=1 ${dateFilter}
+                )
+                SELECT * FROM ranked_reports WHERE rn = 2
+            `, params);
+        }
+
+        // Combine into the format expected by downstream code
+        const reportsResult = {
+            rows: [...latestReportsResult.rows, ...baselineReportsResult.rows]
+        };
 
         // Group reports by ASIN
         const reportsByAsin = {};
@@ -1461,12 +1487,16 @@ app.get('/api/vendor-reports', async (req, res) => {
         const params = [];
         let paramIndex = 1;
 
+        // Filter using data_start_date and data_end_date for accurate weekly report filtering
+        // Reports overlap with the date range if their data period intersects with the query range
         if (startDate) {
-            query += ` AND report_date >= $${paramIndex++}`;
+            // Include reports where data_end_date >= startDate OR report_date >= startDate
+            query += ` AND (COALESCE(data_end_date, report_date) >= $${paramIndex++})`;
             params.push(startDate);
         }
         if (endDate) {
-            query += ` AND report_date <= $${paramIndex++}`;
+            // Include reports where data_start_date <= endDate OR report_date <= endDate
+            query += ` AND (COALESCE(data_start_date, report_date) <= $${paramIndex++})`;
             params.push(endDate);
         }
         if (asin) {
@@ -1496,13 +1526,24 @@ app.get('/api/vendor-reports', async (req, res) => {
         const transformed = result.rows.map(row => {
             const data = row.data || {};
 
-            // Extract values
-            const orderedUnits = extractNumber(data.orderedUnits) ?? extractNumber(data.ordered_units);
-            const glanceViews = extractNumber(data.glanceViews) ?? extractNumber(data.glance_views);
+            // Extract values - try multiple possible field names
+            const orderedUnits = extractNumber(data.orderedUnits)
+                ?? extractNumber(data.ordered_units)
+                ?? extractNumber(data.unitsOrdered);
 
-            // Calculate conversion rate if not provided (orderedUnits / glanceViews)
+            // Extract glance views from multiple possible locations
+            const glanceViews = extractNumber(data.glanceViews)
+                ?? extractNumber(data.glance_views)
+                ?? extractNumber(data.pageViews)
+                ?? extractNumber(data.page_views)
+                ?? extractNumber(data.browserPageViews)
+                ?? extractNumber(data.mobileAppPageViews);
+
+            // Calculate conversion rate if not provided
+            // Convert to percentage (multiply by 100) for display
             let conversionRate = extractNumber(data.conversionRate) ?? extractNumber(data.conversion_rate);
             if (conversionRate === null && orderedUnits !== null && glanceViews !== null && glanceViews > 0) {
+                // Store as decimal (e.g., 0.05 for 5%) - frontend will multiply by 100 for display
                 conversionRate = orderedUnits / glanceViews;
             }
 
@@ -1530,16 +1571,90 @@ app.get('/api/vendor-reports', async (req, res) => {
             };
         });
 
-        res.json(transformed);
+        // Aggregate data across report types to calculate conversion rate
+        // Group by ASIN only - sum real-time sales, use latest weekly data for other metrics
+        const aggregatedByAsin = new Map();
+
+        // Track real-time sales separately (to sum them)
+        const rtSalesByAsin = new Map();
+
+        for (const record of transformed) {
+            const asin = record.asin;
+            const isRealTimeSales = record.report_type === 'GET_VENDOR_REAL_TIME_SALES_REPORT';
+
+            if (isRealTimeSales) {
+                // Sum up real-time sales ordered units by ASIN
+                if (!rtSalesByAsin.has(asin)) {
+                    rtSalesByAsin.set(asin, { ordered_units: 0, ordered_revenue: 0 });
+                }
+                const rt = rtSalesByAsin.get(asin);
+                if (record.ordered_units !== null) rt.ordered_units += record.ordered_units;
+                if (record.ordered_revenue !== null) rt.ordered_revenue += record.ordered_revenue;
+            } else {
+                // For non-real-time reports, keep latest data by date
+                const key = `${asin}_${record.report_date}`;
+                if (!aggregatedByAsin.has(key)) {
+                    aggregatedByAsin.set(key, { ...record });
+                } else {
+                    const existing = aggregatedByAsin.get(key);
+                    // Merge non-null values from different report types
+                    if (record.shipped_cogs !== null) existing.shipped_cogs = record.shipped_cogs;
+                    if (record.shipped_units !== null) existing.shipped_units = record.shipped_units;
+                    if (record.ordered_units !== null) existing.ordered_units = record.ordered_units;
+                    if (record.ordered_revenue !== null) existing.ordered_revenue = record.ordered_revenue;
+                    if (record.sellable_on_hand_inventory !== null) existing.sellable_on_hand_inventory = record.sellable_on_hand_inventory;
+                    if (record.glance_views !== null) existing.glance_views = record.glance_views;
+                }
+            }
+        }
+
+        // Calculate conversion rate for aggregated records
+        // Use real-time sales ordered_units where available, otherwise fall back to weekly data
+        const aggregatedResult = Array.from(aggregatedByAsin.values()).map(record => {
+            const rtData = rtSalesByAsin.get(record.asin);
+
+            // Use real-time sales ordered_units if available (summed across the period)
+            if (rtData && rtData.ordered_units > 0) {
+                record.rt_ordered_units = rtData.ordered_units;
+                record.rt_ordered_revenue = rtData.ordered_revenue;
+            }
+
+            // Calculate conversion rate: RT ordered units / glance views
+            const orderedUnitsForConversion = rtData?.ordered_units || record.ordered_units;
+            if (orderedUnitsForConversion !== null && record.glance_views !== null && record.glance_views > 0) {
+                record.conversion_rate = orderedUnitsForConversion / record.glance_views;
+            }
+            return record;
+        });
+
+        res.json(aggregatedResult);
     } catch (err) {
         handleApiError(res, err, 'Failed to fetch vendor reports');
     }
 });
 
-// GET /api/vendor-reports/asins - Get list of ASINs with vendor data
+// GET /api/vendor-reports/asins - Get list of ASINs with vendor data (filtered by date range)
 app.get('/api/vendor-reports/asins', async (req, res) => {
     try {
-        const result = await pool.query('SELECT DISTINCT asin FROM vendor_reports ORDER BY asin');
+        const { startDate, endDate } = req.query;
+
+        let query = 'SELECT DISTINCT asin FROM vendor_reports WHERE 1=1';
+        const params = [];
+        let paramIndex = 1;
+
+        // Filter by date range to only show ASINs with data in the selected period
+        if (startDate) {
+            query += ` AND (COALESCE(data_end_date, report_date) >= $${paramIndex++})`;
+            params.push(startDate);
+        }
+        if (endDate) {
+            query += ` AND (COALESCE(data_start_date, report_date) <= $${paramIndex++})`;
+            params.push(endDate);
+        }
+
+        query += ' ORDER BY asin';
+
+        const result = await pool.query(query, params);
         res.json(result.rows.map(r => r.asin));
     } catch (err) {
         handleApiError(res, err, 'Failed to fetch vendor report ASINs');
@@ -1631,9 +1746,32 @@ app.get('/api/purchase-orders/:poNumber', async (req, res) => {
 
         const itemsResult = await pool.query('SELECT * FROM po_line_items WHERE po_number = $1', [poNumber]);
 
+        // Map database column names to frontend expected field names
+        const lineItems = itemsResult.rows.map(item => ({
+            ...item,
+            title: item.product_title,
+            ordered_unit_cost: item.net_cost_amount ? parseFloat(item.net_cost_amount) : null,
+            sku: item.vendor_sku,
+            acknowledged_status: item.receiving_status || 'Pending'
+        }));
+
+        // Transform PO to match React app expected format
+        let vendor_code = null;
+        try {
+            const party = typeof poResult.rows[0].selling_party === 'string'
+                ? JSON.parse(poResult.rows[0].selling_party)
+                : poResult.rows[0].selling_party;
+            vendor_code = party?.partyId || null;
+        } catch {
+            // ignore
+        }
+
         res.json({
             ...poResult.rows[0],
-            line_items: itemsResult.rows
+            order_date: poResult.rows[0].po_date,
+            po_state: poResult.rows[0].po_status,
+            vendor_code,
+            line_items: lineItems
         });
     } catch (err) {
         handleApiError(res, err, 'Failed to fetch purchase order');
@@ -1645,7 +1783,17 @@ app.get('/api/purchase-orders/:poNumber/items', async (req, res) => {
     try {
         const { poNumber } = req.params;
         const result = await pool.query('SELECT * FROM po_line_items WHERE po_number = $1', [poNumber]);
-        res.json(result.rows);
+
+        // Map database column names to frontend expected field names
+        const lineItems = result.rows.map(item => ({
+            ...item,
+            title: item.product_title,
+            ordered_unit_cost: item.net_cost_amount ? parseFloat(item.net_cost_amount) : null,
+            sku: item.vendor_sku,
+            acknowledged_status: item.receiving_status || 'Pending'
+        }));
+
+        res.json(lineItems);
     } catch (err) {
         handleApiError(res, err, 'Failed to fetch PO line items');
     }
@@ -3843,6 +3991,123 @@ app.get('/api/sp-api/diagnose', async (req, res) => {
             partialResults: results
         });
     }
+});
+
+// Sync vendor reports via SP-API (spawns scheduled-sync.js in background)
+let currentSyncProcess = null;
+
+app.post('/api/sp-api/sync-reports', (req, res) => {
+    if (currentSyncProcess) {
+        return res.status(400).json({
+            success: false,
+            message: 'A sync is already in progress. Please wait for it to complete.'
+        });
+    }
+
+    try {
+        // Spawn scheduled-sync.js with 'reports' argument to sync weekly vendor reports
+        currentSyncProcess = spawn(process.execPath, ['scheduled-sync.js', 'reports'], {
+            cwd: __dirname,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        let output = '';
+
+        currentSyncProcess.stdout.on('data', (data) => {
+            output += data.toString();
+            console.log('[Sync Reports]', data.toString().trim());
+        });
+
+        currentSyncProcess.stderr.on('data', (data) => {
+            console.error('[Sync Reports Error]', data.toString().trim());
+        });
+
+        currentSyncProcess.on('close', (code) => {
+            console.log(`[Sync Reports] Process exited with code ${code}`);
+            currentSyncProcess = null;
+        });
+
+        currentSyncProcess.on('error', (err) => {
+            console.error('[Sync Reports] Spawn error:', err);
+            currentSyncProcess = null;
+        });
+
+        res.json({
+            success: true,
+            message: 'Vendor report sync started. This runs in the background and may take several minutes.'
+        });
+    } catch (err) {
+        console.error('Sync reports error:', err);
+        currentSyncProcess = null;
+        res.status(500).json({
+            success: false,
+            message: 'Failed to start sync: ' + err.message
+        });
+    }
+});
+
+// Get sync status
+app.get('/api/sp-api/sync-reports/status', (req, res) => {
+    res.json({
+        running: !!currentSyncProcess
+    });
+});
+
+// Sync purchase orders via SP-API (spawns scheduled-sync.js in background)
+let currentPOSyncProcess = null;
+
+app.post('/api/sp-api/sync-orders', (req, res) => {
+    if (currentPOSyncProcess) {
+        return res.status(400).json({
+            success: false,
+            message: 'A purchase order sync is already in progress. Please wait for it to complete.'
+        });
+    }
+
+    try {
+        // Spawn scheduled-sync.js with 'po' argument to sync purchase orders
+        currentPOSyncProcess = spawn(process.execPath, ['scheduled-sync.js', 'po'], {
+            cwd: __dirname,
+            stdio: ['ignore', 'pipe', 'pipe']
+        });
+
+        currentPOSyncProcess.stdout.on('data', (data) => {
+            console.log('[Sync PO]', data.toString().trim());
+        });
+
+        currentPOSyncProcess.stderr.on('data', (data) => {
+            console.error('[Sync PO Error]', data.toString().trim());
+        });
+
+        currentPOSyncProcess.on('close', (code) => {
+            console.log(`[Sync PO] Process exited with code ${code}`);
+            currentPOSyncProcess = null;
+        });
+
+        currentPOSyncProcess.on('error', (err) => {
+            console.error('[Sync PO] Spawn error:', err);
+            currentPOSyncProcess = null;
+        });
+
+        res.json({
+            success: true,
+            message: 'Purchase order sync started. This runs in the background and may take several minutes.'
+        });
+    } catch (err) {
+        console.error('Sync orders error:', err);
+        currentPOSyncProcess = null;
+        res.status(500).json({
+            success: false,
+            message: 'Failed to start sync: ' + err.message
+        });
+    }
+});
+
+// Get PO sync status
+app.get('/api/sp-api/sync-orders/status', (req, res) => {
+    res.json({
+        running: !!currentPOSyncProcess
+    });
 });
 
 // Check if scraper is currently running

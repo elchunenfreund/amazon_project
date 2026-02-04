@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import type { DateRange } from 'react-day-picker'
-import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff, Filter } from 'lucide-react'
+import { format, subDays } from 'date-fns'
+import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff, Filter, History } from 'lucide-react'
 import { PageWrapper, PageHeader } from '@/components/layout'
 import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal, DateRangePicker, QueryError } from '@/components/shared'
 import { Button } from '@/components/ui/button'
@@ -22,13 +23,41 @@ import {
 import type { AsinReport, AsinFilters } from '@/lib/api'
 import { isAsinReport } from '@/lib/type-guards'
 
+// Baseline date options
+const BASELINE_OPTIONS = [
+  { value: 'last', label: 'Last check' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: '3days', label: '3 days ago' },
+  { value: '7days', label: '7 days ago' },
+  { value: '14days', label: '14 days ago' },
+  { value: '30days', label: '30 days ago' },
+]
+
+function getBaselineDate(option: string): string | undefined {
+  if (option === 'last') return undefined // Use default (previous report)
+  const days = {
+    'yesterday': 1,
+    '3days': 3,
+    '7days': 7,
+    '14days': 14,
+    '30days': 30,
+  }[option]
+  if (days) {
+    return format(subDays(new Date(), days), 'yyyy-MM-dd')
+  }
+  return undefined
+}
+
 export function Dashboard() {
   // Date filter state
   const [dateRange, setDateRange] = useState<DateRange | undefined>()
+  const [baselineOption, setBaselineOption] = useState<string>('last')
+
   const filters: AsinFilters = useMemo(() => ({
     startDate: dateRange?.from?.toISOString().split('T')[0],
     endDate: dateRange?.to?.toISOString().split('T')[0],
-  }), [dateRange])
+    baselineDate: getBaselineDate(baselineOption),
+  }), [dateRange, baselineOption])
 
   const { data: asins, isLoading, isError, error, refetch } = useLatestAsins(filters)
   const { data: scraperStatus } = useScraperStatus()
@@ -246,6 +275,35 @@ export function Dashboard() {
       {/* Scraper Progress */}
       <ScraperProgress progress={progress} />
 
+      {/* Info Banner - Sticky with lower z-index than calendar popover */}
+      {(baselineOption !== 'last' || dateRange) && (
+        <div className="sticky top-0 z-10 -mx-6 mb-4 bg-background px-6 pt-2 pb-2">
+          <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-4 py-2 dark:bg-amber-950">
+            <History className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <span className="text-sm text-amber-700 dark:text-amber-300">
+              Comparing changes since{' '}
+              <strong>
+                {baselineOption === 'last'
+                  ? 'last check'
+                  : BASELINE_OPTIONS.find(o => o.value === baselineOption)?.label?.toLowerCase() ?? baselineOption}
+              </strong>
+              {dateRange?.from && (
+                <>
+                  {' '}• Filtered:{' '}
+                  <strong>{format(dateRange.from, 'MMM d, yyyy')}</strong>
+                  {dateRange.to && (
+                    <>
+                      {' '}to{' '}
+                      <strong>{format(dateRange.to, 'MMM d, yyyy')}</strong>
+                    </>
+                  )}
+                </>
+              )}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Stats Cards */}
       <StatCardGrid columns={4}>
         <StatCard
@@ -317,8 +375,26 @@ export function Dashboard() {
           </SelectContent>
         </Select>
 
+        {/* Baseline Comparison Selector */}
+        <div className="flex items-center gap-2">
+          <History className="h-4 w-4 text-muted" />
+          <span className="text-sm text-muted">Changes since:</span>
+          <Select value={baselineOption} onValueChange={setBaselineOption}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {BASELINE_OPTIONS.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* Clear filters */}
-        {(statusFilter !== 'all' || sellerFilter !== 'all' || dateRange) && (
+        {(statusFilter !== 'all' || sellerFilter !== 'all' || dateRange || baselineOption !== 'last') && (
           <Button
             variant="ghost"
             size="sm"
@@ -326,6 +402,7 @@ export function Dashboard() {
               setStatusFilter('all')
               setSellerFilter('all')
               setDateRange(undefined)
+              setBaselineOption('last')
             }}
           >
             Clear filters

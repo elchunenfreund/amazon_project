@@ -309,6 +309,7 @@ export interface AsinReport {
 export interface AsinFilters {
   startDate?: string
   endDate?: string
+  baselineDate?: string
 }
 
 export const asinsApi = {
@@ -316,6 +317,7 @@ export const asinsApi = {
     const params = new URLSearchParams()
     if (filters?.startDate) params.set('startDate', filters.startDate)
     if (filters?.endDate) params.set('endDate', filters.endDate)
+    if (filters?.baselineDate) params.set('baselineDate', filters.baselineDate)
     const query = params.toString()
     return request<AsinReport[]>(`/asins/latest${query ? `?${query}` : ''}`)
   },
@@ -403,7 +405,13 @@ export const vendorReportsApi = {
       method: 'POST',
     }),
 
-  getAsins: () => request<string[]>('/vendor-reports/asins'),
+  getAsins: (filters?: VendorReportFilters) => {
+    const params = new URLSearchParams()
+    if (filters?.startDate) params.set('startDate', filters.startDate)
+    if (filters?.endDate) params.set('endDate', filters.endDate)
+    const query = params.toString()
+    return request<string[]>(`/vendor-reports/asins${query ? `?${query}` : ''}`)
+  },
 }
 
 // Purchase Orders API
@@ -428,6 +436,7 @@ export interface POLineItem {
   po_id: number
   po_number: string
   asin: string
+  sku?: string              // vendor_sku from DB
   external_id?: string
   title?: string
   ordered_quantity?: number

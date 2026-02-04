@@ -1,4 +1,5 @@
 import { format } from 'date-fns'
+import { ExternalLink } from 'lucide-react'
 import { Modal } from '@/components/shared'
 import { POStateBadge } from '@/components/shared/StatusBadge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -12,6 +13,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { usePurchaseOrder } from '@/hooks'
+import { getAmazonProductUrl } from '@/lib/api'
 
 interface OrderDetailModalProps {
   open: boolean
@@ -32,19 +34,20 @@ export function OrderDetailModal({
       onOpenChange={onOpenChange}
       title={`PO: ${poNumber}`}
       description="Purchase order details and line items"
-      size="full"
+      size="4xl"
     >
-      {isLoading ? (
-        <div className="space-y-4">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16" />
-            ))}
+      <div className="max-h-[70vh] overflow-y-auto">
+        {isLoading ? (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-16" />
+              ))}
+            </div>
+            <Skeleton className="h-64" />
           </div>
-          <Skeleton className="h-64" />
-        </div>
-      ) : order ? (
-        <div className="space-y-6">
+        ) : order ? (
+          <div className="space-y-6">
           {/* Order Details */}
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
             <div>
@@ -105,11 +108,12 @@ export function OrderDetailModal({
           <div>
             <h3 className="mb-4 text-lg font-semibold">Line Items</h3>
             {order.line_items && order.line_items.length > 0 ? (
-              <div className="rounded-md border border-border">
+              <div className="rounded-md border border-border overflow-auto max-h-[40vh]">
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>ASIN</TableHead>
+                      <TableHead>SKU</TableHead>
                       <TableHead>Title</TableHead>
                       <TableHead className="text-right">Qty Ordered</TableHead>
                       <TableHead className="text-right">Qty Received</TableHead>
@@ -120,7 +124,29 @@ export function OrderDetailModal({
                   <TableBody>
                     {order.line_items.map((item) => (
                       <TableRow key={item.id}>
-                        <TableCell className="font-mono">{item.asin}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <a
+                              href={getAmazonProductUrl(item.asin)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-mono text-blue-600 hover:underline dark:text-blue-400"
+                            >
+                              {item.asin}
+                            </a>
+                            <a
+                              href={getAmazonProductUrl(item.asin)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-muted hover:text-accent"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm text-muted">
+                          {item.sku ?? '-'}
+                        </TableCell>
                         <TableCell className="max-w-xs truncate">
                           {item.title ?? '-'}
                         </TableCell>
@@ -148,9 +174,10 @@ export function OrderDetailModal({
             )}
           </div>
         </div>
-      ) : (
-        <p className="text-center text-muted">Order not found</p>
-      )}
+        ) : (
+          <p className="text-center text-muted">Order not found</p>
+        )}
+      </div>
     </Modal>
   )
 }

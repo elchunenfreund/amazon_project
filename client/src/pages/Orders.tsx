@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { format } from 'date-fns'
-import { ShoppingCart, Clock, CheckCircle, XCircle, RefreshCw, Download } from 'lucide-react'
+import { ShoppingCart, Clock, CheckCircle, XCircle, RefreshCw, Download, Filter } from 'lucide-react'
 import { PageWrapper, PageHeader } from '@/components/layout'
 import { StatCard, StatCardGrid, DateRangePicker } from '@/components/shared'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -111,6 +111,40 @@ export function Orders() {
           </div>
         }
       />
+
+      {/* Info Banner - Sticky with lower z-index than calendar popover */}
+      {(dateRange || stateFilter || vendorFilter) && (
+        <div className="sticky top-0 z-10 -mx-6 mb-4 bg-background px-6 pt-2 pb-2">
+          <div className="flex items-center gap-2 rounded-lg bg-green-50 px-4 py-2 dark:bg-green-950">
+            <Filter className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <span className="text-sm text-green-700 dark:text-green-300">
+              Filtered orders
+              {dateRange?.from && (
+                <>
+                  {' '}from{' '}
+                  <strong>{format(dateRange.from, 'MMM d, yyyy')}</strong>
+                  {dateRange.to && (
+                    <>
+                      {' '}to{' '}
+                      <strong>{format(dateRange.to, 'MMM d, yyyy')}</strong>
+                    </>
+                  )}
+                </>
+              )}
+              {stateFilter && stateFilter !== 'all' && (
+                <>
+                  {' '}• Status: <strong>{stateFilter}</strong>
+                </>
+              )}
+              {vendorFilter && vendorFilter !== 'all' && (
+                <>
+                  {' '}• Vendor: <strong>{vendorFilter}</strong>
+                </>
+              )}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <StatCardGrid columns={4}>

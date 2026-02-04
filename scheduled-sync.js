@@ -382,20 +382,31 @@ async function downloadAndSaveReport(accessToken, reportDocumentId, reportType) 
         );
     }
 
+    // Deduplicate all records first by (asin, reportDate) key
+    // This is necessary because ON CONFLICT can't handle the same row twice in one INSERT
+    const dedupeMap = new Map();
+    for (const item of asinData) {
+        if (!item.asin) continue;
+        const reportDate = item.endDate || item.startDate || item.date || new Date().toISOString().split('T')[0];
+        const key = `${item.asin}_${reportDate}`;
+        // Keep the latest record for each key (last one wins)
+        dedupeMap.set(key, { item, reportDate });
+    }
+
+    const dedupedItems = Array.from(dedupeMap.values());
+    console.log(`[${reportType}] Deduplicated ${asinData.length} items to ${dedupedItems.length} unique records`);
+
     // Process in smaller chunks (200 instead of 500) to reduce memory spikes
     const chunkSize = 200;
     let savedCount = 0;
 
-    for (let i = 0; i < asinData.length; i += chunkSize) {
-        const chunk = asinData.slice(i, Math.min(i + chunkSize, asinData.length));
+    for (let i = 0; i < dedupedItems.length; i += chunkSize) {
+        const chunk = dedupedItems.slice(i, Math.min(i + chunkSize, dedupedItems.length));
         const values = [];
         const params = [];
         let paramIndex = 1;
 
-        for (const item of chunk) {
-            if (!item.asin) continue;
-
-            const reportDate = item.endDate || item.startDate || item.date || new Date().toISOString().split('T')[0];
+        for (const { item, reportDate } of chunk) {
             values.push(`($${paramIndex}, $${paramIndex + 1}, $${paramIndex + 2}, $${paramIndex + 3}, $${paramIndex + 4}, $${paramIndex + 5}, CURRENT_TIMESTAMP)`);
             params.push(reportType, item.asin, reportDate, JSON.stringify(item), item.startDate || null, item.endDate || null);
             paramIndex += 6;
@@ -405,7 +416,12 @@ async function downloadAndSaveReport(accessToken, reportDocumentId, reportType) 
         if (values.length > 0) {
             await pool.query(
                 `INSERT INTO vendor_reports (report_type, asin, report_date, data, data_start_date, data_end_date, report_request_date)
-                 VALUES ${values.join(', ')}`,
+                 VALUES ${values.join(', ')}
+                 ON CONFLICT (report_type, asin, report_date) DO UPDATE SET
+                    data = EXCLUDED.data,
+                    data_start_date = EXCLUDED.data_start_date,
+                    data_end_date = EXCLUDED.data_end_date,
+                    report_request_date = EXCLUDED.report_request_date`,
                 params
             );
         }

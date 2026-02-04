@@ -8,10 +8,10 @@ export function useVendorReports(filters?: VendorReportFilters) {
   })
 }
 
-export function useVendorReportAsins() {
+export function useVendorReportAsins(filters?: { startDate?: string; endDate?: string }) {
   return useQuery({
-    queryKey: ['vendor-reports', 'asins'],
-    queryFn: vendorReportsApi.getAsins,
+    queryKey: ['vendor-reports', 'asins', filters?.startDate, filters?.endDate],
+    queryFn: () => vendorReportsApi.getAsins(filters),
   })
 }
 

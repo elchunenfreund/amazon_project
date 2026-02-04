@@ -20,6 +20,8 @@ interface AnalyticsFiltersProps {
   }) => void
   onSync?: () => void
   isSyncing?: boolean
+  defaultStartDate?: string
+  defaultEndDate?: string
 }
 
 export function AnalyticsFilters({
@@ -27,8 +29,19 @@ export function AnalyticsFilters({
   onFilterChange,
   onSync,
   isSyncing = false,
+  defaultStartDate,
+  defaultEndDate,
 }: AnalyticsFiltersProps) {
-  const [dateRange, setDateRange] = useState<DateRange | undefined>()
+  // Initialize with default date range if provided
+  const [dateRange, setDateRange] = useState<DateRange | undefined>(() => {
+    if (defaultStartDate && defaultEndDate) {
+      return {
+        from: new Date(defaultStartDate),
+        to: new Date(defaultEndDate),
+      }
+    }
+    return undefined
+  })
   const [selectedAsin, setSelectedAsin] = useState<string>('')
 
   const handleDateChange = (range: DateRange | undefined) => {
