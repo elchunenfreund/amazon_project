@@ -77,14 +77,22 @@ function createAuthRoutes(pool) {
                 req.session.userEmail = user.email;
                 req.session.userRole = user.role;
 
-                res.json({
-                    success: true,
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        name: user.name,
-                        role: user.role
+                // Explicitly save session to PostgreSQL before responding
+                req.session.save((saveErr) => {
+                    if (saveErr) {
+                        console.error('Session save error:', saveErr);
+                        return res.status(500).json({ error: 'Session error' });
                     }
+
+                    res.json({
+                        success: true,
+                        user: {
+                            id: user.id,
+                            email: user.email,
+                            name: user.name,
+                            role: user.role
+                        }
+                    });
                 });
             });
         } catch (err) {
@@ -133,14 +141,22 @@ function createAuthRoutes(pool) {
                 req.session.userEmail = user.email;
                 req.session.userRole = user.role;
 
-                res.json({
-                    success: true,
-                    user: {
-                        id: user.id,
-                        email: user.email,
-                        name: user.name,
-                        role: user.role
+                // Explicitly save session to PostgreSQL before responding
+                req.session.save((saveErr) => {
+                    if (saveErr) {
+                        console.error('Session save error:', saveErr);
+                        return res.status(500).json({ error: 'Session error' });
                     }
+
+                    res.json({
+                        success: true,
+                        user: {
+                            id: user.id,
+                            email: user.email,
+                            name: user.name,
+                            role: user.role
+                        }
+                    });
                 });
             });
         } catch (err) {
