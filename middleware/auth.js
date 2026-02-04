@@ -10,7 +10,14 @@ function requireAuth(req, res, next) {
     }
 
     // Check if this is an API request or page request
-    if (req.path.startsWith('/api/')) {
+    // Note: When used with app.use('/api', ...), req.path has the prefix stripped
+    // So we check req.originalUrl for the full path, or assume API if content-type is JSON
+    const isApiRequest = req.originalUrl.startsWith('/api/') ||
+                         req.xhr ||
+                         req.headers.accept?.includes('application/json') ||
+                         req.headers['content-type']?.includes('application/json');
+
+    if (isApiRequest) {
         return res.status(401).json({ error: 'Authentication required' });
     }
 
