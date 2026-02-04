@@ -181,7 +181,7 @@ function getWeekBoundaries(daysBack = 30) {
     };
 }
 
-async function createReport(accessToken, reportType, startDate, endDate) {
+async function createReport(accessToken, reportType, startDate, endDate, distributorView = null) {
     const reportConfig = VENDOR_REPORT_TYPES[reportType];
 
     const reportSpec = {
@@ -214,7 +214,7 @@ async function createReport(accessToken, reportType, startDate, endDate) {
 
         // Only add distributorView and sellingProgram if the report supports them
         if (requiresOptions.includes('distributorView')) {
-            reportSpec.reportOptions.distributorView = 'MANUFACTURING';
+            reportSpec.reportOptions.distributorView = distributorView || 'MANUFACTURING';
         }
         if (requiresOptions.includes('sellingProgram')) {
             reportSpec.reportOptions.sellingProgram = 'RETAIL';
@@ -433,9 +433,10 @@ async function downloadAndSaveReport(accessToken, reportDocumentId, reportType) 
     return savedCount;
 }
 
-async function syncVendorReport(reportType, daysBack = 14) {
+async function syncVendorReport(reportType, daysBack = 14, distributorView = null) {
     const reportConfig = VENDOR_REPORT_TYPES[reportType];
-    console.log(`\n[${reportConfig.name}] Starting sync...`);
+    const viewLabel = distributorView ? ` (${distributorView})` : '';
+    console.log(`\n[${reportConfig.name}${viewLabel}] Starting sync...`);
 
     try {
         const accessToken = await getValidAccessToken();
@@ -453,22 +454,22 @@ async function syncVendorReport(reportType, daysBack = 14) {
             startDate = new Date(endDate.getTime() - daysBack * 24 * 60 * 60 * 1000);
         }
 
-        console.log(`[${reportConfig.name}] Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
-        console.log(`[${reportConfig.name}] Days span: ${Math.round((endDate - startDate) / (1000 * 60 * 60 * 24))} days`);
+        console.log(`[${reportConfig.name}${viewLabel}] Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+        console.log(`[${reportConfig.name}${viewLabel}] Days span: ${Math.round((endDate - startDate) / (1000 * 60 * 60 * 24))} days`);
 
-        const reportId = await createReport(accessToken, reportType, startDate, endDate);
-        console.log(`[${reportConfig.name}] Report created: ${reportId}`);
+        const reportId = await createReport(accessToken, reportType, startDate, endDate, distributorView);
+        console.log(`[${reportConfig.name}${viewLabel}] Report created: ${reportId}`);
 
         const reportDocumentId = await waitForReport(accessToken, reportId);
-        console.log(`[${reportConfig.name}] Report ready: ${reportDocumentId}`);
+        console.log(`[${reportConfig.name}${viewLabel}] Report ready: ${reportDocumentId}`);
 
         const savedCount = await downloadAndSaveReport(accessToken, reportDocumentId, reportType);
-        console.log(`[${reportConfig.name}] Saved ${savedCount} items`);
+        console.log(`[${reportConfig.name}${viewLabel}] Saved ${savedCount} items`);
 
-        return { success: true, savedCount };
+        return { success: true, savedCount, distributorView };
     } catch (err) {
-        console.error(`[${reportConfig.name}] Error:`, err.message);
-        return { success: false, error: err.message };
+        console.error(`[${reportConfig.name}${viewLabel}] Error:`, err.message);
+        return { success: false, error: err.message, distributorView };
     }
 }
 
@@ -682,14 +683,26 @@ async function main() {
             }
 
             // Weekly reports (run daily or less frequently)
+            // Sales and Inventory reports support distributorView - sync BOTH views to capture all ASINs
             if (mode === 'all' || mode === 'reports') {
-                results.reports['SALES'] = await syncVendorReport('GET_VENDOR_SALES_REPORT', 30);
+                // Sales Report - MANUFACTURING view (vendor is manufacturer)
+                results.reports['SALES_MANUFACTURING'] = await syncVendorReport('GET_VENDOR_SALES_REPORT', 30, 'MANUFACTURING');
                 tryGC();
+                // Sales Report - SOURCING view (vendor sources from other manufacturers)
+                results.reports['SALES_SOURCING'] = await syncVendorReport('GET_VENDOR_SALES_REPORT', 30, 'SOURCING');
+                tryGC();
+
+                // Margin and Traffic don't support distributorView
                 results.reports['MARGIN'] = await syncVendorReport('GET_VENDOR_NET_PURE_PRODUCT_MARGIN_REPORT', 30);
                 tryGC();
                 results.reports['TRAFFIC'] = await syncVendorReport('GET_VENDOR_TRAFFIC_REPORT', 30);
                 tryGC();
-                results.reports['INVENTORY'] = await syncVendorReport('GET_VENDOR_INVENTORY_REPORT', 30);
+
+                // Inventory Report - MANUFACTURING view
+                results.reports['INVENTORY_MANUFACTURING'] = await syncVendorReport('GET_VENDOR_INVENTORY_REPORT', 30, 'MANUFACTURING');
+                tryGC();
+                // Inventory Report - SOURCING view
+                results.reports['INVENTORY_SOURCING'] = await syncVendorReport('GET_VENDOR_INVENTORY_REPORT', 30, 'SOURCING');
                 tryGC();
             }
         }
