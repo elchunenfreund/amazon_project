@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
-import { DollarSign, Package, Eye, TrendingUp, ExternalLink, Calendar } from 'lucide-react'
-import { format } from 'date-fns'
+import { DollarSign, Eye, TrendingUp, ExternalLink, Calendar, ShoppingCart } from 'lucide-react'
+import { format, parseISO } from 'date-fns'
 import type { ColumnDef } from '@tanstack/react-table'
 import { PageWrapper, PageHeader } from '@/components/layout'
 import { StatCard, StatCardGrid, DataTable, CsvExportModal, QueryError } from '@/components/shared'
@@ -18,7 +18,8 @@ import {
 interface AsinSummary {
   asin: string
   totalCogs: number
-  totalUnits: number
+  totalShippedUnits: number
+  totalOrderedUnits: number
   totalViews: number
   totalRevenue: number
   avgConversion: number
@@ -39,17 +40,18 @@ export function Analytics() {
   const syncReports = useSyncVendorReports()
 
   const stats = useMemo(() => {
-    if (!reports) return { totalCogs: 0, totalUnits: 0, totalViews: 0, avgConversion: 0 }
+    if (!reports) return { totalCogs: 0, totalShippedUnits: 0, totalOrderedUnits: 0, totalViews: 0, avgConversion: 0 }
 
     const totalCogs = reports.reduce((sum, r) => sum + (r.shipped_cogs ?? 0), 0)
-    const totalUnits = reports.reduce((sum, r) => sum + (r.shipped_units ?? 0), 0)
+    const totalShippedUnits = reports.reduce((sum, r) => sum + (r.shipped_units ?? 0), 0)
+    const totalOrderedUnits = reports.reduce((sum, r) => sum + (r.ordered_units ?? 0), 0)
     const totalViews = reports.reduce((sum, r) => sum + (r.glance_views ?? 0), 0)
-    const conversions = reports.filter((r) => r.conversion_rate).map((r) => r.conversion_rate!)
-    const avgConversion = conversions.length > 0
-      ? conversions.reduce((sum, c) => sum + c, 0) / conversions.length
-      : 0
 
-    return { totalCogs, totalUnits, totalViews, avgConversion }
+    // Calculate conversion rate from totals: Ordered Units / Glance Views
+    // This is more accurate than averaging individual conversion rates
+    const avgConversion = totalViews > 0 ? totalOrderedUnits / totalViews : 0
+
+    return { totalCogs, totalShippedUnits, totalOrderedUnits, totalViews, avgConversion }
   }, [reports])
 
   // CSV export columns for vendor reports
@@ -71,9 +73,10 @@ export function Analytics() {
     { key: 'asin', header: 'ASIN' },
     { key: 'totalRevenue', header: 'Total Revenue' },
     { key: 'totalCogs', header: 'Total COGS' },
-    { key: 'totalUnits', header: 'Units Shipped' },
+    { key: 'totalOrderedUnits', header: 'Ordered Units' },
+    { key: 'totalShippedUnits', header: 'Shipped Units' },
     { key: 'totalViews', header: 'Glance Views' },
-    { key: 'avgConversion', header: 'Avg Conversion', accessor: (r: unknown) => { if (!isAsinSummary(r)) return ''; return `${(r.avgConversion * 100).toFixed(2)}%` } },
+    { key: 'avgConversion', header: 'Conversion Rate', accessor: (r: unknown) => { if (!isAsinSummary(r)) return ''; return `${(r.avgConversion * 100).toFixed(2)}%` } },
     { key: 'inventory', header: 'Current Inventory' },
   ]
 
@@ -87,7 +90,8 @@ export function Analytics() {
       const existing = summaryMap.get(report.asin) || {
         asin: report.asin,
         totalCogs: 0,
-        totalUnits: 0,
+        totalShippedUnits: 0,
+        totalOrderedUnits: 0,
         totalViews: 0,
         totalRevenue: 0,
         avgConversion: 0,
@@ -96,19 +100,23 @@ export function Analytics() {
       }
 
       existing.totalCogs += report.shipped_cogs ?? 0
-      existing.totalUnits += report.shipped_units ?? 0
+      existing.totalShippedUnits += report.shipped_units ?? 0
+      existing.totalOrderedUnits += report.ordered_units ?? 0
       existing.totalViews += report.glance_views ?? 0
       existing.totalRevenue += report.ordered_revenue ?? 0
       existing.inventory = report.sellable_on_hand_inventory ?? existing.inventory
-      if (report.conversion_rate) {
-        existing.avgConversion = (existing.avgConversion * existing.reportCount + report.conversion_rate) / (existing.reportCount + 1)
-      }
       existing.reportCount++
 
       summaryMap.set(report.asin, existing)
     }
 
-    return Array.from(summaryMap.values()).sort((a, b) => b.totalRevenue - a.totalRevenue)
+    // Calculate conversion rate from totals for each ASIN
+    return Array.from(summaryMap.values())
+      .map(item => ({
+        ...item,
+        avgConversion: item.totalViews > 0 ? item.totalOrderedUnits / item.totalViews : 0
+      }))
+      .sort((a, b) => b.totalRevenue - a.totalRevenue)
   }, [reports])
 
   const asinColumns = useMemo<ColumnDef<AsinSummary>[]>(() => [
@@ -141,9 +149,14 @@ export function Analytics() {
       cell: ({ row }) => `$${row.original.totalCogs.toLocaleString()}`,
     },
     {
-      accessorKey: 'totalUnits',
-      header: 'Units Shipped',
-      cell: ({ row }) => row.original.totalUnits.toLocaleString(),
+      accessorKey: 'totalOrderedUnits',
+      header: 'Ordered Units',
+      cell: ({ row }) => row.original.totalOrderedUnits.toLocaleString(),
+    },
+    {
+      accessorKey: 'totalShippedUnits',
+      header: 'Shipped Units',
+      cell: ({ row }) => row.original.totalShippedUnits.toLocaleString(),
     },
     {
       accessorKey: 'totalViews',
@@ -208,9 +221,9 @@ export function Analytics() {
             {hasDateFilter ? (
               <>
                 Showing data from{' '}
-                <strong>{filters.startDate ? format(new Date(filters.startDate), 'MMM d, yyyy') : 'beginning'}</strong>
+                <strong>{filters.startDate ? format(parseISO(filters.startDate), 'MMM d, yyyy') : 'beginning'}</strong>
                 {' '}to{' '}
-                <strong>{filters.endDate ? format(new Date(filters.endDate), 'MMM d, yyyy') : 'now'}</strong>
+                <strong>{filters.endDate ? format(parseISO(filters.endDate), 'MMM d, yyyy') : 'now'}</strong>
               </>
             ) : (
               <strong>Showing all available data</strong>
@@ -238,9 +251,10 @@ export function Analytics() {
           isLoading={isLoading}
         />
         <StatCard
-          title="Shipped Units"
-          value={stats.totalUnits.toLocaleString()}
-          icon={<Package className="h-6 w-6" />}
+          title="Ordered Units"
+          value={stats.totalOrderedUnits.toLocaleString()}
+          description={`Shipped: ${stats.totalShippedUnits.toLocaleString()}`}
+          icon={<ShoppingCart className="h-6 w-6" />}
           isLoading={isLoading}
         />
         <StatCard
@@ -250,8 +264,9 @@ export function Analytics() {
           isLoading={isLoading}
         />
         <StatCard
-          title="Avg Conversion"
+          title="Conversion Rate"
           value={`${(stats.avgConversion * 100).toFixed(2)}%`}
+          description="Ordered ÷ Views"
           icon={<TrendingUp className="h-6 w-6" />}
           isLoading={isLoading}
         />
