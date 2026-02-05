@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { format, parseISO, isSameDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, subWeeks, subMonths } from 'date-fns'
+import { format, parseISO, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, subWeeks, subMonths } from 'date-fns'
 import type { DateRange } from 'react-day-picker'
 import { CalendarIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -113,6 +113,15 @@ const SMART_PRESETS: SmartPreset[] = [
       return null
     }
   },
+  {
+    label: 'All Time',
+    getValue: (weeks) => {
+      if (weeks.length === 0) return null
+      // Sort all weeks and select from earliest to latest
+      const sorted = [...weeks].sort((a, b) => parseDate(a.start).getTime() - parseDate(b.start).getTime())
+      return { from: parseDate(sorted[0].start), to: parseDate(sorted[sorted.length - 1].end) }
+    }
+  },
 ]
 
 export function DateRangePicker({
@@ -124,6 +133,7 @@ export function DateRangePicker({
   availableWeeks,
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false)
+  const [selectedPreset, setSelectedPreset] = useState<string | null>(null)
 
   // Calculate smart presets based on available data
   const smartPresets = useMemo(() => {
@@ -162,6 +172,9 @@ export function DateRangePicker({
   }, [availableWeeks])
 
   const handleSelect = (range: DateRange | undefined) => {
+    // Clear preset selection when user manually picks from calendar
+    setSelectedPreset(null)
+
     if (!range?.from || !availableWeeks || availableWeeks.length === 0) {
       onChange(range)
       return
@@ -213,7 +226,8 @@ export function DateRangePicker({
     onChange(range)
   }
 
-  const handleSmartPresetClick = (range: { from: Date; to: Date }) => {
+  const handleSmartPresetClick = (presetLabel: string, range: { from: Date; to: Date }) => {
+    setSelectedPreset(presetLabel)
     onChange(range)
     setOpen(false)
   }
@@ -255,10 +269,10 @@ export function DateRangePicker({
               {smartPresets.map((preset, idx) => (
                 <Button
                   key={`smart-${idx}`}
-                  variant={value?.from && preset.range && isSameDay(value.from, preset.range.from) && value.to && isSameDay(value.to, preset.range.to) ? 'default' : 'ghost'}
+                  variant={selectedPreset === preset.label ? 'default' : 'ghost'}
                   size="sm"
                   className="justify-start text-sm h-8"
-                  onClick={() => preset.range && handleSmartPresetClick(preset.range)}
+                  onClick={() => preset.range && handleSmartPresetClick(preset.label, preset.range)}
                 >
                   {preset.label}
                 </Button>
