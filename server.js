@@ -1484,7 +1484,14 @@ app.get('/api/asins/:asin/history', validateAsin, async (req, res) => {
 app.get('/api/vendor-reports', async (req, res) => {
     try {
         const { startDate, endDate, asin, reportType, distributorView } = req.query;
-        let query = 'SELECT * FROM vendor_reports WHERE 1=1';
+        // Join with catalog_details for title and po_line_items for vendor_sku
+        let query = `
+            SELECT vr.*,
+                   cd.title as catalog_title,
+                   (SELECT pl.vendor_sku FROM po_line_items pl WHERE pl.asin = vr.asin LIMIT 1) as vendor_sku
+            FROM vendor_reports vr
+            LEFT JOIN catalog_details cd ON cd.asin = vr.asin
+            WHERE 1=1`;
         const params = [];
         let paramIndex = 1;
 
@@ -1568,6 +1575,9 @@ app.get('/api/vendor-reports', async (req, res) => {
             return {
                 id: row.id,
                 asin: row.asin,
+                // Product info from catalog_details and po_line_items
+                title: row.catalog_title || null,
+                vendor_sku: row.vendor_sku || null,
                 report_date: row.report_date,
                 report_type: row.report_type,
                 // Include data period boundaries for proper deduplication
@@ -1640,6 +1650,9 @@ app.get('/api/vendor-reports', async (req, res) => {
                 } else {
                     const existing = aggregatedByAsin.get(weekKey);
                     // Merge non-null values from different report types (SALES, TRAFFIC, INVENTORY)
+                    // Product info (prefer non-null)
+                    if (record.title && !existing.title) existing.title = record.title;
+                    if (record.vendor_sku && !existing.vendor_sku) existing.vendor_sku = record.vendor_sku;
                     // Sales metrics
                     if (record.shipped_cogs !== null) existing.shipped_cogs = record.shipped_cogs;
                     if (record.shipped_units !== null) existing.shipped_units = record.shipped_units;

@@ -28,6 +28,26 @@ export function AnalyticsTable({ data, isLoading = false }: AnalyticsTableProps)
         ),
       },
       {
+        accessorKey: 'vendor_sku',
+        header: 'SKU',
+        cell: ({ row }) => {
+          const value = row.original.vendor_sku
+          return value ? <span className="font-mono text-xs">{value}</span> : '-'
+        },
+      },
+      {
+        accessorKey: 'title',
+        header: 'Title',
+        cell: ({ row }) => {
+          const value = row.original.title
+          return value ? (
+            <span className="max-w-[200px] truncate block" title={value}>
+              {value}
+            </span>
+          ) : '-'
+        },
+      },
+      {
         accessorKey: 'shipped_cogs',
         header: 'Shipped COGS',
         cell: ({ row }) => {

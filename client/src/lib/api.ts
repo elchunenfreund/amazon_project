@@ -370,6 +370,9 @@ export const asinsApi = {
 export interface VendorReport {
   id: number
   asin: string
+  // Product info from catalog and PO data
+  title?: string
+  vendor_sku?: string
   report_date: string
   report_type: string
   data_start_date?: string

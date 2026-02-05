@@ -17,6 +17,8 @@ import {
 
 interface AsinSummary {
   asin: string
+  title?: string
+  vendor_sku?: string
   totalCogs: number
   totalShippedUnits: number
   totalOrderedUnits: number
@@ -58,6 +60,8 @@ export function Analytics() {
   const reportsCsvColumns = [
     { key: 'report_date', header: 'Date' },
     { key: 'asin', header: 'ASIN' },
+    { key: 'vendor_sku', header: 'SKU' },
+    { key: 'title', header: 'Title' },
     { key: 'report_type', header: 'Report Type' },
     { key: 'shipped_cogs', header: 'Shipped COGS' },
     { key: 'shipped_units', header: 'Shipped Units' },
@@ -80,6 +84,8 @@ export function Analytics() {
   // CSV export columns for ASIN summary
   const asinCsvColumns = [
     { key: 'asin', header: 'ASIN' },
+    { key: 'vendor_sku', header: 'SKU' },
+    { key: 'title', header: 'Title' },
     { key: 'totalRevenue', header: 'Total Revenue' },
     { key: 'totalCogs', header: 'Total COGS' },
     { key: 'totalOrderedUnits', header: 'Ordered Units' },
@@ -98,6 +104,8 @@ export function Analytics() {
     for (const report of reports) {
       const existing = summaryMap.get(report.asin) || {
         asin: report.asin,
+        title: undefined,
+        vendor_sku: undefined,
         totalCogs: 0,
         totalShippedUnits: 0,
         totalOrderedUnits: 0,
@@ -108,6 +116,9 @@ export function Analytics() {
         reportCount: 0,
       }
 
+      // Capture title and vendor_sku from first report that has them
+      if (report.title && !existing.title) existing.title = report.title
+      if (report.vendor_sku && !existing.vendor_sku) existing.vendor_sku = report.vendor_sku
       existing.totalCogs += report.shipped_cogs ?? 0
       existing.totalShippedUnits += report.shipped_units ?? 0
       existing.totalOrderedUnits += report.ordered_units ?? 0
@@ -146,6 +157,26 @@ export function Analytics() {
           </a>
         </div>
       ),
+    },
+    {
+      accessorKey: 'vendor_sku',
+      header: 'SKU',
+      cell: ({ row }) => {
+        const value = row.original.vendor_sku
+        return value ? <span className="font-mono text-xs">{value}</span> : '-'
+      },
+    },
+    {
+      accessorKey: 'title',
+      header: 'Title',
+      cell: ({ row }) => {
+        const value = row.original.title
+        return value ? (
+          <span className="max-w-[200px] truncate block" title={value}>
+            {value}
+          </span>
+        ) : '-'
+      },
     },
     {
       accessorKey: 'totalRevenue',
