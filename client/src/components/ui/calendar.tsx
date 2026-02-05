@@ -47,7 +47,7 @@ function Calendar({
         today: 'bg-slate-100 text-primary',
         outside:
           'day-outside text-muted-foreground aria-selected:bg-accent/50 aria-selected:text-muted-foreground',
-        disabled: 'text-muted-foreground opacity-50',
+        disabled: 'text-muted-foreground/40 opacity-30 cursor-not-allowed line-through decoration-muted-foreground/20',
         range_middle:
           'aria-selected:bg-accent aria-selected:text-white',
         hidden: 'invisible',

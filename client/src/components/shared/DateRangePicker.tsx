@@ -267,6 +267,16 @@ export function DateRangePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
+        {availableWeeks && availableWeeks.length > 0 && (
+          <div className="px-3 py-2 border-b bg-muted/50">
+            <p className="text-xs text-muted-foreground">
+              <span className="inline-block w-3 h-3 rounded bg-blue-100 dark:bg-blue-900 ring-1 ring-blue-400 mr-1 align-middle" />
+              <span className="mr-3">Sun (week start)</span>
+              <span className="inline-block w-3 h-3 rounded bg-green-100 dark:bg-green-900 ring-1 ring-green-400 mr-1 align-middle" />
+              <span>Sat (week end)</span>
+            </p>
+          </div>
+        )}
         <div className={cn('flex', showWeekPresets && 'flex-col sm:flex-row')}>
           {showWeekPresets && (
             <div className="flex flex-col gap-1 border-b p-3 sm:border-b-0 sm:border-r sm:max-h-[350px] sm:overflow-y-auto sm:w-[160px]">
@@ -318,8 +328,8 @@ export function DateRangePicker({
               weekEnd: weekEndDates,
             }}
             modifiersClassNames={{
-              weekStart: 'bg-blue-100 dark:bg-blue-900 font-semibold',
-              weekEnd: 'bg-green-100 dark:bg-green-900 font-semibold',
+              weekStart: 'bg-blue-100 dark:bg-blue-900 font-semibold ring-2 ring-blue-400 dark:ring-blue-600 ring-inset',
+              weekEnd: 'bg-green-100 dark:bg-green-900 font-semibold ring-2 ring-green-400 dark:ring-green-600 ring-inset',
             }}
           />
         </div>
