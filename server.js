@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const path = require('path');
@@ -1698,12 +1699,12 @@ app.get('/api/vendor-reports/weeks', async (req, res) => {
         `;
 
         const params = [];
+        // Only filter by distributor_view if a specific view is requested (not 'ALL')
         if (distributorView && distributorView !== 'ALL') {
             query += ` AND distributor_view = $1`;
             params.push(distributorView);
-        } else {
-            query += ` AND distributor_view = 'MANUFACTURING'`;
         }
+        // When distributorView is 'ALL' or not provided, return weeks from all distributor views
 
         query += ` ORDER BY data_start_date DESC`;
 
