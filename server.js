@@ -1628,8 +1628,11 @@ app.get('/api/vendor-reports', async (req, res) => {
             } else {
                 // For non-real-time reports, deduplicate by ASIN + week boundaries (data_start_date + data_end_date)
                 // This prevents counting the same week multiple times if synced on different days
-                const weekKey = record.data_start_date && record.data_end_date
-                    ? `${asin}_${record.data_start_date}_${record.data_end_date}`
+                // Normalize dates to ISO strings to ensure consistent key generation
+                const startStr = record.data_start_date ? (record.data_start_date instanceof Date ? record.data_start_date.toISOString().split('T')[0] : String(record.data_start_date).split('T')[0]) : null;
+                const endStr = record.data_end_date ? (record.data_end_date instanceof Date ? record.data_end_date.toISOString().split('T')[0] : String(record.data_end_date).split('T')[0]) : null;
+                const weekKey = startStr && endStr
+                    ? `${asin}_${startStr}_${endStr}`
                     : `${asin}_${record.report_date}`;  // Fallback for old records without boundaries
 
                 if (!aggregatedByAsin.has(weekKey)) {
