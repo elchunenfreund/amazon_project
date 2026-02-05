@@ -382,8 +382,25 @@ export interface VendorReport {
   ordered_units?: number
   ordered_revenue?: number
   customer_returns?: number
-  // Inventory & traffic metrics
+  // Inventory metrics (from GET_VENDOR_INVENTORY_REPORT)
   sellable_on_hand_inventory?: number
+  sellable_on_hand_inventory_cost?: number
+  unsellable_on_hand_inventory?: number
+  unsellable_on_hand_inventory_cost?: number
+  open_purchase_order_units?: number
+  net_received_inventory_units?: number
+  net_received_inventory_cost?: number
+  aged_90_plus_inventory_units?: number
+  aged_90_plus_inventory_cost?: number
+  unhealthy_inventory_units?: number
+  unhealthy_inventory_cost?: number
+  // Inventory performance metrics
+  vendor_confirmation_rate?: number
+  sell_through_rate?: number
+  receive_fill_rate?: number
+  average_vendor_lead_time_days?: number
+  procurable_product_oos_rate?: number
+  // Traffic metrics
   glance_views?: number
   conversion_rate?: number
   created_at: string

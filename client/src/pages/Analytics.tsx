@@ -66,6 +66,15 @@ export function Analytics() {
     { key: 'sellable_on_hand_inventory', header: 'Inventory' },
     { key: 'glance_views', header: 'Glance Views' },
     { key: 'conversion_rate', header: 'Conversion Rate', accessor: (r: unknown) => { if (!isVendorReport(r)) return ''; const v = r.conversion_rate; return v ? `${(v * 100).toFixed(2)}%` : '' } },
+    { key: 'sell_through_rate', header: 'Sell-Through Rate', accessor: (r: unknown) => { if (!isVendorReport(r)) return ''; const v = r.sell_through_rate; return v ? `${(v * 100).toFixed(1)}%` : '' } },
+    { key: 'vendor_confirmation_rate', header: 'PO Confirm Rate', accessor: (r: unknown) => { if (!isVendorReport(r)) return ''; const v = r.vendor_confirmation_rate; return v ? `${(v * 100).toFixed(1)}%` : '' } },
+    { key: 'open_purchase_order_units', header: 'Open PO Units' },
+    { key: 'receive_fill_rate', header: 'Fill Rate', accessor: (r: unknown) => { if (!isVendorReport(r)) return ''; const v = r.receive_fill_rate; return v ? `${(v * 100).toFixed(1)}%` : '' } },
+    { key: 'average_vendor_lead_time_days', header: 'Lead Time (days)' },
+    { key: 'net_received_inventory_units', header: 'Net Received Units' },
+    { key: 'unsellable_on_hand_inventory', header: 'Unsellable Units' },
+    { key: 'aged_90_plus_inventory_units', header: 'Aged 90+ Units' },
+    { key: 'customer_returns', header: 'Returns' },
   ]
 
   // CSV export columns for ASIN summary

@@ -135,6 +135,15 @@ export function isAsinReport(value: unknown): value is AsinReportShape {
 export interface VendorReportShape {
   asin: string
   conversion_rate?: number
+  sell_through_rate?: number
+  vendor_confirmation_rate?: number
+  receive_fill_rate?: number
+  average_vendor_lead_time_days?: number
+  open_purchase_order_units?: number
+  net_received_inventory_units?: number
+  unsellable_on_hand_inventory?: number
+  aged_90_plus_inventory_units?: number
+  customer_returns?: number
 }
 
 export function isVendorReport(value: unknown): value is VendorReportShape {

@@ -179,10 +179,11 @@ async function testDataKioskAPI(accessToken) {
 async function createVendorAnalyticsQuery(accessToken) {
   const url = 'https://sellingpartnerapi-na.amazon.com/datakiosk/2023-11-15/queries';
 
-  // Minimal query to test
+  // CORRECT: Use vendor analytics dataset (not seller salesAndTraffic)
+  // Vendors must use analytics_vendorAnalytics_2024_09_30 with manufacturingView or sourcingView
   const query = `{
-    analytics_salesAndTraffic_2023_11_15 {
-      salesAndTrafficByAsin(
+    analytics_vendorAnalytics_2024_09_30 {
+      manufacturingView(
         startDate: "2026-01-01"
         endDate: "2026-01-31"
         aggregateBy: WEEK
@@ -191,10 +192,10 @@ async function createVendorAnalyticsQuery(accessToken) {
         startDate
         endDate
         asin
-        salesByAsin {
-          orderedProductSales { amount currencyCode }
-          unitsOrdered
-        }
+        shippedRevenue { amount currencyCode }
+        shippedUnits
+        orderedRevenue { amount currencyCode }
+        orderedUnits
       }
     }
   }`;

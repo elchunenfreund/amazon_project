@@ -83,6 +83,78 @@ export function AnalyticsTable({ data, isLoading = false }: AnalyticsTableProps)
           return value ? `${(value * 100).toFixed(2)}%` : '-'
         },
       },
+      {
+        accessorKey: 'sell_through_rate',
+        header: 'Sell-Through',
+        cell: ({ row }) => {
+          const value = row.original.sell_through_rate
+          return value ? `${(value * 100).toFixed(1)}%` : '-'
+        },
+      },
+      {
+        accessorKey: 'vendor_confirmation_rate',
+        header: 'PO Confirm Rate',
+        cell: ({ row }) => {
+          const value = row.original.vendor_confirmation_rate
+          return value ? `${(value * 100).toFixed(1)}%` : '-'
+        },
+      },
+      {
+        accessorKey: 'open_purchase_order_units',
+        header: 'Open PO Units',
+        cell: ({ row }) => {
+          const value = row.original.open_purchase_order_units
+          return value?.toLocaleString() ?? '-'
+        },
+      },
+      {
+        accessorKey: 'receive_fill_rate',
+        header: 'Fill Rate',
+        cell: ({ row }) => {
+          const value = row.original.receive_fill_rate
+          return value ? `${(value * 100).toFixed(1)}%` : '-'
+        },
+      },
+      {
+        accessorKey: 'average_vendor_lead_time_days',
+        header: 'Lead Time (days)',
+        cell: ({ row }) => {
+          const value = row.original.average_vendor_lead_time_days
+          return value ? value.toFixed(1) : '-'
+        },
+      },
+      {
+        accessorKey: 'net_received_inventory_units',
+        header: 'Net Received',
+        cell: ({ row }) => {
+          const value = row.original.net_received_inventory_units
+          return value?.toLocaleString() ?? '-'
+        },
+      },
+      {
+        accessorKey: 'unsellable_on_hand_inventory',
+        header: 'Unsellable',
+        cell: ({ row }) => {
+          const value = row.original.unsellable_on_hand_inventory
+          return value?.toLocaleString() ?? '-'
+        },
+      },
+      {
+        accessorKey: 'aged_90_plus_inventory_units',
+        header: 'Aged 90+ Units',
+        cell: ({ row }) => {
+          const value = row.original.aged_90_plus_inventory_units
+          return value?.toLocaleString() ?? '-'
+        },
+      },
+      {
+        accessorKey: 'customer_returns',
+        header: 'Returns',
+        cell: ({ row }) => {
+          const value = row.original.customer_returns
+          return value?.toLocaleString() ?? '-'
+        },
+      },
     ],
     []
   )

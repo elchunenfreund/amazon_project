@@ -1581,7 +1581,25 @@ app.get('/api/vendor-reports', async (req, res) => {
                 ordered_units: orderedUnits,
                 ordered_revenue: extractNumber(data.orderedRevenue) ?? extractNumber(data.ordered_revenue),
                 customer_returns: extractNumber(data.customerReturns) ?? extractNumber(data.customer_returns),
+                // Inventory units/cost metrics (from GET_VENDOR_INVENTORY_REPORT)
                 sellable_on_hand_inventory: inventory,
+                sellable_on_hand_inventory_cost: extractNumber(data.sellableOnHandInventoryCost),
+                unsellable_on_hand_inventory: extractNumber(data.unsellableOnHandInventoryUnits),
+                unsellable_on_hand_inventory_cost: extractNumber(data.unsellableOnHandInventoryCost),
+                open_purchase_order_units: extractNumber(data.openPurchaseOrderUnits),
+                net_received_inventory_units: extractNumber(data.netReceivedInventoryUnits),
+                net_received_inventory_cost: extractNumber(data.netReceivedInventoryCost),
+                aged_90_plus_inventory_units: extractNumber(data.aged90PlusDaysSellableInventoryUnits),
+                aged_90_plus_inventory_cost: extractNumber(data.aged90PlusDaysSellableInventoryCost),
+                unhealthy_inventory_units: extractNumber(data.unhealthyInventoryUnits),
+                unhealthy_inventory_cost: extractNumber(data.unhealthyInventoryCost),
+                // Inventory performance metrics
+                vendor_confirmation_rate: extractNumber(data.vendorConfirmationRate),
+                sell_through_rate: extractNumber(data.sellThroughRate),
+                receive_fill_rate: extractNumber(data.receiveFillRate),
+                average_vendor_lead_time_days: extractNumber(data.averageVendorLeadTimeDays),
+                procurable_product_oos_rate: extractNumber(data.procurableProductOutOfStockRate),
+                // Traffic metrics
                 glance_views: glanceViews,
                 conversion_rate: conversionRate,
                 created_at: row.created_at
@@ -1618,12 +1636,32 @@ app.get('/api/vendor-reports', async (req, res) => {
                     aggregatedByAsin.set(weekKey, { ...record });
                 } else {
                     const existing = aggregatedByAsin.get(weekKey);
-                    // Merge non-null values from different report types (SALES, TRAFFIC, etc.)
+                    // Merge non-null values from different report types (SALES, TRAFFIC, INVENTORY)
+                    // Sales metrics
                     if (record.shipped_cogs !== null) existing.shipped_cogs = record.shipped_cogs;
                     if (record.shipped_units !== null) existing.shipped_units = record.shipped_units;
                     if (record.ordered_units !== null) existing.ordered_units = record.ordered_units;
                     if (record.ordered_revenue !== null) existing.ordered_revenue = record.ordered_revenue;
+                    if (record.customer_returns !== null) existing.customer_returns = record.customer_returns;
+                    // Inventory metrics
                     if (record.sellable_on_hand_inventory !== null) existing.sellable_on_hand_inventory = record.sellable_on_hand_inventory;
+                    if (record.sellable_on_hand_inventory_cost !== null) existing.sellable_on_hand_inventory_cost = record.sellable_on_hand_inventory_cost;
+                    if (record.unsellable_on_hand_inventory !== null) existing.unsellable_on_hand_inventory = record.unsellable_on_hand_inventory;
+                    if (record.unsellable_on_hand_inventory_cost !== null) existing.unsellable_on_hand_inventory_cost = record.unsellable_on_hand_inventory_cost;
+                    if (record.open_purchase_order_units !== null) existing.open_purchase_order_units = record.open_purchase_order_units;
+                    if (record.net_received_inventory_units !== null) existing.net_received_inventory_units = record.net_received_inventory_units;
+                    if (record.net_received_inventory_cost !== null) existing.net_received_inventory_cost = record.net_received_inventory_cost;
+                    if (record.aged_90_plus_inventory_units !== null) existing.aged_90_plus_inventory_units = record.aged_90_plus_inventory_units;
+                    if (record.aged_90_plus_inventory_cost !== null) existing.aged_90_plus_inventory_cost = record.aged_90_plus_inventory_cost;
+                    if (record.unhealthy_inventory_units !== null) existing.unhealthy_inventory_units = record.unhealthy_inventory_units;
+                    if (record.unhealthy_inventory_cost !== null) existing.unhealthy_inventory_cost = record.unhealthy_inventory_cost;
+                    // Inventory performance metrics
+                    if (record.vendor_confirmation_rate !== null) existing.vendor_confirmation_rate = record.vendor_confirmation_rate;
+                    if (record.sell_through_rate !== null) existing.sell_through_rate = record.sell_through_rate;
+                    if (record.receive_fill_rate !== null) existing.receive_fill_rate = record.receive_fill_rate;
+                    if (record.average_vendor_lead_time_days !== null) existing.average_vendor_lead_time_days = record.average_vendor_lead_time_days;
+                    if (record.procurable_product_oos_rate !== null) existing.procurable_product_oos_rate = record.procurable_product_oos_rate;
+                    // Traffic metrics
                     if (record.glance_views !== null) existing.glance_views = record.glance_views;
                 }
             }
