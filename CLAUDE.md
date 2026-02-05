@@ -6,6 +6,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Amazon Tracker is a full-stack web application for tracking Amazon product availability, vendor analytics, and purchase orders. It features a React frontend with a Node.js/Express backend, integrates with Amazon SP-API (Selling Partner API) for vendor data, and uses Playwright for scraping product pages.
 
+## Agent & Skills Usage Guidelines
+
+**Always use specialized agents** for complex, multi-step tasks. Prefer the Task tool with appropriate subagent types:
+
+- `Explore` - For codebase exploration, finding files, understanding architecture
+- `Plan` - For designing implementation strategies before coding
+- `feature-dev:code-reviewer` - For code reviews
+- `feature-dev:code-explorer` - For deep analysis of existing features
+- `feature-dev:code-architect` - For designing feature architectures
+
+**Utilize npx skills** for common development workflows. Available skill categories:
+
+| Category | Skills |
+|----------|--------|
+| **Development** | `feature-dev:feature-dev`, `frontend-design:frontend-design`, `tools:api-scaffold` |
+| **Testing/TDD** | `tools:tdd-red`, `tools:tdd-green`, `tools:tdd-refactor`, `workflows:tdd-cycle` |
+| **Code Quality** | `tools:refactor-clean`, `tools:tech-debt`, `code-review:code-review`, `workflows:full-review` |
+| **Security** | `tools:security-scan`, `tools:deps-audit`, `workflows:security-hardening` |
+| **Debugging** | `tools:smart-debug`, `tools:error-analysis`, `tools:debug-trace` |
+| **Git/PR** | `workflows:git-workflow`, `tools:pr-enhance`, `tools:issue` |
+| **Documentation** | `tools:doc-generate`, `tools:code-explain`, `tools:onboard` |
+
+**Skill discovery**: When you can't find an appropriate skill or need additional functionality, run `npx skills find <query>` to search for available skills that might help.
+
+**Parallel execution**: When tasks are independent, launch multiple agents in parallel using multiple Task tool calls in a single message for efficiency.
+
 ## Commands
 
 ```bash
