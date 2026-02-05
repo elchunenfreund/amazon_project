@@ -200,9 +200,9 @@ test.describe('Week-Restricted Date Picker', () => {
       await datePickerButton.click();
       await page.waitForTimeout(500);
 
-      // Look for "Available Weeks" text in the popover
-      const availableWeeksLabel = page.locator('text=Available Weeks');
-      await expect(availableWeeksLabel).toBeVisible({ timeout: 5000 });
+      // Look for preset sections in the popover (Quick Select and Recent Weeks)
+      const presetsSection = page.locator('[data-testid="date-presets"]');
+      await expect(presetsSection).toBeVisible({ timeout: 5000 });
 
       // Look for week preset buttons
       const presetButtons = page.locator('button').filter({ hasText: /jan \d+ - |feb \d+ - |mar \d+ - /i });
@@ -463,12 +463,50 @@ test.describe('Week-Restricted Date Picker', () => {
       await datePickerButton.click();
       await page.waitForTimeout(500);
 
-      // Check for preset options
-      await expect(page.locator('button, [role="menuitem"]').filter({ hasText: /this week/i }).first()).toBeVisible({ timeout: 5000 });
-      await expect(page.locator('button, [role="menuitem"]').filter({ hasText: /last week/i }).first()).toBeVisible({ timeout: 5000 });
-      await expect(page.locator('button, [role="menuitem"]').filter({ hasText: /this month/i }).first()).toBeVisible({ timeout: 5000 });
-      await expect(page.locator('button, [role="menuitem"]').filter({ hasText: /last month/i }).first()).toBeVisible({ timeout: 5000 });
-      await expect(page.locator('button, [role="menuitem"]').filter({ hasText: /this year/i }).first()).toBeVisible({ timeout: 5000 });
+      // Check for preset options in the sidebar
+      const sidebar = page.locator('[data-testid="date-presets"]');
+      await expect(sidebar).toBeVisible({ timeout: 5000 });
+
+      await expect(sidebar.locator('button').filter({ hasText: /this week/i })).toBeVisible({ timeout: 5000 });
+      await expect(sidebar.locator('button').filter({ hasText: /last week/i })).toBeVisible({ timeout: 5000 });
+      await expect(sidebar.locator('button').filter({ hasText: /this month/i })).toBeVisible({ timeout: 5000 });
+      await expect(sidebar.locator('button').filter({ hasText: /last month/i })).toBeVisible({ timeout: 5000 });
+      await expect(sidebar.locator('button').filter({ hasText: /this year/i })).toBeVisible({ timeout: 5000 });
+    });
+
+    test('should show calendar alongside presets for custom selection', async ({ page }) => {
+      await page.goto('/analytics');
+      await page.waitForLoadState('networkidle');
+
+      const datePickerButton = page.locator('button').filter({ has: page.locator('svg.lucide-calendar') }).first();
+      await datePickerButton.click();
+      await page.waitForTimeout(500);
+
+      // Both sidebar presets and calendar should be visible
+      const sidebar = page.locator('[data-testid="date-presets"]');
+      await expect(sidebar).toBeVisible({ timeout: 5000 });
+
+      const calendar = page.locator('.rdp, [class*="calendar"]');
+      await expect(calendar.first()).toBeVisible({ timeout: 5000 });
+    });
+
+    test('disabled dates should be visible but grayed out (not invisible)', async ({ page }) => {
+      await page.goto('/analytics');
+      await page.waitForLoadState('networkidle');
+
+      const datePickerButton = page.locator('button').filter({ has: page.locator('svg.lucide-calendar') }).first();
+      await datePickerButton.click();
+      await page.waitForTimeout(500);
+
+      // Disabled dates should exist and be visible (just styled differently)
+      const disabledDays = page.locator('button[disabled]').filter({ hasText: /^\d{1,2}$/ });
+      const count = await disabledDays.count();
+      expect(count).toBeGreaterThan(0);
+
+      // First disabled day should be visible (not invisible)
+      if (count > 0) {
+        await expect(disabledDays.first()).toBeVisible();
+      }
     });
 
     test('should select only complete weeks when clicking "This Month"', async ({ page }) => {

@@ -267,46 +267,34 @@ export function DateRangePicker({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-auto p-0" align="start">
-        {availableWeeks && availableWeeks.length > 0 && (
-          <div className="px-3 py-2 border-b bg-muted/50">
-            <p className="text-xs text-muted-foreground">
-              <span className="inline-block w-3 h-3 rounded bg-blue-100 dark:bg-blue-900 ring-1 ring-blue-400 mr-1 align-middle" />
-              <span className="mr-3">Sun (week start)</span>
-              <span className="inline-block w-3 h-3 rounded bg-green-100 dark:bg-green-900 ring-1 ring-green-400 mr-1 align-middle" />
-              <span>Sat (week end)</span>
-            </p>
-          </div>
-        )}
-        <div className={cn('flex', showWeekPresets && 'flex-col sm:flex-row')}>
+        <div className="flex">
+          {/* Left sidebar: Presets */}
           {showWeekPresets && (
-            <div className="flex flex-col gap-1 border-b p-3 sm:border-b-0 sm:border-r sm:max-h-[350px] sm:overflow-y-auto sm:w-[160px]">
-              {/* Smart Presets */}
-              {smartPresets.length > 0 && (
-                <>
-                  <div className="text-xs font-medium text-muted-foreground mb-1">Quick Select</div>
-                  {smartPresets.map((preset, idx) => (
-                    <Button
-                      key={`smart-${idx}`}
-                      variant={value?.from && preset.range && isSameDay(value.from, preset.range.from) && value.to && isSameDay(value.to, preset.range.to) ? 'secondary' : 'ghost'}
-                      size="sm"
-                      className="justify-start text-xs"
-                      onClick={() => preset.range && handleSmartPresetClick(preset.range)}
-                    >
-                      {preset.label}
-                    </Button>
-                  ))}
-                  <div className="border-t my-2" />
-                </>
-              )}
+            <div data-testid="date-presets" className="flex flex-col gap-1 border-r p-3 min-w-[150px] max-h-[400px] overflow-y-auto bg-muted/20">
+              {/* Quick Select Presets */}
+              <div className="text-xs font-semibold text-foreground mb-2">Quick Select</div>
+              {smartPresets.map((preset, idx) => (
+                <Button
+                  key={`smart-${idx}`}
+                  variant={value?.from && preset.range && isSameDay(value.from, preset.range.from) && value.to && isSameDay(value.to, preset.range.to) ? 'default' : 'ghost'}
+                  size="sm"
+                  className="justify-start text-sm h-8"
+                  onClick={() => preset.range && handleSmartPresetClick(preset.range)}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+
+              <div className="border-t my-3" />
 
               {/* Individual Week Presets */}
-              <div className="text-xs font-medium text-muted-foreground mb-1">Available Weeks</div>
+              <div className="text-xs font-semibold text-foreground mb-2">Recent Weeks</div>
               {weekPresets.map((preset, idx) => (
                 <Button
                   key={idx}
                   variant={value?.from && isSameDay(value.from, preset.start) ? 'secondary' : 'ghost'}
                   size="sm"
-                  className="justify-start text-xs"
+                  className="justify-start text-xs h-7"
                   onClick={() => handlePresetClick(preset)}
                 >
                   {preset.label}
@@ -314,24 +302,39 @@ export function DateRangePicker({
               ))}
             </div>
           )}
-          <Calendar
-            initialFocus
-            mode="range"
-            defaultMonth={value?.from || weekStartDates[0]}
-            selected={value}
-            onSelect={handleSelect}
-            numberOfMonths={2}
-            weekStartsOn={0}
-            disabled={availableWeeks && availableWeeks.length > 0 ? isDateDisabled : undefined}
-            modifiers={{
-              weekStart: weekStartDates,
-              weekEnd: weekEndDates,
-            }}
-            modifiersClassNames={{
-              weekStart: 'bg-blue-100 dark:bg-blue-900 font-semibold ring-2 ring-blue-400 dark:ring-blue-600 ring-inset',
-              weekEnd: 'bg-green-100 dark:bg-green-900 font-semibold ring-2 ring-green-400 dark:ring-green-600 ring-inset',
-            }}
-          />
+
+          {/* Right side: Calendar */}
+          <div className="flex flex-col">
+            {/* Legend */}
+            {availableWeeks && availableWeeks.length > 0 && (
+              <div className="px-3 py-2 border-b bg-muted/30">
+                <p className="text-xs text-muted-foreground">
+                  <span className="inline-block w-3 h-3 rounded bg-blue-200 dark:bg-blue-800 ring-2 ring-blue-500 mr-1 align-middle" />
+                  <span className="mr-4">Sunday (start)</span>
+                  <span className="inline-block w-3 h-3 rounded bg-green-200 dark:bg-green-800 ring-2 ring-green-500 mr-1 align-middle" />
+                  <span>Saturday (end)</span>
+                </p>
+              </div>
+            )}
+            <Calendar
+              initialFocus
+              mode="range"
+              defaultMonth={value?.from || weekStartDates[0]}
+              selected={value}
+              onSelect={handleSelect}
+              numberOfMonths={2}
+              weekStartsOn={0}
+              disabled={availableWeeks && availableWeeks.length > 0 ? isDateDisabled : undefined}
+              modifiers={{
+                weekStart: weekStartDates,
+                weekEnd: weekEndDates,
+              }}
+              modifiersClassNames={{
+                weekStart: 'bg-blue-200 dark:bg-blue-800 font-bold ring-2 ring-blue-500 ring-inset rounded-l-md',
+                weekEnd: 'bg-green-200 dark:bg-green-800 font-bold ring-2 ring-green-500 ring-inset rounded-r-md',
+              }}
+            />
+          </div>
         </div>
       </PopoverContent>
     </Popover>
