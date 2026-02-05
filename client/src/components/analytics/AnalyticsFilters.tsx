@@ -10,7 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, BookOpen, Loader2 } from 'lucide-react'
 
 interface AnalyticsFiltersProps {
   asins: string[]
@@ -22,6 +22,13 @@ interface AnalyticsFiltersProps {
   }) => void
   onSync?: () => void
   isSyncing?: boolean
+  onSyncCatalog?: () => void
+  isSyncingCatalog?: boolean
+  catalogSyncStatus?: {
+    totalVendorAsins: number
+    haveCatalog: number
+    missingCatalog: number
+  }
   defaultStartDate?: string
   defaultEndDate?: string
 }
@@ -31,6 +38,9 @@ export function AnalyticsFilters({
   onFilterChange,
   onSync,
   isSyncing = false,
+  onSyncCatalog,
+  isSyncingCatalog = false,
+  catalogSyncStatus,
   defaultStartDate,
   defaultEndDate,
 }: AnalyticsFiltersProps) {
@@ -135,12 +145,29 @@ export function AnalyticsFilters({
         </Select>
       </div>
 
-      {onSync && (
-        <Button variant="outline" onClick={onSync} disabled={isSyncing}>
-          <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-          {isSyncing ? 'Syncing...' : 'Sync Reports'}
-        </Button>
-      )}
+      <div className="flex gap-2">
+        {onSyncCatalog && catalogSyncStatus && catalogSyncStatus.missingCatalog > 0 && (
+          <Button
+            variant="outline"
+            onClick={onSyncCatalog}
+            disabled={isSyncingCatalog}
+            title={`${catalogSyncStatus.missingCatalog} ASINs need catalog data`}
+          >
+            {isSyncingCatalog ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <BookOpen className="mr-2 h-4 w-4" />
+            )}
+            {isSyncingCatalog ? 'Syncing Catalog...' : `Sync Catalog (${catalogSyncStatus.missingCatalog})`}
+          </Button>
+        )}
+        {onSync && (
+          <Button variant="outline" onClick={onSync} disabled={isSyncing}>
+            <RefreshCw className={`mr-2 h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing...' : 'Sync Reports'}
+          </Button>
+        )}
+      </div>
     </div>
   )
 }

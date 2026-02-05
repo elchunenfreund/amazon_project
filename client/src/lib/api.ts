@@ -450,6 +450,22 @@ export const vendorReportsApi = {
   },
 }
 
+// Catalog Sync Types
+export interface CatalogSyncStatus {
+  totalVendorAsins: number
+  haveCatalog: number
+  missingCatalog: number
+}
+
+export interface CatalogSyncResult {
+  success: boolean
+  fetched: number
+  failed: number
+  remaining: number
+  errors?: Array<{ asin: string; error: string }>
+  message?: string
+}
+
 // Purchase Orders API
 export interface PurchaseOrder {
   id: number
@@ -535,6 +551,15 @@ export const catalogApi = {
   refresh: (asin: string) =>
     request<CatalogItem>(`/catalog/${asin}/refresh`, {
       method: 'POST',
+    }),
+
+  getSyncStatus: () =>
+    request<CatalogSyncStatus>('/catalog/sync-status'),
+
+  syncVendorAsins: (limit?: number) =>
+    request<CatalogSyncResult>('/catalog/sync-vendor-asins', {
+      method: 'POST',
+      body: JSON.stringify({ limit: limit || 100 }),
     }),
 }
 

@@ -19,3 +19,24 @@ export function useRefreshCatalogItem() {
     },
   })
 }
+
+export function useCatalogSyncStatus() {
+  return useQuery({
+    queryKey: ['catalog', 'sync-status'],
+    queryFn: () => catalogApi.getSyncStatus(),
+    staleTime: 30000, // Cache for 30 seconds
+  })
+}
+
+export function useSyncVendorCatalog() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: (limit?: number) => catalogApi.syncVendorAsins(limit),
+    onSuccess: () => {
+      // Invalidate sync status and vendor reports to show updated titles
+      queryClient.invalidateQueries({ queryKey: ['catalog', 'sync-status'] })
+      queryClient.invalidateQueries({ queryKey: ['vendor-reports'] })
+    },
+  })
+}

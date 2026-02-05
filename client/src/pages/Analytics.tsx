@@ -14,7 +14,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { useVendorReports, useVendorReportAsins, useSyncVendorReports } from '@/hooks'
+import { useVendorReports, useVendorReportAsins, useSyncVendorReports, useCatalogSyncStatus, useSyncVendorCatalog } from '@/hooks'
 import { getAmazonProductUrl } from '@/lib/api'
 import type { VendorReportFilters, VendorReport } from '@/lib/api'
 import { isVendorReport, isAsinSummary } from '@/lib/type-guards'
@@ -188,6 +188,10 @@ export function Analytics() {
   // Pass date filters to asins query so dropdown only shows ASINs with data in the selected range
   const { data: asins } = useVendorReportAsins({ startDate: filters.startDate, endDate: filters.endDate })
   const syncReports = useSyncVendorReports()
+
+  // Catalog sync
+  const { data: catalogSyncStatus } = useCatalogSyncStatus()
+  const syncCatalog = useSyncVendorCatalog()
 
   const stats = useMemo<Stats>(() => {
     if (!reports) return {
@@ -480,6 +484,9 @@ export function Analytics() {
           onFilterChange={setFilters}
           onSync={() => syncReports.mutate()}
           isSyncing={syncReports.isPending}
+          onSyncCatalog={() => syncCatalog.mutate(100)}
+          isSyncingCatalog={syncCatalog.isPending}
+          catalogSyncStatus={catalogSyncStatus}
         />
       </div>
 
