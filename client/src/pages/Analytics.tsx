@@ -1,19 +1,138 @@
-import { useState, useMemo } from 'react'
-import { DollarSign, Eye, TrendingUp, ExternalLink, Calendar, ShoppingCart } from 'lucide-react'
+import { useState, useMemo, useEffect } from 'react'
+import { DollarSign, Eye, TrendingUp, ExternalLink, Calendar, ShoppingCart, Package, RotateCcw, Clock, Truck, Settings2 } from 'lucide-react'
 import { format, parseISO } from 'date-fns'
 import type { ColumnDef } from '@tanstack/react-table'
 import { PageWrapper, PageHeader } from '@/components/layout'
 import { StatCard, StatCardGrid, DataTable, CsvExportModal, QueryError } from '@/components/shared'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Button } from '@/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuCheckboxItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { useVendorReports, useVendorReportAsins, useSyncVendorReports } from '@/hooks'
 import { getAmazonProductUrl } from '@/lib/api'
-import type { VendorReportFilters } from '@/lib/api'
+import type { VendorReportFilters, VendorReport } from '@/lib/api'
 import { isVendorReport, isAsinSummary } from '@/lib/type-guards'
 import {
   AnalyticsFilters,
   AnalyticsCharts,
   AnalyticsTable,
 } from '@/components/analytics'
+
+// Available metrics for the stat cards
+type MetricId =
+  | 'totalCogs'
+  | 'orderedUnits'
+  | 'shippedUnits'
+  | 'totalRevenue'
+  | 'glanceViews'
+  | 'conversionRate'
+  | 'inventory'
+  | 'returns'
+  | 'sellThrough'
+  | 'fillRate'
+  | 'leadTime'
+
+interface MetricConfig {
+  id: MetricId
+  label: string
+  icon: React.ReactNode
+  getValue: (stats: Stats, reports: VendorReport[]) => string
+  getDescription?: (stats: Stats) => string
+}
+
+interface Stats {
+  totalCogs: number
+  totalShippedUnits: number
+  totalOrderedUnits: number
+  totalViews: number
+  totalRevenue: number
+  avgConversion: number
+  totalInventory: number
+  totalReturns: number
+  avgSellThrough: number
+  avgFillRate: number
+  avgLeadTime: number
+}
+
+const METRIC_CONFIGS: MetricConfig[] = [
+  {
+    id: 'totalCogs',
+    label: 'Total COGS',
+    icon: <DollarSign className="h-6 w-6" />,
+    getValue: (stats) => `$${stats.totalCogs.toLocaleString()}`,
+  },
+  {
+    id: 'totalRevenue',
+    label: 'Total Revenue',
+    icon: <DollarSign className="h-6 w-6" />,
+    getValue: (stats) => `$${stats.totalRevenue.toLocaleString()}`,
+  },
+  {
+    id: 'orderedUnits',
+    label: 'Ordered Units',
+    icon: <ShoppingCart className="h-6 w-6" />,
+    getValue: (stats) => stats.totalOrderedUnits.toLocaleString(),
+    getDescription: (stats) => `Shipped: ${stats.totalShippedUnits.toLocaleString()}`,
+  },
+  {
+    id: 'shippedUnits',
+    label: 'Shipped Units',
+    icon: <Truck className="h-6 w-6" />,
+    getValue: (stats) => stats.totalShippedUnits.toLocaleString(),
+  },
+  {
+    id: 'glanceViews',
+    label: 'Glance Views',
+    icon: <Eye className="h-6 w-6" />,
+    getValue: (stats) => stats.totalViews.toLocaleString(),
+  },
+  {
+    id: 'conversionRate',
+    label: 'Conversion Rate',
+    icon: <TrendingUp className="h-6 w-6" />,
+    getValue: (stats) => `${(stats.avgConversion * 100).toFixed(2)}%`,
+    getDescription: () => 'Ordered ÷ Views',
+  },
+  {
+    id: 'inventory',
+    label: 'Total Inventory',
+    icon: <Package className="h-6 w-6" />,
+    getValue: (stats) => stats.totalInventory.toLocaleString(),
+  },
+  {
+    id: 'returns',
+    label: 'Customer Returns',
+    icon: <RotateCcw className="h-6 w-6" />,
+    getValue: (stats) => stats.totalReturns.toLocaleString(),
+  },
+  {
+    id: 'sellThrough',
+    label: 'Avg Sell-Through',
+    icon: <TrendingUp className="h-6 w-6" />,
+    getValue: (stats) => stats.avgSellThrough > 0 ? `${(stats.avgSellThrough * 100).toFixed(1)}%` : '-',
+  },
+  {
+    id: 'fillRate',
+    label: 'Avg Fill Rate',
+    icon: <Package className="h-6 w-6" />,
+    getValue: (stats) => stats.avgFillRate > 0 ? `${(stats.avgFillRate * 100).toFixed(1)}%` : '-',
+  },
+  {
+    id: 'leadTime',
+    label: 'Avg Lead Time',
+    icon: <Clock className="h-6 w-6" />,
+    getValue: (stats) => stats.avgLeadTime > 0 ? `${stats.avgLeadTime.toFixed(1)} days` : '-',
+  },
+]
+
+const DEFAULT_VISIBLE_METRICS: MetricId[] = ['totalCogs', 'orderedUnits', 'glanceViews', 'conversionRate']
+const STORAGE_KEY = 'analytics-visible-metrics'
 
 interface AsinSummary {
   asin: string
@@ -33,6 +152,35 @@ export function Analytics() {
   // Start with no date filter to show all data - user can filter as needed
   const [filters, setFilters] = useState<VendorReportFilters>({})
 
+  // Visible metrics state - load from localStorage
+  const [visibleMetrics, setVisibleMetrics] = useState<MetricId[]>(() => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        return JSON.parse(stored) as MetricId[]
+      }
+    } catch {
+      // Ignore parse errors
+    }
+    return DEFAULT_VISIBLE_METRICS
+  })
+
+  // Save visible metrics to localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(visibleMetrics))
+  }, [visibleMetrics])
+
+  const toggleMetric = (metricId: MetricId) => {
+    setVisibleMetrics(prev => {
+      if (prev.includes(metricId)) {
+        // Don't allow removing all metrics
+        if (prev.length <= 1) return prev
+        return prev.filter(id => id !== metricId)
+      }
+      return [...prev, metricId]
+    })
+  }
+
   // For display purposes only
   const hasDateFilter = filters.startDate || filters.endDate
 
@@ -41,19 +189,54 @@ export function Analytics() {
   const { data: asins } = useVendorReportAsins({ startDate: filters.startDate, endDate: filters.endDate })
   const syncReports = useSyncVendorReports()
 
-  const stats = useMemo(() => {
-    if (!reports) return { totalCogs: 0, totalShippedUnits: 0, totalOrderedUnits: 0, totalViews: 0, avgConversion: 0 }
+  const stats = useMemo<Stats>(() => {
+    if (!reports) return {
+      totalCogs: 0,
+      totalShippedUnits: 0,
+      totalOrderedUnits: 0,
+      totalViews: 0,
+      totalRevenue: 0,
+      avgConversion: 0,
+      totalInventory: 0,
+      totalReturns: 0,
+      avgSellThrough: 0,
+      avgFillRate: 0,
+      avgLeadTime: 0
+    }
 
     const totalCogs = reports.reduce((sum, r) => sum + (r.shipped_cogs ?? 0), 0)
     const totalShippedUnits = reports.reduce((sum, r) => sum + (r.shipped_units ?? 0), 0)
     const totalOrderedUnits = reports.reduce((sum, r) => sum + (r.ordered_units ?? 0), 0)
     const totalViews = reports.reduce((sum, r) => sum + (r.glance_views ?? 0), 0)
+    const totalRevenue = reports.reduce((sum, r) => sum + (r.ordered_revenue ?? 0), 0)
+    const totalInventory = reports.reduce((sum, r) => sum + (r.sellable_on_hand_inventory ?? 0), 0)
+    const totalReturns = reports.reduce((sum, r) => sum + (r.customer_returns ?? 0), 0)
+
+    // Calculate averages for percentage metrics
+    const sellThroughValues = reports.filter(r => r.sell_through_rate != null).map(r => r.sell_through_rate!)
+    const fillRateValues = reports.filter(r => r.receive_fill_rate != null).map(r => r.receive_fill_rate!)
+    const leadTimeValues = reports.filter(r => r.average_vendor_lead_time_days != null).map(r => r.average_vendor_lead_time_days!)
+
+    const avgSellThrough = sellThroughValues.length > 0 ? sellThroughValues.reduce((a, b) => a + b, 0) / sellThroughValues.length : 0
+    const avgFillRate = fillRateValues.length > 0 ? fillRateValues.reduce((a, b) => a + b, 0) / fillRateValues.length : 0
+    const avgLeadTime = leadTimeValues.length > 0 ? leadTimeValues.reduce((a, b) => a + b, 0) / leadTimeValues.length : 0
 
     // Calculate conversion rate from totals: Ordered Units / Glance Views
-    // This is more accurate than averaging individual conversion rates
     const avgConversion = totalViews > 0 ? totalOrderedUnits / totalViews : 0
 
-    return { totalCogs, totalShippedUnits, totalOrderedUnits, totalViews, avgConversion }
+    return {
+      totalCogs,
+      totalShippedUnits,
+      totalOrderedUnits,
+      totalViews,
+      totalRevenue,
+      avgConversion,
+      totalInventory,
+      totalReturns,
+      avgSellThrough,
+      avgFillRate,
+      avgLeadTime
+    }
   }, [reports])
 
   // CSV export columns for vendor reports
@@ -301,33 +484,44 @@ export function Analytics() {
       </div>
 
       {/* Stats Cards */}
-      <StatCardGrid columns={4}>
-        <StatCard
-          title="Total COGS"
-          value={`$${stats.totalCogs.toLocaleString()}`}
-          icon={<DollarSign className="h-6 w-6" />}
-          isLoading={isLoading}
-        />
-        <StatCard
-          title="Ordered Units"
-          value={stats.totalOrderedUnits.toLocaleString()}
-          description={`Shipped: ${stats.totalShippedUnits.toLocaleString()}`}
-          icon={<ShoppingCart className="h-6 w-6" />}
-          isLoading={isLoading}
-        />
-        <StatCard
-          title="Glance Views"
-          value={stats.totalViews.toLocaleString()}
-          icon={<Eye className="h-6 w-6" />}
-          isLoading={isLoading}
-        />
-        <StatCard
-          title="Conversion Rate"
-          value={`${(stats.avgConversion * 100).toFixed(2)}%`}
-          description="Ordered ÷ Views"
-          icon={<TrendingUp className="h-6 w-6" />}
-          isLoading={isLoading}
-        />
+      {/* Stats Cards with Settings */}
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold text-foreground">Summary</h2>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2">
+              <Settings2 className="h-4 w-4" />
+              Customize
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>Visible Metrics</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {METRIC_CONFIGS.map(metric => (
+              <DropdownMenuCheckboxItem
+                key={metric.id}
+                checked={visibleMetrics.includes(metric.id)}
+                onCheckedChange={() => toggleMetric(metric.id)}
+              >
+                {metric.label}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <StatCardGrid columns={Math.min(visibleMetrics.length, 4) as 2 | 3 | 4}>
+        {METRIC_CONFIGS
+          .filter(metric => visibleMetrics.includes(metric.id))
+          .map(metric => (
+            <StatCard
+              key={metric.id}
+              title={metric.label}
+              value={metric.getValue(stats, reports ?? [])}
+              description={metric.getDescription?.(stats)}
+              icon={metric.icon}
+              isLoading={isLoading}
+            />
+          ))}
       </StatCardGrid>
 
       {/* Charts and Table */}
