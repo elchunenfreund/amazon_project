@@ -47,10 +47,9 @@ export function AnalyticsFilters({
   const [selectedAsin, setSelectedAsin] = useState<string>('')
   const [distributorView, setDistributorView] = useState<string>('MANUFACTURING')
 
-  // Fetch available weeks based on distributor view
-  const { data: availableWeeks } = useAvailableWeeks(
-    distributorView === 'ALL' ? undefined : distributorView
-  )
+  // Fetch ALL available weeks for the date picker (regardless of distributor view)
+  // This ensures users can select any date range with data, then filter by view
+  const { data: availableWeeks } = useAvailableWeeks()
 
   // Auto-select most recent week when weeks are loaded and no date is selected
   useEffect(() => {

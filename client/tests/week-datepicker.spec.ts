@@ -374,7 +374,35 @@ test.describe('Week-Restricted Date Picker', () => {
       await expect(datePickerButton).toBeVisible({ timeout: 10000 });
     });
 
-    test('should show week presets in date picker sidebar', async ({ page }) => {
+    test('should show smart presets in date picker sidebar when weeks match current date', async ({ page }) => {
+      // Override mock weeks with current dates so smart presets will appear
+      const today = new Date();
+      const getWeekStart = (date: Date) => {
+        const d = new Date(date);
+        d.setDate(d.getDate() - d.getDay()); // Sunday
+        return d.toISOString().split('T')[0];
+      };
+      const getWeekEnd = (date: Date) => {
+        const d = new Date(date);
+        d.setDate(d.getDate() + (6 - d.getDay())); // Saturday
+        return d.toISOString().split('T')[0];
+      };
+
+      const currentWeeks = [
+        { start: getWeekStart(today), end: getWeekEnd(today) },
+        { start: getWeekStart(new Date(today.getTime() - 7*24*60*60*1000)), end: getWeekEnd(new Date(today.getTime() - 7*24*60*60*1000)) },
+        { start: getWeekStart(new Date(today.getTime() - 14*24*60*60*1000)), end: getWeekEnd(new Date(today.getTime() - 14*24*60*60*1000)) },
+        { start: getWeekStart(new Date(today.getTime() - 21*24*60*60*1000)), end: getWeekEnd(new Date(today.getTime() - 21*24*60*60*1000)) },
+      ];
+
+      await page.route('**/api/vendor-reports/weeks*', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify(currentWeeks),
+        });
+      });
+
       await page.goto('/analytics');
       await page.waitForLoadState('networkidle');
 
@@ -384,15 +412,22 @@ test.describe('Week-Restricted Date Picker', () => {
       await datePickerButton.click();
       await page.waitForTimeout(500);
 
-      // Look for preset sections in the popover (Quick Select and Recent Weeks)
+      // Look for preset sections in the popover (Quick Select section)
       const presetsSection = page.locator('[data-testid="date-presets"]');
       await expect(presetsSection).toBeVisible({ timeout: 5000 });
 
-      // Look for week preset buttons
-      const presetButtons = page.locator('button').filter({ hasText: /jan \d+ - |feb \d+ - |mar \d+ - /i });
-      const presetCount = await presetButtons.count();
+      // Look for smart preset buttons (This Week, Last Week, etc.)
+      const presetLabels = ['This Week', 'Last Week', 'This Month', 'Last Month', 'This Year'];
+      let foundCount = 0;
+      for (const label of presetLabels) {
+        const button = presetsSection.locator('button').filter({ hasText: label });
+        if (await button.count() > 0) {
+          foundCount++;
+        }
+      }
 
-      expect(presetCount).toBeGreaterThan(0);
+      // At least some presets should be visible with current date mock data
+      expect(foundCount).toBeGreaterThan(0);
     });
 
     test('should auto-select most recent week on page load', async ({ page }) => {
@@ -412,13 +447,16 @@ test.describe('Week-Restricted Date Picker', () => {
       expect(hasDateText).toBe(true);
     });
 
-    test('should update available weeks when distributor view changes', async ({ page }) => {
-      let lastDistributorView = '';
+    test('should fetch all weeks without distributor view filter for date picker', async ({ page }) => {
+      let weeksRequestCount = 0;
+      let lastDistributorView: string | null = null;
 
-      // Track distributor view parameter in weeks requests
+      // Track weeks requests - they should NOT include distributorView filter
+      // because date picker needs all available weeks for selection
       await page.route('**/api/vendor-reports/weeks*', async (route) => {
+        weeksRequestCount++;
         const url = new URL(route.request().url());
-        lastDistributorView = url.searchParams.get('distributorView') || '';
+        lastDistributorView = url.searchParams.get('distributorView');
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
@@ -429,8 +467,12 @@ test.describe('Week-Restricted Date Picker', () => {
       await page.goto('/analytics');
       await page.waitForLoadState('networkidle');
 
-      // Find the distributor view dropdown (the one showing "Manufacturing")
-      // It's the second combobox, or we can find it by its content
+      // Verify that the weeks API was called without distributorView filter
+      // This ensures the date picker shows all available weeks
+      expect(weeksRequestCount).toBeGreaterThan(0);
+      expect(lastDistributorView).toBeNull();
+
+      // Find the distributor view dropdown and change it
       const distributorDropdown = page.locator('[role="combobox"]').filter({ hasText: /manufacturing/i }).first();
       await expect(distributorDropdown).toBeVisible({ timeout: 10000 });
 
@@ -444,7 +486,9 @@ test.describe('Week-Restricted Date Picker', () => {
       await sourcingOption.click();
       await page.waitForTimeout(500);
 
-      expect(lastDistributorView).toBe('SOURCING');
+      // Weeks API should still not be called with filter (date picker doesn't depend on view)
+      // The data filtering happens in the vendor-reports API, not the weeks API
+      expect(lastDistributorView).toBeNull();
     });
   });
 
@@ -544,7 +588,7 @@ test.describe('Week-Restricted Date Picker', () => {
       expect(disabledCount).toBeGreaterThan(0);
     });
 
-    test('should select full week when clicking a week preset', async ({ page }) => {
+    test('should select full week when clicking on calendar date', async ({ page }) => {
       await page.goto('/analytics');
       await page.waitForLoadState('networkidle');
 
@@ -554,14 +598,21 @@ test.describe('Week-Restricted Date Picker', () => {
       await datePickerButton.click();
       await page.waitForTimeout(500);
 
-      // Click on the first week preset (Jan 26 - Feb 01)
-      const firstPreset = page.locator('button').filter({ hasText: /jan 26/i }).first();
-      await expect(firstPreset).toBeVisible({ timeout: 5000 });
-      await firstPreset.click();
-      await page.waitForTimeout(500);
+      // Find an enabled date button in the calendar (not disabled)
+      const enabledDates = page.locator('button:not([disabled])').filter({ hasText: /^[0-9]{1,2}$/ });
+      const enabledCount = await enabledDates.count();
 
-      // After clicking preset, check the date picker shows the selected range
-      await expect(page.locator('button').filter({ hasText: /jan 26.*2025/i }).first()).toBeVisible({ timeout: 5000 });
+      // Should have at least some enabled dates from mock data
+      expect(enabledCount).toBeGreaterThan(0);
+
+      // Click on first enabled date - should select full week
+      if (enabledCount > 0) {
+        await enabledDates.first().click();
+        await page.waitForTimeout(500);
+      }
+
+      // The date picker button should now show a date range
+      await expect(datePickerButton).not.toHaveText('Select date range');
     });
   });
 

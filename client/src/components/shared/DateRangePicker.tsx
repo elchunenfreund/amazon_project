@@ -7,6 +7,13 @@ import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 
+// Helper to parse ISO date strings without timezone issues
+// Strips time component to avoid UTC-to-local conversion problems
+// e.g., "2026-01-31T00:00:00.000Z" in EST becomes Jan 30 at 7pm without this fix
+function parseDate(isoString: string): Date {
+  return parseISO(isoString.split('T')[0])
+}
+
 interface SmartPreset {
   label: string
   getValue: (availableWeeks: WeekBoundary[]) => { from: Date; to: Date } | null
@@ -29,8 +36,8 @@ interface DateRangePickerProps {
 // Helper to find weeks that overlap with a date range
 function getWeeksInRange(weeks: WeekBoundary[], rangeStart: Date, rangeEnd: Date): WeekBoundary[] {
   return weeks.filter(week => {
-    const weekStart = parseISO(week.start)
-    const weekEnd = parseISO(week.end)
+    const weekStart = parseDate(week.start)
+    const weekEnd = parseDate(week.end)
     // Week overlaps if it starts before range ends AND ends after range starts
     return weekStart <= rangeEnd && weekEnd >= rangeStart
   })
@@ -46,7 +53,7 @@ const SMART_PRESETS: SmartPreset[] = [
       const thisWeekEnd = endOfWeek(today, { weekStartsOn: 0 })
       const matching = getWeeksInRange(weeks, thisWeekStart, thisWeekEnd)
       if (matching.length > 0) {
-        return { from: parseISO(matching[0].start), to: parseISO(matching[0].end) }
+        return { from: parseDate(matching[0].start), to: parseDate(matching[0].end) }
       }
       return null
     }
@@ -59,7 +66,7 @@ const SMART_PRESETS: SmartPreset[] = [
       const lastWeekEnd = endOfWeek(lastWeek, { weekStartsOn: 0 })
       const matching = getWeeksInRange(weeks, lastWeekStart, lastWeekEnd)
       if (matching.length > 0) {
-        return { from: parseISO(matching[0].start), to: parseISO(matching[0].end) }
+        return { from: parseDate(matching[0].start), to: parseDate(matching[0].end) }
       }
       return null
     }
@@ -73,8 +80,8 @@ const SMART_PRESETS: SmartPreset[] = [
       const matching = getWeeksInRange(weeks, monthStart, monthEnd)
       if (matching.length > 0) {
         // Get all weeks that overlap with this month, sorted by start date
-        const sorted = [...matching].sort((a, b) => parseISO(a.start).getTime() - parseISO(b.start).getTime())
-        return { from: parseISO(sorted[0].start), to: parseISO(sorted[sorted.length - 1].end) }
+        const sorted = [...matching].sort((a, b) => parseDate(a.start).getTime() - parseDate(b.start).getTime())
+        return { from: parseDate(sorted[0].start), to: parseDate(sorted[sorted.length - 1].end) }
       }
       return null
     }
@@ -87,8 +94,8 @@ const SMART_PRESETS: SmartPreset[] = [
       const monthEnd = endOfMonth(lastMonth)
       const matching = getWeeksInRange(weeks, monthStart, monthEnd)
       if (matching.length > 0) {
-        const sorted = [...matching].sort((a, b) => parseISO(a.start).getTime() - parseISO(b.start).getTime())
-        return { from: parseISO(sorted[0].start), to: parseISO(sorted[sorted.length - 1].end) }
+        const sorted = [...matching].sort((a, b) => parseDate(a.start).getTime() - parseDate(b.start).getTime())
+        return { from: parseDate(sorted[0].start), to: parseDate(sorted[sorted.length - 1].end) }
       }
       return null
     }
@@ -100,8 +107,8 @@ const SMART_PRESETS: SmartPreset[] = [
       const yearStart = startOfYear(today)
       const matching = getWeeksInRange(weeks, yearStart, today)
       if (matching.length > 0) {
-        const sorted = [...matching].sort((a, b) => parseISO(a.start).getTime() - parseISO(b.start).getTime())
-        return { from: parseISO(sorted[0].start), to: parseISO(sorted[sorted.length - 1].end) }
+        const sorted = [...matching].sort((a, b) => parseDate(a.start).getTime() - parseDate(b.start).getTime())
+        return { from: parseDate(sorted[0].start), to: parseDate(sorted[sorted.length - 1].end) }
       }
       return null
     }
@@ -118,31 +125,16 @@ export function DateRangePicker({
 }: DateRangePickerProps) {
   const [open, setOpen] = useState(false)
 
-  // Build sets of valid start and end dates from available weeks
-  const { validStartDates, validEndDates, smartPresets } = useMemo(() => {
+  // Calculate smart presets based on available data
+  const smartPresets = useMemo(() => {
     if (!availableWeeks || availableWeeks.length === 0) {
-      return { validStartDates: new Set<string>(), validEndDates: new Set<string>(), smartPresets: [] }
+      return []
     }
 
-    const starts = new Set<string>()
-    const ends = new Set<string>()
-
-    availableWeeks.forEach(week => {
-      starts.add(week.start)
-      ends.add(week.end)
-    })
-
-    // Calculate smart presets based on available data
-    const calculatedSmartPresets = SMART_PRESETS.map(preset => ({
+    return SMART_PRESETS.map(preset => ({
       ...preset,
       range: preset.getValue(availableWeeks)
     })).filter(p => p.range !== null)
-
-    return {
-      validStartDates: starts,
-      validEndDates: ends,
-      smartPresets: calculatedSmartPresets
-    }
   }, [availableWeeks])
 
   // Check if a date is a valid selection point
@@ -151,8 +143,8 @@ export function DateRangePicker({
 
     // Allow clicking on any date that falls within an available week
     return !availableWeeks.some(week => {
-      const weekStart = parseISO(week.start)
-      const weekEnd = parseISO(week.end)
+      const weekStart = parseDate(week.start)
+      const weekEnd = parseDate(week.end)
       return date >= weekStart && date <= weekEnd
     })
   }
@@ -160,13 +152,13 @@ export function DateRangePicker({
   // Modifier for week start dates (style differently)
   const weekStartDates = useMemo(() => {
     if (!availableWeeks) return []
-    return availableWeeks.map(w => parseISO(w.start))
+    return availableWeeks.map(w => parseDate(w.start))
   }, [availableWeeks])
 
   // Modifier for week end dates
   const weekEndDates = useMemo(() => {
     if (!availableWeeks) return []
-    return availableWeeks.map(w => parseISO(w.end))
+    return availableWeeks.map(w => parseDate(w.end))
   }, [availableWeeks])
 
   const handleSelect = (range: DateRange | undefined) => {
@@ -179,19 +171,20 @@ export function DateRangePicker({
     const clickedDateStr = format(range.from, 'yyyy-MM-dd')
 
     // Check if clicked date is a week start - auto-select full week
-    if (validStartDates.has(clickedDateStr) && !range.to) {
-      const week = availableWeeks.find(w => w.start === clickedDateStr)
-      if (week) {
-        onChange({ from: parseISO(week.start), to: parseISO(week.end) })
+    // Match against date-only portion of the ISO string
+    if (!range.to) {
+      const weekByStart = availableWeeks.find(w => w.start.split('T')[0] === clickedDateStr)
+      if (weekByStart) {
+        onChange({ from: parseDate(weekByStart.start), to: parseDate(weekByStart.end) })
         return
       }
     }
 
     // Check if clicked date is a week end - auto-select full week
-    if (validEndDates.has(clickedDateStr) && !range.to) {
-      const week = availableWeeks.find(w => w.end === clickedDateStr)
-      if (week) {
-        onChange({ from: parseISO(week.start), to: parseISO(week.end) })
+    if (!range.to) {
+      const weekByEnd = availableWeeks.find(w => w.end.split('T')[0] === clickedDateStr)
+      if (weekByEnd) {
+        onChange({ from: parseDate(weekByEnd.start), to: parseDate(weekByEnd.end) })
         return
       }
     }
@@ -200,19 +193,19 @@ export function DateRangePicker({
     if (range.from && range.to) {
       // Find the week containing the start date
       const startWeek = availableWeeks.find(w => {
-        const ws = parseISO(w.start)
-        const we = parseISO(w.end)
+        const ws = parseDate(w.start)
+        const we = parseDate(w.end)
         return range.from! >= ws && range.from! <= we
       })
       // Find the week containing the end date
       const endWeek = availableWeeks.find(w => {
-        const ws = parseISO(w.start)
-        const we = parseISO(w.end)
+        const ws = parseDate(w.start)
+        const we = parseDate(w.end)
         return range.to! >= ws && range.to! <= we
       })
 
       if (startWeek && endWeek) {
-        onChange({ from: parseISO(startWeek.start), to: parseISO(endWeek.end) })
+        onChange({ from: parseDate(startWeek.start), to: parseDate(endWeek.end) })
         return
       }
     }
