@@ -215,20 +215,38 @@ export function Analytics() {
 
       {/* Date Range Banner - Sticky with lower z-index than calendar popover */}
       <div className="sticky top-0 z-10 -mx-6 mb-4 bg-background px-6 pt-2 pb-2">
-        <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-4 py-2 dark:bg-blue-950">
-          <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-          <span className="text-sm text-blue-700 dark:text-blue-300">
-            {hasDateFilter ? (
-              <>
-                Showing data from{' '}
-                <strong>{filters.startDate ? format(parseISO(filters.startDate), 'MMM d, yyyy') : 'beginning'}</strong>
-                {' '}to{' '}
-                <strong>{filters.endDate ? format(parseISO(filters.endDate), 'MMM d, yyyy') : 'now'}</strong>
-              </>
-            ) : (
-              <strong>Showing all available data</strong>
-            )}
-          </span>
+        <div className="flex flex-col gap-1 rounded-lg bg-blue-50 px-4 py-3 dark:bg-blue-950">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            <span className="text-sm text-blue-700 dark:text-blue-300">
+              {hasDateFilter ? (
+                <>
+                  Showing data from{' '}
+                  <strong>
+                    {filters.startDate
+                      ? `${format(parseISO(filters.startDate), 'EEEE, MMM d, yyyy')}`
+                      : 'beginning'}
+                  </strong>
+                  {' '}to{' '}
+                  <strong>
+                    {filters.endDate
+                      ? `${format(parseISO(filters.endDate), 'EEEE, MMM d, yyyy')}`
+                      : 'now'}
+                  </strong>
+                  {filters.startDate && filters.endDate && (
+                    <span className="ml-2 text-blue-600 dark:text-blue-400">
+                      ({Math.ceil((parseISO(filters.endDate).getTime() - parseISO(filters.startDate).getTime()) / (1000 * 60 * 60 * 24 * 7))} week{Math.ceil((parseISO(filters.endDate).getTime() - parseISO(filters.startDate).getTime()) / (1000 * 60 * 60 * 24 * 7)) !== 1 ? 's' : ''})
+                    </span>
+                  )}
+                </>
+              ) : (
+                <strong>Showing all available data</strong>
+              )}
+            </span>
+          </div>
+          <p className="text-xs text-blue-600/80 dark:text-blue-400/80 ml-6">
+            Amazon provides aggregated weekly data (Sunday - Saturday). Only complete weeks can be selected.
+          </p>
         </div>
       </div>
 

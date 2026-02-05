@@ -1,11 +1,16 @@
 import { useState, useMemo } from 'react'
-import { format, parseISO, isSameDay } from 'date-fns'
+import { format, parseISO, isSameDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, subWeeks, subMonths } from 'date-fns'
 import type { DateRange } from 'react-day-picker'
 import { CalendarIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+
+interface SmartPreset {
+  label: string
+  getValue: (availableWeeks: WeekBoundary[]) => { from: Date; to: Date } | null
+}
 
 export interface WeekBoundary {
   start: string
@@ -21,6 +26,88 @@ interface DateRangePickerProps {
   availableWeeks?: WeekBoundary[]
 }
 
+// Helper to find weeks that overlap with a date range
+function getWeeksInRange(weeks: WeekBoundary[], rangeStart: Date, rangeEnd: Date): WeekBoundary[] {
+  return weeks.filter(week => {
+    const weekStart = parseISO(week.start)
+    const weekEnd = parseISO(week.end)
+    // Week overlaps if it starts before range ends AND ends after range starts
+    return weekStart <= rangeEnd && weekEnd >= rangeStart
+  })
+}
+
+// Smart presets that work with available weeks
+const SMART_PRESETS: SmartPreset[] = [
+  {
+    label: 'This Week',
+    getValue: (weeks) => {
+      const today = new Date()
+      const thisWeekStart = startOfWeek(today, { weekStartsOn: 0 })
+      const thisWeekEnd = endOfWeek(today, { weekStartsOn: 0 })
+      const matching = getWeeksInRange(weeks, thisWeekStart, thisWeekEnd)
+      if (matching.length > 0) {
+        return { from: parseISO(matching[0].start), to: parseISO(matching[0].end) }
+      }
+      return null
+    }
+  },
+  {
+    label: 'Last Week',
+    getValue: (weeks) => {
+      const lastWeek = subWeeks(new Date(), 1)
+      const lastWeekStart = startOfWeek(lastWeek, { weekStartsOn: 0 })
+      const lastWeekEnd = endOfWeek(lastWeek, { weekStartsOn: 0 })
+      const matching = getWeeksInRange(weeks, lastWeekStart, lastWeekEnd)
+      if (matching.length > 0) {
+        return { from: parseISO(matching[0].start), to: parseISO(matching[0].end) }
+      }
+      return null
+    }
+  },
+  {
+    label: 'This Month',
+    getValue: (weeks) => {
+      const today = new Date()
+      const monthStart = startOfMonth(today)
+      const monthEnd = endOfMonth(today)
+      const matching = getWeeksInRange(weeks, monthStart, monthEnd)
+      if (matching.length > 0) {
+        // Get all weeks that overlap with this month, sorted by start date
+        const sorted = [...matching].sort((a, b) => parseISO(a.start).getTime() - parseISO(b.start).getTime())
+        return { from: parseISO(sorted[0].start), to: parseISO(sorted[sorted.length - 1].end) }
+      }
+      return null
+    }
+  },
+  {
+    label: 'Last Month',
+    getValue: (weeks) => {
+      const lastMonth = subMonths(new Date(), 1)
+      const monthStart = startOfMonth(lastMonth)
+      const monthEnd = endOfMonth(lastMonth)
+      const matching = getWeeksInRange(weeks, monthStart, monthEnd)
+      if (matching.length > 0) {
+        const sorted = [...matching].sort((a, b) => parseISO(a.start).getTime() - parseISO(b.start).getTime())
+        return { from: parseISO(sorted[0].start), to: parseISO(sorted[sorted.length - 1].end) }
+      }
+      return null
+    }
+  },
+  {
+    label: 'This Year',
+    getValue: (weeks) => {
+      const today = new Date()
+      const yearStart = startOfYear(today)
+      const matching = getWeeksInRange(weeks, yearStart, today)
+      if (matching.length > 0) {
+        const sorted = [...matching].sort((a, b) => parseISO(a.start).getTime() - parseISO(b.start).getTime())
+        return { from: parseISO(sorted[0].start), to: parseISO(sorted[sorted.length - 1].end) }
+      }
+      return null
+    }
+  },
+]
+
 export function DateRangePicker({
   value,
   onChange,
@@ -32,9 +119,9 @@ export function DateRangePicker({
   const [open, setOpen] = useState(false)
 
   // Build sets of valid start and end dates from available weeks
-  const { validStartDates, validEndDates, weekPresets } = useMemo(() => {
+  const { validStartDates, validEndDates, weekPresets, smartPresets } = useMemo(() => {
     if (!availableWeeks || availableWeeks.length === 0) {
-      return { validStartDates: new Set<string>(), validEndDates: new Set<string>(), weekPresets: [] }
+      return { validStartDates: new Set<string>(), validEndDates: new Set<string>(), weekPresets: [], smartPresets: [] }
     }
 
     const starts = new Set<string>()
@@ -45,8 +132,8 @@ export function DateRangePicker({
       ends.add(week.end)
     })
 
-    // Create presets from available weeks (most recent first)
-    const presets = availableWeeks.slice(0, 8).map(week => {
+    // Create week presets from available weeks (most recent first, limited to 5)
+    const weekPresetsList = availableWeeks.slice(0, 5).map(week => {
       const startDate = parseISO(week.start)
       const endDate = parseISO(week.end)
       return {
@@ -56,7 +143,18 @@ export function DateRangePicker({
       }
     })
 
-    return { validStartDates: starts, validEndDates: ends, weekPresets: presets }
+    // Calculate smart presets based on available data
+    const calculatedSmartPresets = SMART_PRESETS.map(preset => ({
+      ...preset,
+      range: preset.getValue(availableWeeks)
+    })).filter(p => p.range !== null)
+
+    return {
+      validStartDates: starts,
+      validEndDates: ends,
+      weekPresets: weekPresetsList,
+      smartPresets: calculatedSmartPresets
+    }
   }, [availableWeeks])
 
   // Check if a date is a valid selection point
@@ -136,6 +234,11 @@ export function DateRangePicker({
     setOpen(false)
   }
 
+  const handleSmartPresetClick = (range: { from: Date; to: Date }) => {
+    onChange(range)
+    setOpen(false)
+  }
+
   const showWeekPresets = presets && availableWeeks && weekPresets.length > 0
 
   return (
@@ -166,7 +269,27 @@ export function DateRangePicker({
       <PopoverContent className="w-auto p-0" align="start">
         <div className={cn('flex', showWeekPresets && 'flex-col sm:flex-row')}>
           {showWeekPresets && (
-            <div className="flex flex-col gap-1 border-b p-3 sm:border-b-0 sm:border-r sm:max-h-[300px] sm:overflow-y-auto">
+            <div className="flex flex-col gap-1 border-b p-3 sm:border-b-0 sm:border-r sm:max-h-[350px] sm:overflow-y-auto sm:w-[160px]">
+              {/* Smart Presets */}
+              {smartPresets.length > 0 && (
+                <>
+                  <div className="text-xs font-medium text-muted-foreground mb-1">Quick Select</div>
+                  {smartPresets.map((preset, idx) => (
+                    <Button
+                      key={`smart-${idx}`}
+                      variant={value?.from && preset.range && isSameDay(value.from, preset.range.from) && value.to && isSameDay(value.to, preset.range.to) ? 'secondary' : 'ghost'}
+                      size="sm"
+                      className="justify-start text-xs"
+                      onClick={() => preset.range && handleSmartPresetClick(preset.range)}
+                    >
+                      {preset.label}
+                    </Button>
+                  ))}
+                  <div className="border-t my-2" />
+                </>
+              )}
+
+              {/* Individual Week Presets */}
               <div className="text-xs font-medium text-muted-foreground mb-1">Available Weeks</div>
               {weekPresets.map((preset, idx) => (
                 <Button
@@ -188,6 +311,7 @@ export function DateRangePicker({
             selected={value}
             onSelect={handleSelect}
             numberOfMonths={2}
+            weekStartsOn={0}
             disabled={availableWeeks && availableWeeks.length > 0 ? isDateDisabled : undefined}
             modifiers={{
               weekStart: weekStartDates,
