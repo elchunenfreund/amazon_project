@@ -119,9 +119,9 @@ export function DateRangePicker({
   const [open, setOpen] = useState(false)
 
   // Build sets of valid start and end dates from available weeks
-  const { validStartDates, validEndDates, weekPresets, smartPresets } = useMemo(() => {
+  const { validStartDates, validEndDates, smartPresets } = useMemo(() => {
     if (!availableWeeks || availableWeeks.length === 0) {
-      return { validStartDates: new Set<string>(), validEndDates: new Set<string>(), weekPresets: [], smartPresets: [] }
+      return { validStartDates: new Set<string>(), validEndDates: new Set<string>(), smartPresets: [] }
     }
 
     const starts = new Set<string>()
@@ -130,17 +130,6 @@ export function DateRangePicker({
     availableWeeks.forEach(week => {
       starts.add(week.start)
       ends.add(week.end)
-    })
-
-    // Create week presets from available weeks (most recent first, limited to 5)
-    const weekPresetsList = availableWeeks.slice(0, 5).map(week => {
-      const startDate = parseISO(week.start)
-      const endDate = parseISO(week.end)
-      return {
-        label: `${format(startDate, 'MMM d')} - ${format(endDate, 'MMM d')}`,
-        start: startDate,
-        end: endDate,
-      }
     })
 
     // Calculate smart presets based on available data
@@ -152,7 +141,6 @@ export function DateRangePicker({
     return {
       validStartDates: starts,
       validEndDates: ends,
-      weekPresets: weekPresetsList,
       smartPresets: calculatedSmartPresets
     }
   }, [availableWeeks])
@@ -161,9 +149,12 @@ export function DateRangePicker({
   const isDateDisabled = (date: Date): boolean => {
     if (!availableWeeks || availableWeeks.length === 0) return false
 
-    const dateStr = format(date, 'yyyy-MM-dd')
-    // Allow clicking on any valid start or end date
-    return !validStartDates.has(dateStr) && !validEndDates.has(dateStr)
+    // Allow clicking on any date that falls within an available week
+    return !availableWeeks.some(week => {
+      const weekStart = parseISO(week.start)
+      const weekEnd = parseISO(week.end)
+      return date >= weekStart && date <= weekEnd
+    })
   }
 
   // Modifier for week start dates (style differently)
@@ -229,17 +220,12 @@ export function DateRangePicker({
     onChange(range)
   }
 
-  const handlePresetClick = (preset: { start: Date; end: Date }) => {
-    onChange({ from: preset.start, to: preset.end })
-    setOpen(false)
-  }
-
   const handleSmartPresetClick = (range: { from: Date; to: Date }) => {
     onChange(range)
     setOpen(false)
   }
 
-  const showWeekPresets = presets && availableWeeks && weekPresets.length > 0
+  const showPresets = presets && availableWeeks && smartPresets.length > 0
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -269,7 +255,7 @@ export function DateRangePicker({
       <PopoverContent className="w-auto p-0" align="start">
         <div className="flex">
           {/* Left sidebar: Presets */}
-          {showWeekPresets && (
+          {showPresets && (
             <div data-testid="date-presets" className="flex flex-col gap-1 border-r p-3 min-w-[150px] max-h-[400px] overflow-y-auto bg-muted/20">
               {/* Quick Select Presets */}
               <div className="text-xs font-semibold text-foreground mb-2">Quick Select</div>
@@ -280,22 +266,6 @@ export function DateRangePicker({
                   size="sm"
                   className="justify-start text-sm h-8"
                   onClick={() => preset.range && handleSmartPresetClick(preset.range)}
-                >
-                  {preset.label}
-                </Button>
-              ))}
-
-              <div className="border-t my-3" />
-
-              {/* Individual Week Presets */}
-              <div className="text-xs font-semibold text-foreground mb-2">Recent Weeks</div>
-              {weekPresets.map((preset, idx) => (
-                <Button
-                  key={idx}
-                  variant={value?.from && isSameDay(value.from, preset.start) ? 'secondary' : 'ghost'}
-                  size="sm"
-                  className="justify-start text-xs h-7"
-                  onClick={() => handlePresetClick(preset)}
                 >
                   {preset.label}
                 </Button>

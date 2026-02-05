@@ -1687,14 +1687,14 @@ app.get('/api/vendor-reports/weeks', async (req, res) => {
     try {
         const { distributorView } = req.query;
 
-        // Get distinct week boundaries from Sales reports (most relevant for analytics)
+        // Get distinct week boundaries from ALL report types (not just Sales)
+        // This ensures we show all available weeks regardless of which reports have data
         let query = `
             SELECT DISTINCT
                 data_start_date as start_date,
                 data_end_date as end_date
             FROM vendor_reports
-            WHERE report_type = 'GET_VENDOR_SALES_REPORT'
-              AND data_start_date IS NOT NULL
+            WHERE data_start_date IS NOT NULL
               AND data_end_date IS NOT NULL
         `;
 
