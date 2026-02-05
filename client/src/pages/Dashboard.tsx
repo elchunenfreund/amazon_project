@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react'
-import type { DateRange } from 'react-day-picker'
 import { format, subDays } from 'date-fns'
-import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff, Filter, History } from 'lucide-react'
+import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff, Filter, History, Calendar } from 'lucide-react'
 import { PageWrapper, PageHeader } from '@/components/layout'
-import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal, DateRangePicker, QueryError } from '@/components/shared'
+import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal, QueryError } from '@/components/shared'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
 import {
   Select,
@@ -31,10 +32,14 @@ const BASELINE_OPTIONS = [
   { value: '7days', label: '7 days ago' },
   { value: '14days', label: '14 days ago' },
   { value: '30days', label: '30 days ago' },
+  { value: 'custom', label: 'Custom date...' },
 ]
 
-function getBaselineDate(option: string): string | undefined {
+function getBaselineDate(option: string, customDate?: Date): string | undefined {
   if (option === 'last') return undefined // Use default (previous report)
+  if (option === 'custom' && customDate) {
+    return format(customDate, 'yyyy-MM-dd')
+  }
   const days = {
     'yesterday': 1,
     '3days': 3,
@@ -50,14 +55,13 @@ function getBaselineDate(option: string): string | undefined {
 
 export function Dashboard() {
   // Date filter state
-  const [dateRange, setDateRange] = useState<DateRange | undefined>()
   const [baselineOption, setBaselineOption] = useState<string>('last')
+  const [customDate, setCustomDate] = useState<Date | undefined>()
+  const [calendarOpen, setCalendarOpen] = useState(false)
 
   const filters: AsinFilters = useMemo(() => ({
-    startDate: dateRange?.from?.toISOString().split('T')[0],
-    endDate: dateRange?.to?.toISOString().split('T')[0],
-    baselineDate: getBaselineDate(baselineOption),
-  }), [dateRange, baselineOption])
+    baselineDate: getBaselineDate(baselineOption, customDate),
+  }), [baselineOption, customDate])
 
   const { data: asins, isLoading, isError, error, refetch } = useLatestAsins(filters)
   const { data: scraperStatus } = useScraperStatus()
@@ -275,30 +279,18 @@ export function Dashboard() {
       {/* Scraper Progress */}
       <ScraperProgress progress={progress} />
 
-      {/* Info Banner - Sticky with lower z-index than calendar popover */}
-      {(baselineOption !== 'last' || dateRange) && (
+      {/* Info Banner - Shows when comparing to a specific baseline */}
+      {baselineOption !== 'last' && (
         <div className="sticky top-0 z-10 -mx-6 mb-4 bg-background px-6 pt-2 pb-2">
           <div className="flex items-center gap-2 rounded-lg bg-amber-50 px-4 py-2 dark:bg-amber-950">
             <History className="h-4 w-4 text-amber-600 dark:text-amber-400" />
             <span className="text-sm text-amber-700 dark:text-amber-300">
               Comparing changes since{' '}
               <strong>
-                {baselineOption === 'last'
-                  ? 'last check'
+                {baselineOption === 'custom' && customDate
+                  ? format(customDate, 'MMM d, yyyy')
                   : BASELINE_OPTIONS.find(o => o.value === baselineOption)?.label?.toLowerCase() ?? baselineOption}
               </strong>
-              {dateRange?.from && (
-                <>
-                  {' '}• Filtered:{' '}
-                  <strong>{format(dateRange.from, 'MMM d, yyyy')}</strong>
-                  {dateRange.to && (
-                    <>
-                      {' '}to{' '}
-                      <strong>{format(dateRange.to, 'MMM d, yyyy')}</strong>
-                    </>
-                  )}
-                </>
-              )}
             </span>
           </div>
         </div>
@@ -339,13 +331,6 @@ export function Dashboard() {
           <span className="text-sm text-muted">Filters:</span>
         </div>
 
-        {/* Date Range Filter */}
-        <DateRangePicker
-          value={dateRange}
-          onChange={setDateRange}
-          placeholder="Select date range"
-        />
-
         {/* Status Filter */}
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-[150px]">
@@ -379,30 +364,65 @@ export function Dashboard() {
         <div className="flex items-center gap-2">
           <History className="h-4 w-4 text-muted" />
           <span className="text-sm text-muted">Changes since:</span>
-          <Select value={baselineOption} onValueChange={setBaselineOption}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {BASELINE_OPTIONS.map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+            <Select
+              value={baselineOption}
+              onValueChange={(value) => {
+                setBaselineOption(value)
+                if (value === 'custom') {
+                  setCalendarOpen(true)
+                }
+              }}
+            >
+              <SelectTrigger className="w-[160px]">
+                <SelectValue>
+                  {baselineOption === 'custom' && customDate
+                    ? format(customDate, 'MMM d, yyyy')
+                    : BASELINE_OPTIONS.find(o => o.value === baselineOption)?.label}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {BASELINE_OPTIONS.map(opt => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                className={baselineOption === 'custom' ? '' : 'hidden'}
+              >
+                <Calendar className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <CalendarComponent
+                mode="single"
+                selected={customDate}
+                onSelect={(date) => {
+                  setCustomDate(date)
+                  setCalendarOpen(false)
+                }}
+                disabled={(date) => date > new Date()}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
         </div>
 
         {/* Clear filters */}
-        {(statusFilter !== 'all' || sellerFilter !== 'all' || dateRange || baselineOption !== 'last') && (
+        {(statusFilter !== 'all' || sellerFilter !== 'all' || baselineOption !== 'last') && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
               setStatusFilter('all')
               setSellerFilter('all')
-              setDateRange(undefined)
               setBaselineOption('last')
+              setCustomDate(undefined)
             }}
           >
             Clear filters
