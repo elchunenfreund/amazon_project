@@ -7,7 +7,7 @@ const pool = new Pool({
   ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
-// AWS Signature V4 signing (same as in server.js)
+// AWS Signature V4 signing
 function getSignatureKey(key, dateStamp, regionName, serviceName) {
   const kDate = crypto.createHmac('sha256', 'AWS4' + key).update(dateStamp).digest();
   const kRegion = crypto.createHmac('sha256', kDate).update(regionName).digest();
@@ -99,48 +99,14 @@ async function testDataKiosk() {
     const accessToken = await getAccessToken();
     console.log('Got access token');
 
-    const url = 'https://sellingpartnerapi-na.amazon.com/datakiosk/2023-11-15/queries';
+    // Test 1: Try the standard Reports API to see what's available
+    console.log('\n=== Test 1: Check existing vendor reports access ===');
+    await testReportsAPI(accessToken);
 
-    let headers = {
-      'x-amz-access-token': accessToken,
-      'Content-Type': 'application/json'
-    };
+    // Test 2: Try Data Kiosk with different query
+    console.log('\n=== Test 2: Data Kiosk API ===');
+    await testDataKioskAPI(accessToken);
 
-    // Sign with AWS SigV4
-    headers = signRequest(
-      'GET',
-      url,
-      headers,
-      '',
-      process.env.AWS_ACCESS_KEY_ID,
-      process.env.AWS_SECRET_ACCESS_KEY,
-      'us-east-1',
-      'execute-api'
-    );
-
-    console.log('\nTesting Data Kiosk API (with SigV4 signing)...');
-    const response = await fetch(url, {
-      method: 'GET',
-      headers
-    });
-
-    console.log('Status:', response.status);
-    const text = await response.text();
-
-    if (response.ok) {
-      console.log('✅ SUCCESS! Data Kiosk is accessible.');
-      const data = JSON.parse(text);
-      console.log('Existing queries:', data.queries?.length || 0);
-
-      // Now try to create a test query for vendor analytics
-      console.log('\nTrying to create a vendor analytics query...');
-      await testVendorAnalyticsQuery(accessToken);
-    } else {
-      console.log('Response:', text);
-      if (response.status === 403) {
-        console.log('\n⚠️  Still getting 403 - checking if it\'s a permissions issue...');
-      }
-    }
   } catch (error) {
     console.error('Error:', error.message);
   } finally {
@@ -148,55 +114,101 @@ async function testDataKiosk() {
   }
 }
 
-async function testVendorAnalyticsQuery(accessToken) {
-  const url = 'https://sellingpartnerapi-na.amazon.com/datakiosk/2023-11-15/queries';
-
-  // Simple query to test access to vendor analytics
-  const query = `
-    query VendorAnalyticsTest {
-      analytics_vendorAnalytics_2024_09_30 {
-        salesByAsin(
-          startDate: "2026-01-01"
-          endDate: "2026-01-31"
-          aggregateBy: WEEK
-          marketplaceIds: ["A2EUQ1WTGCTBG2"]
-        ) {
-          asin
-          startDate
-          endDate
-          orderedUnits { amount }
-          orderedRevenue { amount currencyCode }
-          netOrderedGMS { amount currencyCode }
-          confirmedUnits { amount }
-        }
-      }
-    }
-  `;
+async function testReportsAPI(accessToken) {
+  // This should work - we use it already
+  const url = 'https://sellingpartnerapi-na.amazon.com/reports/2021-06-30/reports?pageSize=5&reportTypes=GET_VENDOR_SALES_REPORT';
 
   let headers = {
     'x-amz-access-token': accessToken,
     'Content-Type': 'application/json'
   };
 
-  const body = JSON.stringify({ query: query.trim() });
+  headers = signRequest('GET', url, headers, '', process.env.AWS_ACCESS_KEY_ID, process.env.AWS_SECRET_ACCESS_KEY, 'us-east-1', 'execute-api');
 
-  headers = signRequest(
-    'POST',
-    url,
-    headers,
-    body,
-    process.env.AWS_ACCESS_KEY_ID,
-    process.env.AWS_SECRET_ACCESS_KEY,
-    'us-east-1',
-    'execute-api'
-  );
+  const response = await fetch(url, { method: 'GET', headers });
+  console.log('Reports API Status:', response.status);
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers,
-    body
-  });
+  if (response.ok) {
+    const data = await response.json();
+    console.log('✅ Reports API works - found', data.reports?.length || 0, 'reports');
+  } else {
+    const text = await response.text();
+    console.log('Reports API Response:', text.substring(0, 200));
+  }
+}
 
+async function testDataKioskAPI(accessToken) {
+  const url = 'https://sellingpartnerapi-na.amazon.com/datakiosk/2023-11-15/queries';
+
+  let headers = {
+    'x-amz-access-token': accessToken,
+    'Content-Type': 'application/json'
+  };
+
+  headers = signRequest('GET', url, headers, '', process.env.AWS_ACCESS_KEY_ID, process.env.AWS_SECRET_ACCESS_KEY, 'us-east-1', 'execute-api');
+
+  console.log('Testing Data Kiosk GET /queries...');
+  const response = await fetch(url, { method: 'GET', headers });
+  console.log('Data Kiosk Status:', response.status);
+  const text = await response.text();
+
+  if (response.ok) {
+    console.log('✅ Data Kiosk is accessible!');
+    const data = JSON.parse(text);
+    console.log('Existing queries:', data.queries?.length || 0);
+
+    // Try creating a query
+    await createVendorAnalyticsQuery(accessToken);
+  } else {
+    console.log('Response:', text);
+
+    // Check if it's a specific error we can diagnose
+    try {
+      const err = JSON.parse(text);
+      if (err.errors?.[0]?.code === 'Unauthorized') {
+        console.log('\n❌ Data Kiosk access denied.');
+        console.log('This could mean:');
+        console.log('1. Need to re-authorize app to get fresh tokens');
+        console.log('2. Data Kiosk not available for this account type');
+        console.log('3. Canada marketplace may have limited Data Kiosk support');
+      }
+    } catch (e) {}
+  }
+}
+
+async function createVendorAnalyticsQuery(accessToken) {
+  const url = 'https://sellingpartnerapi-na.amazon.com/datakiosk/2023-11-15/queries';
+
+  // Minimal query to test
+  const query = `{
+    analytics_salesAndTraffic_2023_11_15 {
+      salesAndTrafficByAsin(
+        startDate: "2026-01-01"
+        endDate: "2026-01-31"
+        aggregateBy: WEEK
+        marketplaceIds: ["A2EUQ1WTGCTBG2"]
+      ) {
+        startDate
+        endDate
+        asin
+        salesByAsin {
+          orderedProductSales { amount currencyCode }
+          unitsOrdered
+        }
+      }
+    }
+  }`;
+
+  let headers = {
+    'x-amz-access-token': accessToken,
+    'Content-Type': 'application/json'
+  };
+
+  const body = JSON.stringify({ query });
+  headers = signRequest('POST', url, headers, body, process.env.AWS_ACCESS_KEY_ID, process.env.AWS_SECRET_ACCESS_KEY, 'us-east-1', 'execute-api');
+
+  console.log('\nTrying to create a query...');
+  const response = await fetch(url, { method: 'POST', headers, body });
   console.log('Create Query Status:', response.status);
   const text = await response.text();
   console.log('Response:', text.substring(0, 500));
