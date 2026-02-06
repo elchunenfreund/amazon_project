@@ -238,6 +238,7 @@ export function DateRangePicker({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          data-testid="date-range-picker-trigger"
           variant="outline"
           className={cn(
             'w-[280px] justify-start text-left font-normal',
@@ -259,7 +260,7 @@ export function DateRangePicker({
           )}
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0" align="start">
+      <PopoverContent className="w-auto p-0" align="start" data-testid="date-range-picker-popover">
         <div className="flex">
           {/* Left sidebar: Presets */}
           {showPresets && (
@@ -281,7 +282,7 @@ export function DateRangePicker({
           )}
 
           {/* Right side: Calendar */}
-          <div className="flex flex-col">
+          <div className="flex flex-col" data-testid="date-range-picker-calendar">
             {/* Legend */}
             {availableWeeks && availableWeeks.length > 0 && (
               <div className="px-3 py-2 border-b bg-muted/30">
