@@ -45,11 +45,19 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
     conversionRate: false,
   })
 
-  // Get unique ASINs for the dropdown
-  const uniqueAsins = useMemo(() => {
-    const asins = [...new Set(data.map(r => r.asin))].sort()
-    return asins
+  // Get unique ASINs with metadata for the dropdown
+  const uniqueAsinsWithMeta = useMemo(() => {
+    const asinMap = new Map<string, { asin: string; title?: string; vendor_sku?: string }>()
+    for (const r of data) {
+      if (!asinMap.has(r.asin)) {
+        asinMap.set(r.asin, { asin: r.asin, title: r.title, vendor_sku: r.vendor_sku })
+      }
+    }
+    return Array.from(asinMap.values()).sort((a, b) => a.asin.localeCompare(b.asin))
   }, [data])
+
+  // Keep simple array for backward compatibility
+  const uniqueAsins = uniqueAsinsWithMeta.map(item => item.asin)
 
   // Derive selectedAsins array from single selection for data filtering
   const selectedAsins = selectedAsin === 'all' ? [] : [selectedAsin]
@@ -206,13 +214,29 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-sm font-medium">ASIN:</span>
           <Select value={selectedAsin} onValueChange={setSelectedAsin}>
-            <SelectTrigger className="w-[220px]">
+            <SelectTrigger className="w-[320px]">
               <SelectValue placeholder="Select ASIN" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All ASINs (aggregated)</SelectItem>
-              {uniqueAsins.map((asin) => (
-                <SelectItem key={asin} value={asin}>{asin}</SelectItem>
+              {uniqueAsinsWithMeta.map((item) => (
+                <SelectItem key={item.asin} value={item.asin}>
+                  <div className="flex flex-col py-0.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm">{item.asin}</span>
+                      {item.vendor_sku && (
+                        <span className="text-xs text-muted bg-slate-100 px-1.5 py-0.5 rounded">
+                          {item.vendor_sku}
+                        </span>
+                      )}
+                    </div>
+                    {item.title && (
+                      <span className="text-xs text-muted truncate max-w-[280px]">
+                        {item.title}
+                      </span>
+                    )}
+                  </div>
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>

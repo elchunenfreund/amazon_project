@@ -1342,10 +1342,11 @@ app.get('/api/asins/latest', async (req, res) => {
         });
 
         // Get latest inventory data from vendor reports (always latest snapshot, not aggregated)
+        // Check both GET_VENDOR_INVENTORY_REPORT and GET_VENDOR_REAL_TIME_INVENTORY_REPORT
         const inventoryResult = await pool.query(`
-            SELECT DISTINCT ON (asin) asin, data
+            SELECT DISTINCT ON (asin) asin, data, report_type
             FROM vendor_reports
-            WHERE report_type = 'GET_VENDOR_INVENTORY_REPORT'
+            WHERE report_type IN ('GET_VENDOR_INVENTORY_REPORT', 'GET_VENDOR_REAL_TIME_INVENTORY_REPORT')
             ORDER BY asin, report_date DESC
         `);
         const inventoryMap = {};
@@ -1358,12 +1359,14 @@ app.get('/api/asins/latest', async (req, res) => {
                 if (typeof val === 'object' && val.amount !== undefined) return parseFloat(val.amount) || null;
                 return null;
             };
-            inventoryMap[row.asin] = {
-                sellableOnHandInventory: extractNum(data.sellableOnHandInventory)
-                    ?? extractNum(data.sellable_on_hand_inventory)
-                    ?? extractNum(data.highlyAvailableInventory)
-                    ?? null
-            };
+            // Try all possible field names from different report types
+            const inventory = extractNum(data.highlyAvailableInventory)        // RT Inventory
+                ?? extractNum(data.sellableOnHandInventoryUnits)               // Weekly Inventory
+                ?? extractNum(data.sellableOnHandInventory)                    // Alternative name
+                ?? extractNum(data.sellable_on_hand_inventory)                 // Snake case
+                ?? extractNum(data.sellable_on_hand_inventory_units)           // Snake case with units
+                ?? null;
+            inventoryMap[row.asin] = { sellableOnHandInventory: inventory };
         });
 
         // Get receiving data from PO line items (optionally filtered by date range)

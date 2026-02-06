@@ -254,26 +254,17 @@ export const DashboardTable = memo(function DashboardTable({
         },
       },
       {
-        accessorKey: 'last_po_date',
+        accessorKey: 'last_po',
         header: 'Last PO',
         cell: ({ row }) => {
-          const date = row.original.last_po_date
-          return date ? (
-            <span className="text-sm text-muted">{date}</span>
-          ) : (
-            <span className="text-muted">-</span>
-          )
-        },
-      },
-      {
-        accessorKey: 'last_po_units',
-        header: 'PO Units',
-        cell: ({ row }) => {
           const units = row.original.last_po_units
-          return units != null ? (
-            <span className="text-sm">{units.toLocaleString()}</span>
-          ) : (
-            <span className="text-muted">-</span>
+          const date = row.original.last_po_date
+          if (units == null && !date) return <span className="text-muted">-</span>
+          return (
+            <div className="text-sm">
+              {units != null && <div>{units.toLocaleString()} units</div>}
+              {date && <div className="text-muted text-xs">{date}</div>}
+            </div>
           )
         },
       },

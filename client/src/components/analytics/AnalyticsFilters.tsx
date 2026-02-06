@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import type { DateRange } from 'react-day-picker'
 import { DateRangePicker } from '@/components/shared'
 import { useAvailableWeeks } from '@/hooks/useVendorReports'
@@ -61,23 +61,8 @@ export function AnalyticsFilters({
   // This ensures users can select any date range with data, then filter by view
   const { data: availableWeeks } = useAvailableWeeks()
 
-  // Auto-select most recent week when weeks are loaded and no date is selected
-  useEffect(() => {
-    if (availableWeeks && availableWeeks.length > 0 && !dateRange) {
-      const mostRecent = availableWeeks[0]
-      const newRange = {
-        from: new Date(mostRecent.start),
-        to: new Date(mostRecent.end),
-      }
-      setDateRange(newRange)
-      onFilterChange({
-        startDate: mostRecent.start,
-        endDate: mostRecent.end,
-        asin: selectedAsin || undefined,
-        distributorView: distributorView,
-      })
-    }
-  }, [availableWeeks])
+  // Removed auto-select of most recent week to allow viewing all-time data by default
+  // Users can manually select a date range using the DateRangePicker
 
   const handleDateChange = (range: DateRange | undefined) => {
     setDateRange(range)

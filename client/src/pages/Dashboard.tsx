@@ -21,7 +21,9 @@ import {
   EditAsinModal,
   ExcelUploadModal,
   ScraperProgress,
+  StatusFilterPopover,
 } from '@/components/dashboard'
+import type { StatusTag } from '@/components/dashboard/StatusFilterPopover'
 import type { AsinReport, AsinFilters } from '@/lib/api'
 import { isAsinReport } from '@/lib/type-guards'
 
@@ -102,7 +104,8 @@ export function Dashboard() {
   const [asinToDelete, setAsinToDelete] = useState<string | null>(null)
 
   // Filter states
-  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [statusSelectAll, setStatusSelectAll] = useState(true)
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<StatusTag>>(new Set())
   const [sellerFilter, setSellerFilter] = useState<string>('all')
 
   // Row selection state
@@ -120,12 +123,30 @@ export function Dashboard() {
     if (!asins) return []
 
     return asins.filter(asin => {
-      // Status filter
-      if (statusFilter !== 'all') {
-        if (statusFilter === 'in_stock' && asin.available !== true) return false
-        if (statusFilter === 'unavailable' && asin.available !== false) return false
-        if (statusFilter === 'snoozed' && !asin.snoozed) return false
-        if (statusFilter === 'changed' && !asin.has_changes) return false
+      // Status filter (multi-select with OR logic)
+      if (!statusSelectAll && selectedStatuses.size > 0) {
+        const availability = asin.availability?.toUpperCase()
+        const backOrdered = asin.back_ordered
+
+        let matchesStatus = false
+
+        if (selectedStatuses.has('in_stock')) {
+          matchesStatus = matchesStatus || availability === 'IN STOCK'
+        }
+        if (selectedStatuses.has('unavailable')) {
+          matchesStatus = matchesStatus || (availability === 'UNAVAILABLE' && !backOrdered)
+        }
+        if (selectedStatuses.has('back_ordered')) {
+          matchesStatus = matchesStatus || (availability === 'UNAVAILABLE' && backOrdered === true)
+        }
+        if (selectedStatuses.has('doggy')) {
+          matchesStatus = matchesStatus || availability === 'DOGGY'
+        }
+        if (selectedStatuses.has('pending')) {
+          matchesStatus = matchesStatus || !availability || availability === 'PENDING'
+        }
+
+        if (!matchesStatus) return false
       }
 
       // Seller filter
@@ -133,7 +154,7 @@ export function Dashboard() {
 
       return true
     })
-  }, [asins, statusFilter, sellerFilter])
+  }, [asins, statusSelectAll, selectedStatuses, sellerFilter])
 
   const stats = useMemo(() => {
     if (!asins) return { total: 0, available: 0, unavailable: 0, snoozed: 0, changed: 0 }
@@ -358,18 +379,14 @@ export function Dashboard() {
         </div>
 
         {/* Status Filter */}
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[150px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="in_stock">In Stock</SelectItem>
-            <SelectItem value="unavailable">Unavailable</SelectItem>
-            <SelectItem value="snoozed">Snoozed</SelectItem>
-            <SelectItem value="changed">Changed</SelectItem>
-          </SelectContent>
-        </Select>
+        <StatusFilterPopover
+          selectAll={statusSelectAll}
+          selectedStatuses={selectedStatuses}
+          onChange={(selectAll, statuses) => {
+            setStatusSelectAll(selectAll)
+            setSelectedStatuses(statuses)
+          }}
+        />
 
         {/* Seller Filter */}
         <Select value={sellerFilter} onValueChange={setSellerFilter}>
@@ -453,12 +470,13 @@ export function Dashboard() {
         </div>
 
         {/* Clear filters */}
-        {(statusFilter !== 'all' || sellerFilter !== 'all' || baselineOption !== 'last') && (
+        {(!statusSelectAll || sellerFilter !== 'all' || baselineOption !== 'last') && (
           <Button
             variant="ghost"
             size="sm"
             onClick={() => {
-              setStatusFilter('all')
+              setStatusSelectAll(true)
+              setSelectedStatuses(new Set())
               setSellerFilter('all')
               setBaselineOption('last')
               setCustomDate(undefined)
