@@ -1287,6 +1287,27 @@ app.get('/api/asins/latest', async (req, res) => {
             }
         });
 
+        // Get last customer order from Real-Time Sales (most recent order where orderedUnits > 0)
+        const lastCustomerOrderResult = await pool.query(`
+            SELECT DISTINCT ON (asin)
+                asin,
+                (data->>'orderedUnits')::int as ordered_units,
+                (data->>'orderedRevenue')::numeric as ordered_revenue,
+                data->>'startTime' as order_time
+            FROM vendor_reports
+            WHERE report_type = 'GET_VENDOR_REAL_TIME_SALES_REPORT'
+              AND (data->>'orderedUnits')::int > 0
+            ORDER BY asin, (data->>'startTime')::timestamp DESC
+        `);
+        const lastCustomerOrderMap = {};
+        lastCustomerOrderResult.rows.forEach(row => {
+            lastCustomerOrderMap[row.asin] = {
+                units: row.ordered_units,
+                revenue: parseFloat(row.ordered_revenue) || 0,
+                orderTime: row.order_time
+            };
+        });
+
         // Get traffic data from vendor reports (latest or aggregated over date range)
         let trafficResult;
         if (hasVendorDateRange) {
@@ -1391,6 +1412,8 @@ app.get('/api/asins/latest', async (req, res) => {
             let availability_status = 'unavailable';
             if (availText.includes('in stock')) availability_status = 'in_stock';
             else if (availText.includes('back order') || availText.includes('backorder')) availability_status = 'back_order';
+            else if (availText.includes('doggy')) availability_status = 'doggy';
+            else if (availText.includes('pending')) availability_status = 'pending';
 
             // Detect changes between latest and previous (normalize values for comparison)
             const changedFields = [];
@@ -1401,7 +1424,9 @@ app.get('/api/asins/latest', async (req, res) => {
                     const lower = avail.toLowerCase();
                     if (lower.includes('in stock')) return 'in_stock';
                     if (lower.includes('back order') || lower.includes('backorder')) return 'back_order';
+                    if (lower.includes('doggy')) return 'doggy';
                     if (lower.includes('unavailable') || lower.includes('out of stock')) return 'unavailable';
+                    if (lower.includes('pending')) return 'pending';
                     return 'unknown';
                 };
                 const currentAvail = normalizeAvail(latest.availability);
@@ -1425,7 +1450,10 @@ app.get('/api/asins/latest', async (req, res) => {
                 sku: metaMap[asin]?.sku || null,
                 title: latest.header,
                 available: availability_status === 'in_stock',
+                availability: latest.availability || null,  // Raw availability text for enhanced badge
                 availability_status,
+                stock_level: latest.stock_level || null,    // Raw stock level for low stock indicator
+                back_ordered: latest.back_ordered || false, // Back order flag (unavailable but orderable)
                 seller: latest.seller,
                 price: currentPrice,
                 previous_price: previousPrice,
@@ -1440,8 +1468,8 @@ app.get('/api/asins/latest', async (req, res) => {
                 // New fields
                 shipped_units: salesData.shippedUnits || null,
                 shipped_revenue: salesData.shippedRevenue || salesData.shippedCOGS || null,
-                last_order_units: salesData.orderedUnits || null,
-                last_order_date: salesData.reportDate || null,
+                last_order_units: lastCustomerOrderMap[asin]?.units || null,
+                last_order_date: lastCustomerOrderMap[asin]?.orderTime ? new Date(lastCustomerOrderMap[asin].orderTime).toISOString().split('T')[0] : null,
                 glance_views: trafficData.glanceViews || null,
                 sellable_on_hand_inventory: inventoryData.sellableOnHandInventory || null,
                 received_quantity: receiving.received || null,

@@ -96,7 +96,145 @@ export function POStateBadge({ state, className, ...props }: POStateBadgeProps) 
   )
 }
 
-// Availability Badge
+// Enhanced Availability Badge with comprehensive status support
+type AvailabilityStatus =
+  | 'In Stock'
+  | 'Back Order'
+  | 'Unavailable'
+  | 'Doggy'
+  | 'Pending'
+  | string
+
+interface EnhancedAvailabilityBadgeProps extends Omit<BadgeProps, 'variant'> {
+  availability?: AvailabilityStatus | null
+  stockLevel?: string | null
+  backOrdered?: boolean  // True if unavailable but still orderable
+  showChangeIndicator?: boolean
+}
+
+export function EnhancedAvailabilityBadge({
+  availability,
+  stockLevel,
+  backOrdered = false,
+  showChangeIndicator = false,
+  className,
+  ...props
+}: EnhancedAvailabilityBadgeProps) {
+  // Normalize status to uppercase for consistent matching
+  const normalizedStatus = availability?.trim().toUpperCase()
+
+  // Determine if stock is low
+  const isLowStock = stockLevel?.toLowerCase().includes('low stock')
+  const lowStockCount = isLowStock
+    ? stockLevel?.match(/Low Stock:\s*(\d+)/i)?.[1]
+    : null
+
+  // Handle Unknown/Pending state
+  if (!availability || normalizedStatus === 'PENDING') {
+    return (
+      <div className={cn('flex flex-col items-start gap-1', className)}>
+        <Badge
+          variant="secondary"
+          className={cn(
+            'uppercase italic text-slate-400',
+            showChangeIndicator && 'ring-2 ring-red-500'
+          )}
+          {...props}
+        >
+          <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-gray-300" />
+          Pending
+        </Badge>
+      </div>
+    )
+  }
+
+  // Handle Doggy (404/Invalid Page)
+  if (normalizedStatus === 'DOGGY') {
+    return (
+      <div className={cn('flex flex-col items-start gap-1', className)}>
+        <Badge
+          className={cn(
+            'uppercase font-bold bg-purple-600 text-white border-transparent hover:bg-purple-700',
+            showChangeIndicator && 'ring-2 ring-red-500'
+          )}
+          {...props}
+        >
+          <span className="mr-1 text-sm">🐕</span>
+          Doggy
+        </Badge>
+        <span className="text-[9px] text-purple-900 bg-purple-200 border border-purple-400 rounded px-1 py-0.5">
+          Invalid Page
+        </span>
+      </div>
+    )
+  }
+
+  // Handle In Stock (with optional low stock warning)
+  if (normalizedStatus === 'IN STOCK') {
+    return (
+      <div className={cn('flex flex-col items-start gap-1', className)}>
+        <Badge
+          variant="success"
+          className={cn(
+            'uppercase bg-emerald-600 hover:bg-emerald-700',
+            showChangeIndicator && 'ring-2 ring-red-500'
+          )}
+          {...props}
+        >
+          <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-green-100" />
+          In Stock
+        </Badge>
+        {isLowStock && (
+          <span className="text-[9px] text-amber-900 bg-amber-200 border border-amber-400 rounded px-1 py-0.5 animate-pulse">
+            ⚠️ {lowStockCount} left
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  // Handle Unavailable (with optional back order indicator)
+  if (normalizedStatus === 'UNAVAILABLE') {
+    return (
+      <div className={cn('flex flex-col items-start gap-1', className)}>
+        <Badge
+          variant="destructive"
+          className={cn(
+            'uppercase bg-rose-600 hover:bg-rose-700',
+            showChangeIndicator && 'ring-2 ring-red-500'
+          )}
+          {...props}
+        >
+          <span className="mr-1.5 h-1.5 w-1.5 rounded-full bg-red-100" />
+          Unavailable
+        </Badge>
+        {backOrdered && (
+          <span className="text-[9px] text-amber-900 bg-amber-200 border border-amber-400 rounded px-1 py-0.5">
+            Back Ordered
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  // Fallback for unknown statuses
+  return (
+    <div className={cn('flex flex-col items-start gap-1', className)}>
+      <Badge
+        variant="secondary"
+        className={cn(
+          'uppercase',
+          showChangeIndicator && 'ring-2 ring-red-500'
+        )}
+        {...props}
+      >
+        {availability}
+      </Badge>
+    </div>
+  )
+}
+
+// Legacy Availability Badge (simple boolean version, kept for backward compatibility)
 interface AvailabilityBadgeProps extends Omit<BadgeProps, 'variant'> {
   available: boolean | null | undefined
 }

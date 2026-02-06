@@ -50,10 +50,22 @@ const client = new Client(getDatabaseConfig());
                 seller TEXT,
                 price TEXT,
                 ranking TEXT,
+                back_ordered BOOLEAN DEFAULT FALSE,
                 check_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
         `);
         console.log("✅ Table 'daily_reports' is ready.");
+
+        // Add back_ordered column if it doesn't exist (for existing databases)
+        await client.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='daily_reports' AND column_name='back_ordered') THEN
+                    ALTER TABLE daily_reports ADD COLUMN back_ordered BOOLEAN DEFAULT FALSE;
+                END IF;
+            END $$;
+        `);
+        console.log("✅ Table 'daily_reports' columns verified.");
 
         // 3. Create the Vendor Reports table (for SP-API analytics reports)
         await client.query(`

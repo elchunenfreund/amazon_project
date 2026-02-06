@@ -2,7 +2,7 @@ import { useState, useMemo, memo } from 'react'
 import type { ColumnDef } from '@tanstack/react-table'
 import { ExternalLink, MoreHorizontal, History, Edit, Trash2, Moon, TrendingUp, TrendingDown } from 'lucide-react'
 import { DataTable, HistoryModal } from '@/components/shared'
-import { AvailabilityBadge } from '@/components/shared/StatusBadge'
+import { EnhancedAvailabilityBadge } from '@/components/shared/StatusBadge'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -123,15 +123,21 @@ export const DashboardTable = memo(function DashboardTable({
         },
       },
       {
-        accessorKey: 'available',
+        accessorKey: 'availability',
         header: 'Status',
         cell: ({ row }) => {
-          const available = row.original.available
-          const changed = row.original.changed_fields?.includes('availability')
+          const availability = row.original.availability
+          const stockLevel = row.original.stock_level
+          const backOrdered = row.original.back_ordered
+          const changed = row.original.changed_fields?.includes('availability') ||
+                          row.original.changed_fields?.includes('stock_level')
           return (
-            <div className={cn(changed && 'ring-2 ring-red-500 ring-offset-1 rounded')}>
-              <AvailabilityBadge available={available} />
-            </div>
+            <EnhancedAvailabilityBadge
+              availability={availability}
+              stockLevel={stockLevel}
+              backOrdered={backOrdered}
+              showChangeIndicator={changed}
+            />
           )
         },
       },

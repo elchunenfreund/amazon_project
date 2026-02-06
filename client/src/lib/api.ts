@@ -290,7 +290,11 @@ export interface AsinReport {
   sku?: string | null
   title?: string
   available?: boolean
-  availability_status?: 'in_stock' | 'back_order' | 'unavailable'
+  // Enhanced availability fields
+  availability?: string | null  // Raw status: "In Stock", "Unavailable", "Doggy", "Pending"
+  availability_status?: 'in_stock' | 'unavailable' | 'doggy' | 'pending'
+  stock_level?: string | null   // "Normal", "Low Stock: 3", "Invalid Page"
+  back_ordered?: boolean        // True if unavailable but still orderable (back order)
   seller?: string
   price?: number | null
   previous_price?: number | null

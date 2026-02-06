@@ -28,6 +28,44 @@ Amazon Tracker is a full-stack web application for tracking Amazon product avail
 | **Git/PR** | `workflows:git-workflow`, `tools:pr-enhance`, `tools:issue` |
 | **Documentation** | `tools:doc-generate`, `tools:code-explain`, `tools:onboard` |
 
+### NPX Skills CLI Reference
+
+```bash
+# Search for skills by keyword
+npx skills find <query>          # e.g., npx skills find "frontend"
+
+# List available skills from a repository
+npx skills add <owner/repo> --list
+
+# Install skills
+npx skills add <owner/repo@skill>           # Install specific skill
+npx skills add <owner/repo> --skill <name>  # Install by skill name
+npx skills add <owner/repo> -g              # Install globally
+npx skills add <owner/repo> --all           # Install all skills
+
+# Manage installed skills
+npx skills list                  # List project skills
+npx skills list -g               # List global skills
+npx skills remove <skill>        # Remove a skill
+npx skills update                # Update all skills
+```
+
+### Recommended Skill Repositories
+
+| Repository | Key Skills | Use Case |
+|------------|-----------|----------|
+| `anthropics/skills` | `frontend-design`, `webapp-testing`, `mcp-builder` | Frontend development, testing, MCP servers |
+| `vercel-labs/agent-skills` | `vercel-react-best-practices`, `vercel-composition-patterns`, `web-design-guidelines` | React/Next.js optimization |
+| `langgenius/dify` | `frontend-code-review`, `frontend-testing`, `component-refactoring` | Frontend code review and testing |
+
+### Skills Relevant for This Project
+
+For building frontend pages like the Scanner page:
+- **`frontend-design:frontend-design`** - Create polished React components with Tailwind CSS
+- **`vercel-labs/agent-skills@vercel-react-best-practices`** - React performance patterns
+- **`tools:tdd-cycle`** - Test-driven development workflow
+- **`code-review:code-review`** - Review code changes
+
 **Skill discovery**: When you can't find an appropriate skill or need additional functionality, run `npx skills find <query>` to search for available skills that might help.
 
 **Parallel execution**: When tasks are independent, launch multiple agents in parallel using multiple Task tool calls in a single message for efficiency.
