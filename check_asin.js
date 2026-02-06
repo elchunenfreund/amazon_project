@@ -105,7 +105,8 @@ async function scrapeAsin(page, asin) {
                 seller: 'N/A',
                 availability: 'Doggy',
                 stock_level: 'Invalid Page',
-                ranking: 'N/A'
+                ranking: 'N/A',
+                back_ordered: false
             };
         }
 
@@ -130,7 +131,8 @@ async function scrapeAsin(page, asin) {
                 seller: 'N/A',
                 availability: 'Doggy',
                 stock_level: 'Invalid Page',
-                ranking: 'N/A'
+                ranking: 'N/A',
+                back_ordered: false
             };
         }
 
@@ -194,6 +196,7 @@ async function scrapeAsin(page, asin) {
 
             let availability = "Unavailable";
             let stockLevel = "Normal";
+            let backOrdered = false;  // Separate flag for back-ordered items
 
             // Determine seller early (needed for back-order logic)
             let seller = "N/A";
@@ -224,6 +227,7 @@ async function scrapeAsin(page, asin) {
             if (isUnavailable) {
                 // Truly unavailable items cannot be ordered
                 availability = "Unavailable";
+                backOrdered = false;
             } else if (isOrderable) {
                 // Item is orderable - check for back-order indicators
                 availability = "In Stock";
@@ -233,8 +237,9 @@ async function scrapeAsin(page, asin) {
                                                     availLower.includes("temporarily out of stock");
 
                 if (hasStrongBackOrderIndicator) {
-                    // Strong back-order indicators mean back-order (regardless of seller)
-                    availability = "Back Order";
+                    // Strong back-order indicators: show as Unavailable but flag as back-ordered
+                    availability = "Unavailable";
+                    backOrdered = true;
                 } else {
                     // Additional back-order detection for shipping delays
                     const hasShippingDelay = availLower.includes("usually ships") ||
@@ -243,8 +248,9 @@ async function scrapeAsin(page, asin) {
                                             availLower.includes("months");
 
                     if (hasShippingDelay && seller === "3rd Party") {
-                        // Third-party sellers with shipping delays = back-order
-                        availability = "Back Order";
+                        // Third-party sellers with shipping delays: show as Unavailable but flag as back-ordered
+                        availability = "Unavailable";
+                        backOrdered = true;
                     } else if (hasShippingDelay && seller === "Amazon") {
                         // Amazon with "Usually ships within X" is just a shipping estimate, NOT back-order
                         // Keep as "In Stock"
@@ -264,9 +270,10 @@ async function scrapeAsin(page, asin) {
 
             // Seller already determined above for back-order logic
 
-            // Price extraction: prioritize buy box price, set N/A for unavailable items
+            // Price extraction: prioritize buy box price
+            // Capture price for in-stock items AND back-ordered items (which are orderable)
             let price = "N/A";
-            if (availability !== "Unavailable") {
+            if (availability !== "Unavailable" || backOrdered) {
                 // First, try to get price from buy box-specific containers
                 const buyBoxPrice = document.querySelector('#price_inside_buybox')?.innerText?.trim() ||
                                     document.querySelector('#buybox .a-price .a-offscreen')?.innerText?.trim() ||
@@ -293,7 +300,8 @@ async function scrapeAsin(page, asin) {
                 seller,
                 availability,
                 stock_level: stockLevel,
-                ranking: rank
+                ranking: rank,
+                back_ordered: backOrdered
             };
             }),
             new Promise((_, reject) => setTimeout(() => reject(new Error("Main evaluate timeout")), 20000))
@@ -386,7 +394,22 @@ async function scrapeAsin(page, asin) {
                 '--disable-backgrounding-occluded-windows',
                 '--disable-software-rasterizer',
                 '--disable-features=TranslateUI',
-                '--disable-ipc-flooding-protection'
+                '--disable-ipc-flooding-protection',
+                // Additional memory-saving flags for 512MB Heroku dynos
+                '--single-process', // Run in single process to reduce memory
+                '--disable-web-security',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--disable-site-isolation-trials',
+                '--js-flags=--max-old-space-size=256', // Limit JS heap to 256MB
+                '--disable-component-update',
+                '--disable-default-apps',
+                '--disable-hang-monitor',
+                '--disable-popup-blocking',
+                '--disable-prompt-on-repost',
+                '--disable-sync',
+                '--metrics-recording-only',
+                '--no-first-run',
+                '--safebrowsing-disable-auto-update'
             ]
         };
 
@@ -414,11 +437,17 @@ async function scrapeAsin(page, asin) {
         }
         context = await browserInstance.newContext({
              userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-             viewport: { width: 1920, height: 1080 }
+             viewport: { width: 1280, height: 720 } // Smaller viewport to save memory
         });
         await loadCookies(context);
         page = await context.newPage();
-        await page.setViewportSize({ width: 1920, height: 1080 });
+        await page.setViewportSize({ width: 1280, height: 720 });
+
+        // Force garbage collection after browser restart
+        if (global.gc) {
+            try { global.gc(); } catch (e) {}
+        }
+
         await setLocation(page, POSTAL_CODE);
     };
 
@@ -488,8 +517,8 @@ async function scrapeAsin(page, asin) {
                     console.error("⚠️ Watchdog restart failed:", err);
                 }
             }
-            // --- FULL RESTART EVERY 25 ITEMS (reduced from 50 to prevent memory issues) ---
-            if (index > 0 && index % 25 === 0) {
+            // --- FULL RESTART EVERY 15 ITEMS (aggressive memory management for 512MB Heroku dynos) ---
+            if (index > 0 && index % 15 === 0) {
                 try {
                     console.log(`   --> 🔄 Restarting browser at item ${index + 1} to free memory...`);
                     await launchBrowser();
@@ -534,11 +563,12 @@ async function scrapeAsin(page, asin) {
 
 
                 if (data) {
-                    console.log(`   --> ${data.availability} | ${data.stock_level} | ${data.seller}`);
+                    const backOrderFlag = data.back_ordered ? ' [BACK ORDER]' : '';
+                    console.log(`   --> ${data.availability} | ${data.stock_level} | ${data.seller}${backOrderFlag}`);
                     await client.query(`
-                        INSERT INTO daily_reports (asin, header, availability, stock_level, seller, price, ranking, check_date)
-                        VALUES ($1,$2,$3,$4,$5,$6,$7,CURRENT_TIMESTAMP)`,
-                        [asin, data.header, data.availability, data.stock_level, data.seller, data.price, data.ranking]);
+                        INSERT INTO daily_reports (asin, header, availability, stock_level, seller, price, ranking, back_ordered, check_date)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_TIMESTAMP)`,
+                        [asin, data.header, data.availability, data.stock_level, data.seller, data.price, data.ranking, data.back_ordered || false]);
                     consecutiveFailures = 0; // Reset on success
                     lastProgressTime = Date.now(); // Update progress time
                 } else {
@@ -567,7 +597,7 @@ async function scrapeAsin(page, asin) {
                         // Small delay to allow cleanup
                         await sleep(500);
                         page = await context.newPage();
-                        await page.setViewportSize({ width: 1920, height: 1080 });
+                        await page.setViewportSize({ width: 1280, height: 720 });
                         console.log("   --> ✅ Page recreated, continuing...");
                     } catch (recoveryError) {
                         console.error("   --> ⚠️ Recovery failed:", recoveryError.message);
