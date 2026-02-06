@@ -6656,6 +6656,143 @@ app.post('/api/catalog/fetch/:asin', validateAsin, async (req, res) => {
     }
 });
 
+// API: Bulk sync catalog details for vendor report ASINs
+app.post('/api/catalog/sync-vendor-asins', async (req, res) => {
+    try {
+        const { limit = 100 } = req.body; // Default to 100 ASINs per batch
+        const accessToken = await getValidAccessToken();
+        const marketplaceId = 'A2EUQ1WTGCTBG2'; // Canada
+
+        // Get ASINs that need catalog data (have vendor reports but no catalog details)
+        const missingAsinsResult = await pool.query(`
+            SELECT DISTINCT v.asin
+            FROM vendor_reports v
+            LEFT JOIN catalog_details c ON v.asin = c.asin
+            WHERE c.asin IS NULL
+            ORDER BY v.asin
+            LIMIT $1
+        `, [limit]);
+
+        const asinsToFetch = missingAsinsResult.rows.map(r => r.asin);
+
+        if (asinsToFetch.length === 0) {
+            return res.json({
+                success: true,
+                message: 'All vendor ASINs already have catalog data',
+                fetched: 0,
+                remaining: 0
+            });
+        }
+
+        // Count total remaining
+        const countResult = await pool.query(`
+            SELECT COUNT(DISTINCT v.asin) as remaining
+            FROM vendor_reports v
+            LEFT JOIN catalog_details c ON v.asin = c.asin
+            WHERE c.asin IS NULL
+        `);
+        const totalRemaining = parseInt(countResult.rows[0].remaining);
+
+        const includedData = 'summaries,attributes,dimensions,identifiers,images,productTypes,salesRanks';
+        const results = { success: 0, failed: 0, errors: [] };
+
+        // Fetch catalog data for each ASIN with rate limiting (2 per second to avoid throttling)
+        for (let i = 0; i < asinsToFetch.length; i++) {
+            const asin = asinsToFetch[i];
+            try {
+                const url = `https://sellingpartnerapi-na.amazon.com/catalog/2022-04-01/items/${asin}?marketplaceIds=${marketplaceId}&includedData=${includedData}`;
+
+                const response = await fetch(url, {
+                    headers: {
+                        'x-amz-access-token': accessToken,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const summary = data.summaries?.[0] || {};
+
+                    await pool.query(
+                        `INSERT INTO catalog_details (asin, title, brand, product_type, images, attributes, dimensions, identifiers, sales_ranks, last_updated)
+                         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+                         ON CONFLICT (asin) DO UPDATE SET
+                            title = EXCLUDED.title,
+                            brand = EXCLUDED.brand,
+                            product_type = EXCLUDED.product_type,
+                            images = EXCLUDED.images,
+                            attributes = EXCLUDED.attributes,
+                            dimensions = EXCLUDED.dimensions,
+                            identifiers = EXCLUDED.identifiers,
+                            sales_ranks = EXCLUDED.sales_ranks,
+                            last_updated = CURRENT_TIMESTAMP`,
+                        [
+                            asin,
+                            summary.itemName,
+                            summary.brand,
+                            data.productTypes?.[0]?.productType,
+                            JSON.stringify(data.images),
+                            JSON.stringify(data.attributes),
+                            JSON.stringify(data.dimensions),
+                            JSON.stringify(data.identifiers),
+                            JSON.stringify(data.salesRanks)
+                        ]
+                    );
+                    results.success++;
+                    console.log(`[Catalog Sync] Fetched ${asin} (${i + 1}/${asinsToFetch.length})`);
+                } else {
+                    const errorData = await response.json();
+                    results.failed++;
+                    results.errors.push({ asin, status: response.status, error: errorData.errors?.[0]?.message || 'Unknown error' });
+                    console.error(`[Catalog Sync] Failed ${asin}: ${response.status}`);
+                }
+
+                // Rate limit: wait 500ms between requests (2 per second)
+                if (i < asinsToFetch.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            } catch (err) {
+                results.failed++;
+                results.errors.push({ asin, error: err.message });
+                console.error(`[Catalog Sync] Error fetching ${asin}:`, err.message);
+            }
+        }
+
+        res.json({
+            success: true,
+            fetched: results.success,
+            failed: results.failed,
+            remaining: totalRemaining - results.success,
+            errors: results.errors.slice(0, 10) // Return first 10 errors
+        });
+    } catch (err) {
+        console.error('Bulk catalog sync error:', err);
+        handleApiError(res, err, 'Failed to sync catalog data');
+    }
+});
+
+// API: Get catalog sync status (how many ASINs need catalog data)
+app.get('/api/catalog/sync-status', async (req, res) => {
+    try {
+        const result = await pool.query(`
+            SELECT
+                COUNT(DISTINCT v.asin) as total_vendor_asins,
+                COUNT(DISTINCT c.asin) as have_catalog,
+                COUNT(DISTINCT v.asin) - COUNT(DISTINCT c.asin) as missing_catalog
+            FROM vendor_reports v
+            LEFT JOIN catalog_details c ON v.asin = c.asin
+        `);
+
+        res.json({
+            totalVendorAsins: parseInt(result.rows[0].total_vendor_asins),
+            haveCatalog: parseInt(result.rows[0].have_catalog),
+            missingCatalog: parseInt(result.rows[0].missing_catalog)
+        });
+    } catch (err) {
+        handleApiError(res, err, 'Failed to get catalog sync status');
+    }
+});
+
 // API: Get stored vendor report data for analytics page
 app.get('/api/vendor-analytics/data', async (req, res) => {
     try {
