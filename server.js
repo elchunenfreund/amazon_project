@@ -1170,7 +1170,7 @@ app.get('/api/products', async (req, res) => {
 // GET /api/asins/latest - Get latest check data for all ASINs (for Dashboard)
 app.get('/api/asins/latest', async (req, res) => {
     try {
-        const { startDate, endDate, baselineDate } = req.query;
+        const { startDate, endDate, baselineDate, vendorStartDate, vendorEndDate } = req.query;
 
         // Build date filter clause
         let dateFilter = '';
@@ -1235,62 +1235,141 @@ app.get('/api/asins/latest', async (req, res) => {
             metaMap[row.asin] = { comment: row.comment, snooze_until: row.snooze_until, sku: row.sku };
         });
 
-        // Get latest sales data from vendor reports
-        const salesResult = await pool.query(`
-            SELECT DISTINCT ON (asin) asin, data
-            FROM vendor_reports
-            WHERE report_type = 'GET_VENDOR_SALES_REPORT'
-            ORDER BY asin, report_date DESC
-        `);
+        // Vendor date range filter helper
+        const hasVendorDateRange = vendorStartDate && vendorEndDate;
+        const vendorDateClause = hasVendorDateRange
+            ? ` AND COALESCE(data_end_date, report_date) >= '${String(vendorStartDate).replace(/'/g, '')}' AND COALESCE(data_start_date, report_date) <= '${String(vendorEndDate).replace(/'/g, '')}'`
+            : '';
+
+        // Get sales data from vendor reports (latest or aggregated over date range)
+        let salesResult;
+        if (hasVendorDateRange) {
+            salesResult = await pool.query(`
+                SELECT asin, data, report_date, data_end_date
+                FROM vendor_reports
+                WHERE report_type = 'GET_VENDOR_SALES_REPORT'${vendorDateClause}
+                ORDER BY asin, report_date DESC
+            `);
+        } else {
+            salesResult = await pool.query(`
+                SELECT DISTINCT ON (asin) asin, data, report_date, data_end_date
+                FROM vendor_reports
+                WHERE report_type = 'GET_VENDOR_SALES_REPORT'
+                ORDER BY asin, report_date DESC
+            `);
+        }
         const salesMap = {};
+        const extractSalesNum = (val) => {
+            if (val === null || val === undefined) return 0;
+            if (typeof val === 'number') return val;
+            if (typeof val === 'string') return parseFloat(val) || 0;
+            if (typeof val === 'object' && val.amount !== undefined) return parseFloat(val.amount) || 0;
+            return 0;
+        };
         salesResult.rows.forEach(row => {
             const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-            salesMap[row.asin] = {
-                shippedUnits: data.shippedUnits || 0,
+            const reportDate = row.data_end_date || row.report_date;
+            const entry = {
+                shippedUnits: extractSalesNum(data.shippedUnits),
                 shippedRevenue: data.shippedRevenue?.amount ? parseFloat(data.shippedRevenue.amount) : (data.shippedCogs?.amount ? parseFloat(data.shippedCogs.amount) : 0),
-                orderedUnits: data.orderedUnits || 0,
-                orderedRevenue: data.orderedRevenue?.amount ? parseFloat(data.orderedRevenue.amount) : 0
+                orderedUnits: extractSalesNum(data.orderedUnits),
+                orderedRevenue: data.orderedRevenue?.amount ? parseFloat(data.orderedRevenue.amount) : 0,
+                reportDate: reportDate ? new Date(reportDate).toISOString().split('T')[0] : null
             };
+            if (hasVendorDateRange && salesMap[row.asin]) {
+                // Aggregate: sum values
+                salesMap[row.asin].shippedUnits += entry.shippedUnits;
+                salesMap[row.asin].shippedRevenue += entry.shippedRevenue;
+                salesMap[row.asin].orderedUnits += entry.orderedUnits;
+                salesMap[row.asin].orderedRevenue += entry.orderedRevenue;
+            } else {
+                salesMap[row.asin] = entry;
+            }
         });
 
-        // Get latest traffic data from vendor reports
-        const trafficResult = await pool.query(`
-            SELECT DISTINCT ON (asin) asin, data
-            FROM vendor_reports
-            WHERE report_type = 'GET_VENDOR_TRAFFIC_REPORT'
-            ORDER BY asin, report_date DESC
-        `);
+        // Get traffic data from vendor reports (latest or aggregated over date range)
+        let trafficResult;
+        if (hasVendorDateRange) {
+            trafficResult = await pool.query(`
+                SELECT asin, data
+                FROM vendor_reports
+                WHERE report_type = 'GET_VENDOR_TRAFFIC_REPORT'${vendorDateClause}
+                ORDER BY asin, report_date DESC
+            `);
+        } else {
+            trafficResult = await pool.query(`
+                SELECT DISTINCT ON (asin) asin, data
+                FROM vendor_reports
+                WHERE report_type = 'GET_VENDOR_TRAFFIC_REPORT'
+                ORDER BY asin, report_date DESC
+            `);
+        }
         const trafficMap = {};
         trafficResult.rows.forEach(row => {
             const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
-            trafficMap[row.asin] = {
-                glanceViews: data.glanceViews || 0
+            // Sum browserPageViews + mobileAppPageViews as fallback when glanceViews is null
+            const gv = parseFloat(data.glanceViews) || 0;
+            const browserViews = parseFloat(data.browserPageViews) || 0;
+            const mobileViews = parseFloat(data.mobileAppPageViews) || 0;
+            const views = gv > 0 ? gv : (browserViews + mobileViews) || 0;
+            if (hasVendorDateRange && trafficMap[row.asin]) {
+                trafficMap[row.asin].glanceViews += views;
+            } else {
+                trafficMap[row.asin] = { glanceViews: views };
+            }
+        });
+
+        // Get latest inventory data from vendor reports (always latest snapshot, not aggregated)
+        const inventoryResult = await pool.query(`
+            SELECT DISTINCT ON (asin) asin, data
+            FROM vendor_reports
+            WHERE report_type = 'GET_VENDOR_INVENTORY_REPORT'
+            ORDER BY asin, report_date DESC
+        `);
+        const inventoryMap = {};
+        inventoryResult.rows.forEach(row => {
+            const data = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+            const extractNum = (val) => {
+                if (val === null || val === undefined) return null;
+                if (typeof val === 'number') return val;
+                if (typeof val === 'string') return parseFloat(val) || null;
+                if (typeof val === 'object' && val.amount !== undefined) return parseFloat(val.amount) || null;
+                return null;
+            };
+            inventoryMap[row.asin] = {
+                sellableOnHandInventory: extractNum(data.sellableOnHandInventory)
+                    ?? extractNum(data.sellable_on_hand_inventory)
+                    ?? extractNum(data.highlyAvailableInventory)
+                    ?? null
             };
         });
 
-        // Get receiving data from PO line items
-        const receivingResult = await pool.query(`
+        // Get receiving data from PO line items (optionally filtered by date range)
+        let receivingQuery = `
             SELECT asin,
                 SUM(received_quantity) as total_received,
                 SUM(CASE WHEN received_quantity IS NULL OR received_quantity < ordered_quantity THEN ordered_quantity - COALESCE(received_quantity, 0) ELSE 0 END) as inbound
-            FROM po_line_items
-            GROUP BY asin
-        `);
+            FROM po_line_items`;
+        if (hasVendorDateRange) {
+            receivingQuery += ` WHERE last_receiving_date >= '${String(vendorStartDate).replace(/'/g, '')}' AND last_receiving_date <= '${String(vendorEndDate).replace(/'/g, '')}'`;
+        }
+        receivingQuery += ` GROUP BY asin`;
+        const receivingResult = await pool.query(receivingQuery);
         const receivingMap = {};
         receivingResult.rows.forEach(row => {
             receivingMap[row.asin] = { received: row.total_received, inbound: row.inbound };
         });
 
-        // Get last PO date for each ASIN
+        // Get last PO date and units for each ASIN
         const lastPOResult = await pool.query(`
-            SELECT DISTINCT ON (li.asin) li.asin, po.po_date
+            SELECT DISTINCT ON (li.asin) li.asin, po.po_date, li.ordered_quantity
             FROM po_line_items li
             JOIN purchase_orders po ON li.po_number = po.po_number
             ORDER BY li.asin, po.po_date DESC
         `);
         const lastPOMap = {};
         lastPOResult.rows.forEach(row => {
-            lastPOMap[row.asin] = row.po_date;
+            lastPOMap[row.asin] = { po_date: row.po_date, ordered_quantity: row.ordered_quantity };
         });
 
         // Combine and transform data
@@ -1304,6 +1383,7 @@ app.get('/api/asins/latest', async (req, res) => {
 
             const salesData = salesMap[asin] || {};
             const trafficData = trafficMap[asin] || {};
+            const inventoryData = inventoryMap[asin] || {};
             const receiving = receivingMap[asin] || {};
 
             // Determine availability status
@@ -1360,10 +1440,14 @@ app.get('/api/asins/latest', async (req, res) => {
                 // New fields
                 shipped_units: salesData.shippedUnits || null,
                 shipped_revenue: salesData.shippedRevenue || salesData.shippedCOGS || null,
+                last_order_units: salesData.orderedUnits || null,
+                last_order_date: salesData.reportDate || null,
                 glance_views: trafficData.glanceViews || null,
+                sellable_on_hand_inventory: inventoryData.sellableOnHandInventory || null,
                 received_quantity: receiving.received || null,
                 inbound_quantity: receiving.inbound || null,
-                last_po_date: lastPOMap[asin] ? new Date(lastPOMap[asin]).toISOString().split('T')[0] : null,
+                last_po_date: lastPOMap[asin]?.po_date ? new Date(lastPOMap[asin].po_date).toISOString().split('T')[0] : null,
+                last_po_units: lastPOMap[asin]?.ordered_quantity || null,
                 // Change tracking
                 has_changes: changedFields.length > 0,
                 changed_fields: changedFields
@@ -1488,7 +1572,8 @@ app.get('/api/vendor-reports', async (req, res) => {
         let query = `
             SELECT vr.*,
                    cd.title as catalog_title,
-                   (SELECT pl.vendor_sku FROM po_line_items pl WHERE pl.asin = vr.asin LIMIT 1) as vendor_sku
+                   (SELECT pl.vendor_sku FROM po_line_items pl WHERE pl.asin = vr.asin LIMIT 1) as vendor_sku,
+                   (SELECT dr.header FROM daily_reports dr WHERE dr.asin = vr.asin AND dr.header IS NOT NULL ORDER BY dr.check_date DESC LIMIT 1) as scraper_title
             FROM vendor_reports vr
             LEFT JOIN catalog_details cd ON cd.asin = vr.asin
             WHERE 1=1`;
@@ -1548,13 +1633,17 @@ app.get('/api/vendor-reports', async (req, res) => {
                 ?? extractNumber(data.ordered_units)
                 ?? extractNumber(data.unitsOrdered);
 
-            // Extract glance views from multiple possible locations
-            const glanceViews = extractNumber(data.glanceViews)
+            // Extract glance views - prefer glanceViews, then sum browser + mobile views
+            const directGlanceViews = extractNumber(data.glanceViews)
                 ?? extractNumber(data.glance_views)
                 ?? extractNumber(data.pageViews)
-                ?? extractNumber(data.page_views)
-                ?? extractNumber(data.browserPageViews)
-                ?? extractNumber(data.mobileAppPageViews);
+                ?? extractNumber(data.page_views);
+            let glanceViews = directGlanceViews;
+            if (glanceViews === null) {
+                const browserViews = extractNumber(data.browserPageViews) || 0;
+                const mobileViews = extractNumber(data.mobileAppPageViews) || 0;
+                glanceViews = (browserViews + mobileViews) > 0 ? (browserViews + mobileViews) : null;
+            }
 
             // Calculate conversion rate if not provided
             // Convert to percentage (multiply by 100) for display
@@ -1575,8 +1664,8 @@ app.get('/api/vendor-reports', async (req, res) => {
             return {
                 id: row.id,
                 asin: row.asin,
-                // Product info from catalog_details and po_line_items
-                title: row.catalog_title || null,
+                // Product info from catalog_details, po_line_items, or daily_reports fallback
+                title: row.catalog_title || row.scraper_title || null,
                 vendor_sku: row.vendor_sku || null,
                 report_date: row.report_date,
                 report_type: row.report_type,
@@ -2347,7 +2436,7 @@ app.get('/api/products/:asin', validateAsin, async (req, res) => {
 // API Endpoints
 app.post('/api/asins', async (req, res) => {
     try {
-        const { asin, replace } = req.body;
+        const { asin, replace, ...optionalFields } = req.body;
         if (!asin || typeof asin !== 'string' || asin.trim().length === 0) {
             return res.status(400).json({ error: 'ASIN is required' });
         }
@@ -2377,8 +2466,24 @@ app.post('/api/asins', async (req, res) => {
             return res.json({ success: true, asin: cleanAsin, replaced: false, message: 'ASIN already exists (ASIN cannot be changed)' });
         }
 
-        // Insert new ASIN
-        await pool.query('INSERT INTO products (asin) VALUES ($1)', [cleanAsin]);
+        // Build INSERT with optional fields (validated against whitelist)
+        const columns = ['asin'];
+        const values = [cleanAsin];
+        let paramIdx = 2;
+        for (const [key, value] of Object.entries(optionalFields)) {
+            if (key === 'replace') continue;
+            if (!ALLOWED_PRODUCT_COLUMNS.includes(key)) continue;
+            if (value === undefined || value === null || value === '') continue;
+            columns.push(key);
+            values.push(value);
+            paramIdx++;
+        }
+
+        const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
+        await pool.query(
+            `INSERT INTO products (${columns.join(', ')}) VALUES (${placeholders})`,
+            values
+        );
         res.json({ success: true, asin: cleanAsin, added: true });
     } catch (err) {
         handleApiError(res, err, 'Failed to add ASIN');

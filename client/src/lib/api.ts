@@ -219,6 +219,14 @@ export interface Product {
   asin: string
   header?: string  // Product title
   sku?: string
+  title?: string
+  brand?: string
+  upc?: string
+  vendor_code?: string
+  cost?: string
+  category?: string
+  subcategory?: string
+  notes?: string
   comment?: string
   snoozed?: boolean
   snooze_until?: string
@@ -298,9 +306,13 @@ export interface AsinReport {
   shipped_units?: number | null
   shipped_revenue?: number | null
   glance_views?: number | null
+  sellable_on_hand_inventory?: number | null
   received_quantity?: number | null
   inbound_quantity?: number | null
   last_po_date?: string | null
+  last_po_units?: number | null
+  last_order_units?: number | null
+  last_order_date?: string | null
   // Change tracking
   has_changes?: boolean
   changed_fields?: string[]
@@ -310,6 +322,8 @@ export interface AsinFilters {
   startDate?: string
   endDate?: string
   baselineDate?: string
+  vendorStartDate?: string
+  vendorEndDate?: string
 }
 
 export const asinsApi = {
@@ -318,11 +332,13 @@ export const asinsApi = {
     if (filters?.startDate) params.set('startDate', filters.startDate)
     if (filters?.endDate) params.set('endDate', filters.endDate)
     if (filters?.baselineDate) params.set('baselineDate', filters.baselineDate)
+    if (filters?.vendorStartDate) params.set('vendorStartDate', filters.vendorStartDate)
+    if (filters?.vendorEndDate) params.set('vendorEndDate', filters.vendorEndDate)
     const query = params.toString()
     return request<AsinReport[]>(`/asins/latest${query ? `?${query}` : ''}`)
   },
 
-  add: (data: { asin: string; comment?: string }) =>
+  add: (data: { asin: string; comment?: string; sku?: string; title?: string; brand?: string; upc?: string; vendor_code?: string; cost?: string; category?: string; subcategory?: string; notes?: string }) =>
     request<{ success: boolean }>('/asins', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -526,6 +542,7 @@ export interface CatalogItem {
   item_name?: string
   product_type?: string
   image_url?: string
+  identifiers?: unknown
   updated_at: string
 }
 

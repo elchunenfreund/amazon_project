@@ -1,5 +1,5 @@
 export * from './AddAsinModal'
 export * from './DashboardTable'
 export * from './EditAsinModal'
-export * from './ExcelUploadModal'
+export { ExcelUploadModal } from '@/components/shared/ExcelUploadModal'
 export * from './ScraperProgress'

@@ -236,6 +236,18 @@ export const DashboardTable = memo(function DashboardTable({
         },
       },
       {
+        accessorKey: 'sellable_on_hand_inventory',
+        header: 'Inventory',
+        cell: ({ row }) => {
+          const inv = row.original.sellable_on_hand_inventory
+          return inv != null ? (
+            <span className="text-sm">{inv.toLocaleString()}</span>
+          ) : (
+            <span className="text-muted">-</span>
+          )
+        },
+      },
+      {
         accessorKey: 'last_po_date',
         header: 'Last PO',
         cell: ({ row }) => {
@@ -244,6 +256,33 @@ export const DashboardTable = memo(function DashboardTable({
             <span className="text-sm text-muted">{date}</span>
           ) : (
             <span className="text-muted">-</span>
+          )
+        },
+      },
+      {
+        accessorKey: 'last_po_units',
+        header: 'PO Units',
+        cell: ({ row }) => {
+          const units = row.original.last_po_units
+          return units != null ? (
+            <span className="text-sm">{units.toLocaleString()}</span>
+          ) : (
+            <span className="text-muted">-</span>
+          )
+        },
+      },
+      {
+        accessorKey: 'last_order_units',
+        header: 'Last Order',
+        cell: ({ row }) => {
+          const units = row.original.last_order_units
+          const date = row.original.last_order_date
+          if (units == null && !date) return <span className="text-muted">-</span>
+          return (
+            <div className="text-sm">
+              {units != null && <div>{units.toLocaleString()} units</div>}
+              {date && <div className="text-muted text-xs">{date}</div>}
+            </div>
           )
         },
       },
@@ -273,7 +312,7 @@ export const DashboardTable = memo(function DashboardTable({
       },
       {
         accessorKey: 'check_date',
-        header: 'Last Checked',
+        header: 'Last Scan',
         cell: ({ row }) => {
           const date = row.original.check_date
           const time = row.original.check_time

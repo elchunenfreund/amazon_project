@@ -15,7 +15,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Button } from '@/components/ui/button'
-import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import type { VendorReport } from '@/lib/api'
 import { formatTooltipValue } from '@/lib/type-guards'
 
@@ -26,21 +32,10 @@ interface AnalyticsChartsProps {
 
 type ChartMode = 'combined' | 'individual'
 
-// Color palette for ASINs when comparing
-const ASIN_COLORS = [
-  '#2563eb', // blue
-  '#059669', // green
-  '#dc2626', // red
-  '#7c3aed', // purple
-  '#ea580c', // orange
-  '#0891b2', // cyan
-  '#c026d3', // fuchsia
-  '#65a30d', // lime
-]
 
 export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading = false }: AnalyticsChartsProps) {
   const [chartMode, setChartMode] = useState<ChartMode>('combined')
-  const [selectedAsins, setSelectedAsins] = useState<string[]>([])
+  const [selectedAsin, setSelectedAsin] = useState<string>('all')
   const [selectedMetrics, setSelectedMetrics] = useState({
     shippedCogs: true,
     orderedRevenue: true,
@@ -56,27 +51,12 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
     return asins
   }, [data])
 
-  // Toggle ASIN selection
-  const toggleAsin = (asin: string) => {
-    setSelectedAsins(prev =>
-      prev.includes(asin)
-        ? prev.filter(a => a !== asin)
-        : [...prev, asin]
-    )
-  }
+  // Derive selectedAsins array from single selection for data filtering
+  const selectedAsins = selectedAsin === 'all' ? [] : [selectedAsin]
 
   // Toggle metric selection
   const toggleMetric = (metric: keyof typeof selectedMetrics) => {
     setSelectedMetrics(prev => ({ ...prev, [metric]: !prev[metric] }))
-  }
-
-  // Select/deselect all ASINs
-  const selectAllAsins = () => {
-    if (selectedAsins.length === uniqueAsins.length) {
-      setSelectedAsins([])
-    } else {
-      setSelectedAsins(uniqueAsins)
-    }
   }
 
   // Determine which Y-axis to use based on selected metrics
@@ -136,37 +116,7 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
       .sort((a, b) => a.date.localeCompare(b.date))
   }, [data, selectedAsins])
 
-  // Prepare per-ASIN chart data for comparison mode
-  const perAsinChartData = useMemo(() => {
-    if (!data.length || selectedAsins.length === 0) return []
-
-    // Group by date, with per-ASIN values
-    // Use a more permissive type since 'date' is a string while other fields are numbers
-    const dateMap: Record<string, Record<string, string | number | null>> = {}
-
-    for (const report of data) {
-      if (!selectedAsins.includes(report.asin)) continue
-
-      const date = report.report_date
-      if (!dateMap[date]) {
-        dateMap[date] = { date }
-      }
-
-      // Store values per ASIN
-      dateMap[date][`${report.asin}_cogs`] = report.shipped_cogs ?? null
-      dateMap[date][`${report.asin}_revenue`] = report.ordered_revenue ?? null
-      dateMap[date][`${report.asin}_shippedUnits`] = report.shipped_units ?? null
-      dateMap[date][`${report.asin}_orderedUnits`] = report.ordered_units ?? null
-      dateMap[date][`${report.asin}_views`] = report.glance_views ?? null
-      dateMap[date][`${report.asin}_conversion`] = report.conversion_rate ?? null
-    }
-
-    return Object.values(dateMap).sort((a, b) =>
-      String(a.date).localeCompare(String(b.date))
-    )
-  }, [data, selectedAsins])
-
-  // Individual chart data (same as before for backwards compatibility)
+  // Individual chart data
   const individualChartData = useMemo(() => {
     if (!data.length) return []
 
@@ -254,26 +204,18 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
 
         {/* ASIN Selection */}
         <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm font-medium">Compare ASINs:</span>
-          <Button variant="outline" size="sm" onClick={selectAllAsins}>
-            {selectedAsins.length === uniqueAsins.length ? 'Deselect All' : 'Select All'}
-          </Button>
-          <div className="flex flex-wrap gap-2">
-            {uniqueAsins.map((asin, idx) => (
-              <Badge
-                key={asin}
-                variant={selectedAsins.includes(asin) ? 'default' : 'outline'}
-                className="cursor-pointer"
-                style={selectedAsins.includes(asin) ? { backgroundColor: ASIN_COLORS[idx % ASIN_COLORS.length] } : {}}
-                onClick={() => toggleAsin(asin)}
-              >
-                {asin}
-              </Badge>
-            ))}
-          </div>
-          {selectedAsins.length === 0 && (
-            <span className="text-sm text-muted">(All ASINs aggregated)</span>
-          )}
+          <span className="text-sm font-medium">ASIN:</span>
+          <Select value={selectedAsin} onValueChange={setSelectedAsin}>
+            <SelectTrigger className="w-[220px]">
+              <SelectValue placeholder="Select ASIN" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All ASINs (aggregated)</SelectItem>
+              {uniqueAsins.map((asin) => (
+                <SelectItem key={asin} value={asin}>{asin}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Metric Selection (for combined mode) */}
@@ -368,144 +310,7 @@ export const AnalyticsCharts = memo(function AnalyticsCharts({ data, isLoading =
               <div className="h-64 flex items-center justify-center text-muted text-sm">
                 Select at least one metric to display the chart
               </div>
-            ) : selectedAsins.length > 1 ? (
-              // Multi-ASIN comparison mode - show each ASIN as a separate line
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={perAsinChartData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 12 }}
-                    tickFormatter={(value) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                  />
-                  {hasCurrencyMetric && (
-                    <YAxis
-                      yAxisId="currency"
-                      orientation="left"
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(value) => `$${value >= 1000 ? (value/1000).toFixed(0)+'k' : value}`}
-                    />
-                  )}
-                  {hasUnitMetric && (
-                    <YAxis
-                      yAxisId="units"
-                      orientation={hasCurrencyMetric ? "right" : "left"}
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(value) => value >= 1000 ? (value/1000).toFixed(0)+'k' : String(value)}
-                    />
-                  )}
-                  {hasPercentMetric && !hasCurrencyMetric && !hasUnitMetric && (
-                    <YAxis
-                      yAxisId="percent"
-                      orientation="left"
-                      tick={{ fontSize: 11 }}
-                      tickFormatter={(value) => `${(value * 100).toFixed(0)}%`}
-                    />
-                  )}
-                  <Tooltip
-                    formatter={(value, name) => {
-                      const nameStr = String(name)
-                      if (nameStr.includes('COGS') || nameStr.includes('Revenue')) {
-                        return [`$${Number(value).toLocaleString()}`, name]
-                      }
-                      if (nameStr.includes('Conv')) {
-                        return [`${(Number(value) * 100).toFixed(2)}%`, name]
-                      }
-                      return [Number(value).toLocaleString(), name]
-                    }}
-                    labelFormatter={(label) => new Date(label).toLocaleDateString()}
-                  />
-                  <Legend />
-                  {selectedAsins.map((asin, idx) => (
-                    <>
-                      {selectedMetrics.shippedCogs && (
-                        <Line
-                          key={`${asin}_cogs`}
-                          yAxisId="currency"
-                          type="monotone"
-                          dataKey={`${asin}_cogs`}
-                          name={`${asin} COGS`}
-                          stroke={ASIN_COLORS[idx % ASIN_COLORS.length]}
-                          strokeWidth={2}
-                          dot={false}
-                          connectNulls
-                        />
-                      )}
-                      {selectedMetrics.orderedRevenue && (
-                        <Line
-                          key={`${asin}_revenue`}
-                          yAxisId="currency"
-                          type="monotone"
-                          dataKey={`${asin}_revenue`}
-                          name={`${asin} Revenue`}
-                          stroke={ASIN_COLORS[idx % ASIN_COLORS.length]}
-                          strokeWidth={2}
-                          strokeDasharray="5 5"
-                          dot={false}
-                          connectNulls
-                        />
-                      )}
-                      {selectedMetrics.shippedUnits && (
-                        <Line
-                          key={`${asin}_shippedUnits`}
-                          yAxisId="units"
-                          type="monotone"
-                          dataKey={`${asin}_shippedUnits`}
-                          name={`${asin} Shipped`}
-                          stroke={ASIN_COLORS[idx % ASIN_COLORS.length]}
-                          strokeWidth={2}
-                          dot={false}
-                          connectNulls
-                        />
-                      )}
-                      {selectedMetrics.orderedUnits && (
-                        <Line
-                          key={`${asin}_orderedUnits`}
-                          yAxisId="units"
-                          type="monotone"
-                          dataKey={`${asin}_orderedUnits`}
-                          name={`${asin} Ordered`}
-                          stroke={ASIN_COLORS[idx % ASIN_COLORS.length]}
-                          strokeWidth={2}
-                          strokeDasharray="3 3"
-                          dot={false}
-                          connectNulls
-                        />
-                      )}
-                      {selectedMetrics.glanceViews && (
-                        <Line
-                          key={`${asin}_views`}
-                          yAxisId="units"
-                          type="monotone"
-                          dataKey={`${asin}_views`}
-                          name={`${asin} Traffic`}
-                          stroke={ASIN_COLORS[idx % ASIN_COLORS.length]}
-                          strokeWidth={2}
-                          strokeDasharray="1 2"
-                          dot={false}
-                          connectNulls
-                        />
-                      )}
-                      {selectedMetrics.conversionRate && (
-                        <Line
-                          key={`${asin}_conversion`}
-                          yAxisId={hasPercentMetric && !hasCurrencyMetric && !hasUnitMetric ? "percent" : "currency"}
-                          type="monotone"
-                          dataKey={`${asin}_conversion`}
-                          name={`${asin} Conv%`}
-                          stroke={ASIN_COLORS[idx % ASIN_COLORS.length]}
-                          strokeWidth={1}
-                          strokeDasharray="8 4"
-                          dot={false}
-                          connectNulls
-                        />
-                      )}
-                    </>
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
             ) : (
-              // Single ASIN or aggregated mode - show metrics as separate lines
               <ResponsiveContainer width="100%" height={400}>
                 <LineChart data={aggregatedChartData}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />

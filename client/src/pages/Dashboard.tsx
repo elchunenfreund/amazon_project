@@ -2,7 +2,8 @@ import { useState, useMemo } from 'react'
 import { format, subDays } from 'date-fns'
 import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff, Filter, History, Calendar } from 'lucide-react'
 import { PageWrapper, PageHeader } from '@/components/layout'
-import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal, QueryError } from '@/components/shared'
+import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal, QueryError, DateRangePicker } from '@/components/shared'
+import type { DateRange } from 'react-day-picker'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Calendar as CalendarComponent } from '@/components/ui/calendar'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { useLatestAsins, useDeleteAsin, useToggleAsinSnooze, useStartScraper, useStopScraper, useScraperStatus, useSocket } from '@/hooks'
+import { useLatestAsins, useDeleteAsin, useToggleAsinSnooze, useStartScraper, useStopScraper, useScraperStatus, useSocket, useAvailableWeeks } from '@/hooks'
 import {
   DashboardTable,
   AddAsinModal,
@@ -58,12 +59,16 @@ export function Dashboard() {
   const [baselineOption, setBaselineOption] = useState<string>('last')
   const [customDate, setCustomDate] = useState<Date | undefined>()
   const [calendarOpen, setCalendarOpen] = useState(false)
+  const [vendorDateRange, setVendorDateRange] = useState<DateRange | undefined>()
 
   const filters: AsinFilters = useMemo(() => ({
     baselineDate: getBaselineDate(baselineOption, customDate),
-  }), [baselineOption, customDate])
+    vendorStartDate: vendorDateRange?.from ? format(vendorDateRange.from, 'yyyy-MM-dd') : undefined,
+    vendorEndDate: vendorDateRange?.to ? format(vendorDateRange.to, 'yyyy-MM-dd') : undefined,
+  }), [baselineOption, customDate, vendorDateRange])
 
   const { data: asins, isLoading, isError, error, refetch } = useLatestAsins(filters)
+  const { data: availableWeeks } = useAvailableWeeks()
   const { data: scraperStatus } = useScraperStatus()
   const deleteAsin = useDeleteAsin()
   const toggleSnooze = useToggleAsinSnooze()
@@ -193,9 +198,13 @@ export function Dashboard() {
     { key: 'glance_views', header: 'Glance Views' },
     { key: 'received_quantity', header: 'Received Qty' },
     { key: 'inbound_quantity', header: 'Inbound Qty' },
+    { key: 'sellable_on_hand_inventory', header: 'Inventory' },
     { key: 'last_po_date', header: 'Last PO Date' },
+    { key: 'last_po_units', header: 'Last PO Units' },
+    { key: 'last_order_units', header: 'Last Order Units' },
+    { key: 'last_order_date', header: 'Last Order Date' },
     { key: 'comment', header: 'Comment' },
-    { key: 'check_date', header: 'Last Checked' },
+    { key: 'check_date', header: 'Last Scan' },
   ]
 
   if (isError) {
@@ -413,8 +422,21 @@ export function Dashboard() {
           </Popover>
         </div>
 
+        {/* Vendor Data Date Range */}
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-muted" />
+          <span className="text-sm text-muted">Vendor data:</span>
+          <DateRangePicker
+            value={vendorDateRange}
+            onChange={setVendorDateRange}
+            placeholder="All time (latest)"
+            availableWeeks={availableWeeks}
+            className="w-[240px]"
+          />
+        </div>
+
         {/* Clear filters */}
-        {(statusFilter !== 'all' || sellerFilter !== 'all' || baselineOption !== 'last') && (
+        {(statusFilter !== 'all' || sellerFilter !== 'all' || baselineOption !== 'last' || vendorDateRange) && (
           <Button
             variant="ghost"
             size="sm"
@@ -423,6 +445,7 @@ export function Dashboard() {
               setSellerFilter('all')
               setBaselineOption('last')
               setCustomDate(undefined)
+              setVendorDateRange(undefined)
             }}
           >
             Clear filters
