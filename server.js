@@ -165,7 +165,8 @@ function validateCsrfToken(session, token) {
 // CSRF token endpoint - returns a new token for the client
 app.get('/api/csrf-token', (req, res) => {
     const token = generateCsrfToken(req.session);
-    res.json({ csrfToken: token });
+    // Include session ID for socket.io authentication
+    res.json({ csrfToken: token, socketSessionId: req.sessionID });
 });
 
 // App configuration endpoint - returns public config for the frontend

@@ -2,6 +2,7 @@ const API_BASE = '/api'
 
 // CSRF token management
 let csrfToken: string | null = null
+let socketSessionId: string | null = null
 let csrfTokenPromise: Promise<void> | null = null
 
 /**
@@ -22,6 +23,7 @@ export async function initCsrf(): Promise<void> {
       if (response.ok) {
         const data = await response.json()
         csrfToken = data.csrfToken
+        socketSessionId = data.socketSessionId
       } else {
         console.warn('Failed to fetch CSRF token:', response.status)
       }
@@ -49,6 +51,13 @@ export async function refreshCsrfToken(): Promise<void> {
  */
 export function getCsrfToken(): string | null {
   return csrfToken
+}
+
+/**
+ * Gets the socket session ID for socket.io authentication.
+ */
+export function getSocketSessionId(): string | null {
+  return socketSessionId
 }
 
 // App configuration cache

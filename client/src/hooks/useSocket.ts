@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { io, type Socket } from 'socket.io-client'
 import { useQueryClient } from '@tanstack/react-query'
+import { getSocketSessionId } from '@/lib/api'
 
 interface ScraperProgress {
   current: number
@@ -25,11 +26,16 @@ export function useSocket() {
   const queryClient = useQueryClient()
 
   useEffect(() => {
+    const sessionId = getSocketSessionId()
+
     const socketInstance = io({
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
+      auth: {
+        sessionId: sessionId || 'anonymous',
+      },
     })
 
     socketInstance.on('connect', () => {
