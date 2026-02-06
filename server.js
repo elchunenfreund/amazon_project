@@ -1603,7 +1603,8 @@ app.get('/api/vendor-reports', async (req, res) => {
         // Filter by distributor view (MANUFACTURING, SOURCING, or all if not specified)
         // Default to MANUFACTURING to match Vendor Central's default behavior
         if (distributorView && distributorView !== 'ALL') {
-            query += ` AND distributor_view = $${paramIndex++}`;
+            // Filter by distributor view, but always include traffic reports which don't have distributor_view
+            query += ` AND (distributor_view = $${paramIndex++} OR report_type = 'GET_VENDOR_TRAFFIC_REPORT')`;
             params.push(distributorView);
         } else if (!distributorView) {
             // Default: only MANUFACTURING view for Sales and Inventory reports (to avoid double-counting)
