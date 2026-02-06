@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react'
-import { format, subDays } from 'date-fns'
+import { useState, useMemo, useEffect } from 'react'
+import { format, subDays, parseISO } from 'date-fns'
 import { Package, CheckCircle, XCircle, Clock, Play, Square, RefreshCw, Plus, Upload, Wifi, WifiOff, Filter, History, Calendar } from 'lucide-react'
 import { PageWrapper, PageHeader } from '@/components/layout'
 import { StatCard, StatCardGrid, ConfirmModal, CsvExportModal, QueryError, DateRangePicker } from '@/components/shared'
@@ -60,6 +60,24 @@ export function Dashboard() {
   const [customDate, setCustomDate] = useState<Date | undefined>()
   const [calendarOpen, setCalendarOpen] = useState(false)
   const [vendorDateRange, setVendorDateRange] = useState<DateRange | undefined>()
+  const [vendorRangeInitialized, setVendorRangeInitialized] = useState(false)
+
+  const { data: availableWeeks } = useAvailableWeeks()
+
+  // Auto-set vendor date range to latest available week so the data period is always obvious
+  useEffect(() => {
+    if (availableWeeks && availableWeeks.length > 0 && !vendorRangeInitialized) {
+      const sorted = [...availableWeeks].sort((a, b) =>
+        new Date(b.start).getTime() - new Date(a.start).getTime()
+      )
+      const latestWeek = sorted[0]
+      setVendorDateRange({
+        from: parseISO(latestWeek.start.split('T')[0]),
+        to: parseISO(latestWeek.end.split('T')[0]),
+      })
+      setVendorRangeInitialized(true)
+    }
+  }, [availableWeeks, vendorRangeInitialized])
 
   const filters: AsinFilters = useMemo(() => ({
     baselineDate: getBaselineDate(baselineOption, customDate),
@@ -68,7 +86,6 @@ export function Dashboard() {
   }), [baselineOption, customDate, vendorDateRange])
 
   const { data: asins, isLoading, isError, error, refetch } = useLatestAsins(filters)
-  const { data: availableWeeks } = useAvailableWeeks()
   const { data: scraperStatus } = useScraperStatus()
   const deleteAsin = useDeleteAsin()
   const toggleSnooze = useToggleAsinSnooze()
@@ -425,18 +442,18 @@ export function Dashboard() {
         {/* Vendor Data Date Range */}
         <div className="flex items-center gap-2">
           <Calendar className="h-4 w-4 text-muted" />
-          <span className="text-sm text-muted">Vendor data:</span>
+          <span className="text-sm text-muted">Vendor period:</span>
           <DateRangePicker
             value={vendorDateRange}
             onChange={setVendorDateRange}
-            placeholder="All time (latest)"
+            placeholder="Select period..."
             availableWeeks={availableWeeks}
             className="w-[240px]"
           />
         </div>
 
         {/* Clear filters */}
-        {(statusFilter !== 'all' || sellerFilter !== 'all' || baselineOption !== 'last' || vendorDateRange) && (
+        {(statusFilter !== 'all' || sellerFilter !== 'all' || baselineOption !== 'last') && (
           <Button
             variant="ghost"
             size="sm"
@@ -445,7 +462,6 @@ export function Dashboard() {
               setSellerFilter('all')
               setBaselineOption('last')
               setCustomDate(undefined)
-              setVendorDateRange(undefined)
             }}
           >
             Clear filters
