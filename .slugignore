@@ -13,3 +13,9 @@ node_modules/playwright/.local-browsers/
 
 # Remove any playwright-related shell files
 *headless-shell*
+
+# Remove test files (tests run in CI, not on Heroku)
+client/tests/
+client/playwright-report/
+client/test-results/
+playwright.config.ts
