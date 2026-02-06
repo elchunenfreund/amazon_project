@@ -350,6 +350,24 @@ export const asinsApi = {
       body: JSON.stringify({ asins }),
     }),
 
+  bulkAddWithMetadata: (products: Array<{
+    asin: string;
+    sku?: string;
+    title?: string;
+    brand?: string;
+    upc?: string;
+    vendor_code?: string;
+    cost?: string | number;
+    category?: string;
+    subcategory?: string;
+    comment?: string;
+    notes?: string;
+  }>) =>
+    request<{ success: boolean; added: number; updated: number; total: number; skipped: number }>('/asins/bulk-with-metadata', {
+      method: 'POST',
+      body: JSON.stringify({ products }),
+    }),
+
   updateComment: (asin: string, comment: string) =>
     request<{ success: boolean }>(`/asins/${asin}/comment`, {
       method: 'PUT',

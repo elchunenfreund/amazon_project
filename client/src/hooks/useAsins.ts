@@ -40,6 +40,18 @@ export function useBulkAddAsins() {
   })
 }
 
+export function useBulkAddAsinsWithMetadata() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: asinsApi.bulkAddWithMetadata,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['asins'] })
+      queryClient.invalidateQueries({ queryKey: ['products'] })
+    },
+  })
+}
+
 export function useUpdateAsinComment() {
   const queryClient = useQueryClient()
 

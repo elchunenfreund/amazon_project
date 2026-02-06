@@ -2248,6 +2248,94 @@ app.post('/api/asins/bulk', async (req, res) => {
     }
 });
 
+// POST /api/asins/bulk-with-metadata - Bulk add products with all fields
+app.post('/api/asins/bulk-with-metadata', async (req, res) => {
+    try {
+        const { products } = req.body;
+        if (!Array.isArray(products) || products.length === 0) {
+            return res.status(400).json({ error: 'Products array is required' });
+        }
+
+        // Allowed fields for bulk import
+        const ALLOWED_FIELDS = ['asin', 'sku', 'title', 'brand', 'upc', 'vendor_code', 'cost', 'category', 'subcategory', 'comment', 'notes'];
+
+        // Clean and validate products
+        const cleanProducts = products
+            .filter(p => p.asin && typeof p.asin === 'string')
+            .map(p => {
+                const clean = { asin: p.asin.trim().toUpperCase() };
+                // Only include allowed fields that have values
+                ALLOWED_FIELDS.forEach(field => {
+                    if (field !== 'asin' && p[field] !== undefined && p[field] !== null && p[field] !== '') {
+                        clean[field] = field === 'cost' ? parseFloat(p[field]) || null : String(p[field]).trim();
+                    }
+                });
+                return clean;
+            })
+            .filter(p => /^[A-Z0-9]{10}$/.test(p.asin));
+
+        if (cleanProducts.length === 0) {
+            return res.json({ success: true, added: 0, skipped: products.length });
+        }
+
+        // Deduplicate by ASIN (keep first occurrence)
+        const seen = new Set();
+        const uniqueProducts = cleanProducts.filter(p => {
+            if (seen.has(p.asin)) return false;
+            seen.add(p.asin);
+            return true;
+        });
+
+        // Insert products one by one with upsert (for proper field merging)
+        let added = 0;
+        let updated = 0;
+
+        for (const product of uniqueProducts) {
+            const fields = Object.keys(product);
+            const values = Object.values(product);
+
+            // Build dynamic INSERT ... ON CONFLICT DO UPDATE
+            const columns = fields.join(', ');
+            const placeholders = fields.map((_, i) => `$${i + 1}`).join(', ');
+            const updateSet = fields
+                .filter(f => f !== 'asin')
+                .map(f => `${f} = EXCLUDED.${f}`)
+                .join(', ');
+
+            const query = updateSet
+                ? `INSERT INTO products (${columns}) VALUES (${placeholders})
+                   ON CONFLICT (asin) DO UPDATE SET ${updateSet}, updated_at = CURRENT_TIMESTAMP
+                   RETURNING (xmax = 0) as inserted`
+                : `INSERT INTO products (${columns}) VALUES (${placeholders})
+                   ON CONFLICT (asin) DO NOTHING
+                   RETURNING (xmax = 0) as inserted`;
+
+            try {
+                const result = await pool.query(query, values);
+                if (result.rows.length > 0) {
+                    if (result.rows[0].inserted) {
+                        added++;
+                    } else {
+                        updated++;
+                    }
+                }
+            } catch (err) {
+                console.error(`Failed to insert ${product.asin}:`, err.message);
+            }
+        }
+
+        res.json({
+            success: true,
+            added,
+            updated,
+            total: uniqueProducts.length,
+            skipped: products.length - uniqueProducts.length
+        });
+    } catch (err) {
+        handleApiError(res, err, 'Failed to bulk add products');
+    }
+});
+
 // PUT /api/asins/:asin/comment - Update ASIN comment
 app.put('/api/asins/:asin/comment', validateAsin, async (req, res) => {
     try {
